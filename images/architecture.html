@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modality-Invariant Dual-Encoder Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #f0f4f8;
+    font-family: 'Inter', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 30px;
+    min-height: 100vh;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 6px 40px rgba(0,0,0,0.13);
+    padding: 36px 40px 32px 40px;
+    width: 1340px;
+    max-width: 100%;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    text-align: center;
+    margin-bottom: 30px;
+    border-bottom: 1.5px solid #e2e8f0;
+    padding-bottom: 18px;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 800;
+    color: #1a202c;
+    letter-spacing: -0.3px;
+  }
+  .header h2 {
+    font-size: 15px;
+    font-weight: 500;
+    color: #718096;
+    margin-top: 5px;
+    font-style: italic;
+  }
+
+  /* ── COLUMN LABELS ── */
+  .col-labels {
+    display: grid;
+    grid-template-columns: 34px 200px 200px 180px 230px 280px;
+    gap: 12px;
+    margin-bottom: 6px;
+    padding-left: 8px;
+  }
+  .col-label {
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #fff;
+    background: #4a5568;
+    padding: 5px 10px;
+    border-radius: 6px;
+    letter-spacing: 0.2px;
+  }
+  .col-label-empty { background: transparent; }
+
+  /* ── MAIN DIAGRAM ── */
+  .diagram {
+    display: grid;
+    grid-template-columns: 34px 200px 200px 180px 230px 280px;
+    gap: 12px;
+    align-items: center;
+  }
+
+  /* Stream labels */
+  .stream-label {
+    writing-mode: vertical-lr;
+    transform: rotate(180deg);
+    font-size: 13.5px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-align: center;
+    padding: 8px 0;
+    border-radius: 6px;
+  }
+  .stream-clinical {
+    color: #2b6cb0;
+    background: #ebf8ff;
+    border-left: 3px solid #2b6cb0;
+  }
+  .stream-derm {
+    color: #276749;
+    background: #f0fff4;
+    border-left: 3px solid #276749;
+  }
+
+  /* Image boxes */
+  .img-box {
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border: 2px solid #bee3f8;
+    background: #ebf8ff;
+  }
+  .img-box.derm-style {
+    border-color: #9ae6b4;
+    background: #f0fff4;
+  }
+  .img-box img {
+    width: 100%;
+    height: 155px;
+    object-fit: cover;
+    display: block;
+  }
+  .img-label {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #2b6cb0;
+    padding: 6px 10px 2px;
+    text-align: center;
+  }
+  .img-label.derm-color { color: #276749; }
+  .img-sublabel {
+    font-size: 11.5px;
+    color: #718096;
+    font-style: italic;
+    padding: 0 10px 8px;
+    text-align: center;
+  }
+
+  /* Encoder boxes */
+  .encoder-box {
+    border-radius: 12px;
+    padding: 18px 14px;
+    text-align: center;
+    border: 2px solid #90cdf4;
+    background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%);
+    position: relative;
+  }
+  .encoder-box.derm-enc {
+    border-color: #90cdf4;
+    background: linear-gradient(135deg, #e6f6ff 0%, #c6e8f8 100%);
+    opacity: 0.82;
+  }
+  .encoder-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #2b6cb0;
+    margin-bottom: 4px;
+  }
+  .encoder-subtitle {
+    font-size: 12px;
+    font-style: italic;
+    color: #4a90d9;
+  }
+  .pretrained-note {
+    font-size: 11px;
+    color: #718096;
+    font-style: italic;
+    margin-top: 6px;
+    border-top: 1px dashed #a0aec0;
+    padding-top: 5px;
+  }
+
+  /* Projection head boxes */
+  .proj-box {
+    border-radius: 12px;
+    padding: 18px 14px;
+    text-align: center;
+    border: 2px solid #7f8db5;
+    background: linear-gradient(135deg, #edf0f9 0%, #d6dbef 100%);
+  }
+  .proj-title {
+    font-size: 15.5px;
+    font-weight: 700;
+    color: #3a4a7a;
+    margin-bottom: 4px;
+  }
+  .proj-subtitle {
+    font-size: 12px;
+    font-style: italic;
+    color: #6b7a9c;
+  }
+
+  /* Alignment arrow column */
+  .align-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 0;
+  }
+  .align-label {
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'Fira Code', monospace;
+    color: #c05621;
+  }
+  .align-arrow {
+    font-size: 26px;
+    color: #c05621;
+  }
+
+  /* Embedding space */
+  .embed-box {
+    border-radius: 14px;
+    padding: 18px 16px 14px;
+    background: #e8ecf5;
+    border: 2px solid #b8c2d8;
+    grid-row: span 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+  }
+  .embed-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #2d3748;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .embed-svg {
+    width: 100%;
+    flex: 1;
+  }
+  .embed-legend {
+    display: flex;
+    gap: 14px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: #4a5568;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot {
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  /* Loss function boxes */
+  .loss-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    grid-row: span 2;
+  }
+
+  .loss-box {
+    border-radius: 11px;
+    padding: 13px 16px;
+    border: 2px solid;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .loss-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .loss-symbol {
+    font-family: 'Fira Code', monospace;
+    font-size: 19px;
+    font-weight: 700;
+    min-width: 38px;
+  }
+  .loss-name {
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .loss-sub {
+    font-size: 12px;
+    font-style: italic;
+    margin-left: 48px;
+    color: inherit;
+    opacity: 0.78;
+  }
+
+  /* individual loss colors */
+  .loss-cls {
+    background: #ebf4ff;
+    border-color: #2b6cb0;
+    color: #1a365d;
+  }
+  .loss-cls .loss-symbol { color: #2b6cb0; }
+
+  .loss-conf {
+    background: #fff5f5;
+    border-color: #c53030;
+    color: #742a2a;
+  }
+  .loss-conf .loss-symbol { color: #c53030; }
+
+  .loss-con {
+    background: #fffaf0;
+    border-color: #c05621;
+    color: #7b341e;
+  }
+  .loss-con .loss-symbol { color: #c05621; }
+
+  .loss-mi {
+    background: #e6fffa;
+    border-color: #2c7a7b;
+    color: #1d4044;
+    position: relative;
+  }
+  .loss-mi .loss-symbol { color: #2c7a7b; }
+  .novel-badge {
+    display: inline-block;
+    background: #2c7a7b;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    margin-left: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  /* Spacer rows for stream labels that span two rows */
+  .span-rows { grid-row: span 2; }
+
+  /* ── ARROWS SVG overlay is done via relative positions in flexbox approach ── */
+
+  /* ── BOTTOM SECTIONS ── */
+  .bottom {
+    margin-top: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .formula-box {
+    background: #edf2f7;
+    border-radius: 12px;
+    padding: 18px 28px;
+    text-align: center;
+    border: 1.5px solid #cbd5e0;
+  }
+  .formula-text {
+    font-family: 'Fira Code', monospace;
+    font-size: 20px;
+    font-weight: 600;
+    color: #2d3748;
+    letter-spacing: 0.5px;
+  }
+  .formula-label {
+    font-size: 13px;
+    color: #718096;
+    margin-top: 6px;
+    font-style: italic;
+  }
+
+  .bottom-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .bottom-card {
+    border-radius: 12px;
+    padding: 16px 20px;
+    border: 2px solid;
+  }
+  .bottom-card.inference {
+    border-color: #a0aec0;
+    background: #f7fafc;
+  }
+  .bottom-card.fairness {
+    border-color: #2c7a7b;
+    background: #e6fffa;
+  }
+  .bottom-card-title {
+    font-size: 15.5px;
+    font-weight: 700;
+    color: #2d3748;
+    margin-bottom: 5px;
+  }
+  .bottom-card.fairness .bottom-card-title { color: #1d4044; }
+  .bottom-card-body {
+    font-size: 13px;
+    color: #4a5568;
+    line-height: 1.5;
+  }
+  .bottom-card.fairness .bottom-card-body { color: #2d5a5a; }
+
+  /* ── CITATION ── */
+  .citation {
+    margin-top: 22px;
+    padding: 14px 20px;
+    background: #fffbeb;
+    border: 1.5px solid #f6e05e;
+    border-radius: 10px;
+    font-size: 12px;
+    color: #744210;
+    line-height: 1.7;
+  }
+  .citation strong { font-weight: 700; }
+  .citation a { color: #b7791f; }
+
+  /* ── ARROWS between sections ── */
+  .row-wrapper {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    position: relative;
+  }
+
+  /* ─── Full layout as flex rows ─── */
+  .arch-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .stream-section {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  /* Grid-based layout for the main diagram */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 36px 200px 28px 200px 28px 175px 28px 215px 28px 270px;
+    grid-template-rows: auto auto auto auto;
+    gap: 0;
+    align-items: center;
+  }
+
+  /* Arrow cells */
+  .arrow-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+  }
+  .arrow-h {
+    width: 28px;
+    height: 3px;
+    background: #4a5568;
+    position: relative;
+  }
+  .arrow-h::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: -5px;
+    border-left: 9px solid #4a5568;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+  }
+
+  /* For the pairs */
+  .pair-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+  }
+
+  /* Horizontal layout with flexbox */
+  .h-layout {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+  }
+
+  .same-lesion-label {
+    position: absolute;
+    left: -50px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10.5px;
+    color: #a0aec0;
+    text-align: right;
+    width: 45px;
+    line-height: 1.3;
+    font-style: italic;
+  }
+
+  .section-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Connector line between clinical and derm streams */
+  .vert-connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 10px;
+  }
+  .vert-line {
+    width: 2px;
+    height: 20px;
+    background: #cbd5e0;
+    border-left: 2px dashed #cbd5e0;
+  }
+  .vert-text {
+    font-size: 10px;
+    color: #a0aec0;
+    font-style: italic;
+    text-align: center;
+    white-space: nowrap;
+    writing-mode: vertical-lr;
+    transform: rotate(180deg);
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>Modality-Invariant Dual-Encoder Architecture</h1>
+    <h2>for Fair Skin Disease Classification</h2>
+  </div>
+
+  <!-- COLUMN LABELS -->
+  <div style="display:flex; gap:10px; margin-bottom:10px; padding: 0 6px; align-items:center;">
+    <div style="width:36px;"></div>
+    <div class="col-label" style="width:200px; text-align:center;">Input Images</div>
+    <div style="width:28px;"></div>
+    <div class="col-label" style="width:200px; text-align:center;">ViT Encoders</div>
+    <div style="width:28px;"></div>
+    <div class="col-label" style="width:175px; text-align:center;">Projection Heads</div>
+    <div style="width:56px;"></div>
+    <div class="col-label" style="width:215px; text-align:center;">Shared Embedding</div>
+    <div style="width:28px;"></div>
+    <div class="col-label" style="width:270px; text-align:center;">Loss Functions</div>
+  </div>
+
+  <!-- MAIN DIAGRAM ROW -->
+  <div style="display:flex; gap:0; align-items:stretch;">
+
+    <!-- STREAM LABELS + IMAGES -->
+    <div style="display:flex; flex-direction:column; gap:16px; align-items:stretch; flex-shrink:0;">
+
+      <!-- Clinical Stream -->
+      <div style="display:flex; align-items:stretch; gap:10px;">
+        <!-- Stream label -->
+        <div class="stream-label stream-clinical" style="min-height:210px;">Clinical Stream</div>
+        <!-- Clinical Image Box -->
+        <div class="img-box" style="width:200px;">
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/e/e8/Melanoma_in_situ_Right_Forehead.jpg"
+            alt="Clinical photo of melanoma in situ (surface view)"
+            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+          />
+          <div style="display:none; width:100%; height:155px; background:#dbeafe; align-items:center; justify-content:center; color:#3b82f6; font-size:13px; font-weight:600; flex-direction:column; gap:6px;">
+            <span style="font-size:28px;">🔬</span>
+            <span>Clinical Photo</span>
+          </div>
+          <div class="img-label">Clinical Photo</div>
+          <div class="img-sublabel">(surface view)</div>
+        </div>
+      </div>
+
+      <!-- Same lesion divider -->
+      <div style="display:flex; align-items:center; gap:8px; padding: 0 0 0 46px;">
+        <div style="flex:1; height:1.5px; border-top:1.5px dashed #cbd5e0;"></div>
+        <span style="font-size:11px; color:#a0aec0; font-style:italic; white-space:nowrap;">Same Lesion</span>
+        <div style="flex:1; height:1.5px; border-top:1.5px dashed #cbd5e0;"></div>
+      </div>
+
+      <!-- Derm Stream -->
+      <div style="display:flex; align-items:stretch; gap:10px;">
+        <div class="stream-label stream-derm" style="min-height:210px;">Derm. Stream</div>
+        <!-- Dermoscopic Image Box -->
+        <div class="img-box derm-style" style="width:200px;">
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/b/b8/Melanoma_in_situ_Right_Forehead_dermatoscope.jpg"
+            alt="Dermoscopic image of melanoma in situ (sub-surface view)"
+            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+          />
+          <div style="display:none; width:100%; height:155px; background:#dcfce7; align-items:center; justify-content:center; color:#16a34a; font-size:13px; font-weight:600; flex-direction:column; gap:6px;">
+            <span style="font-size:28px;">🔭</span>
+            <span>Dermoscopic Image</span>
+          </div>
+          <div class="img-label derm-color">Dermoscopic Image</div>
+          <div class="img-sublabel">(sub-surface view)</div>
+        </div>
+      </div>
+    </div><!-- end stream labels + images -->
+
+    <!-- ARROW 1 -->
+    <div style="display:flex; flex-direction:column; justify-content:space-around; padding: 0 6px; align-items:center; flex-shrink:0; gap:0; padding-top:8px; padding-bottom:32px;">
+      <div style="display:flex; flex-direction:column; align-items:center; flex:1; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#4a5568" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#4a5568"/></svg>
+      </div>
+      <div style="width:2px; flex:1; border-left:2px dashed #cbd5e0; margin: 4px 0; align-self:center;"></div>
+      <div style="display:flex; flex-direction:column; align-items:center; flex:1; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#4a5568" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#4a5568"/></svg>
+      </div>
+    </div>
+
+    <!-- ENCODERS -->
+    <div style="display:flex; flex-direction:column; gap:0; align-items:stretch; flex-shrink:0; width:200px; position:relative;">
+      <div class="encoder-box" style="flex:1; min-height:210px; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div class="encoder-title">ViT Encoder</div>
+        <div class="encoder-subtitle">(Clinical)</div>
+      </div>
+      <div style="text-align:center; padding:4px 0; font-size:10.5px; color:#a0aec0; font-style:italic; border-left:2px dashed #cbd5e0; border-right:2px dashed #cbd5e0;">
+        Pre-trained ImageNet
+      </div>
+      <div class="encoder-box derm-enc" style="flex:1; min-height:210px; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div class="encoder-title">ViT Encoder</div>
+        <div class="encoder-subtitle">(Dermoscopic)</div>
+      </div>
+    </div>
+
+    <!-- ARROW 2 -->
+    <div style="display:flex; flex-direction:column; justify-content:space-around; padding: 0 4px; align-items:center; flex-shrink:0; padding-top:8px; padding-bottom:32px;">
+      <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#4a5568" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#4a5568"/></svg>
+      </div>
+      <div style="width:2px; flex:0.4;"></div>
+      <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#4a5568" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#4a5568"/></svg>
+      </div>
+    </div>
+
+    <!-- PROJECTION HEADS + L_MI -->
+    <div style="display:flex; flex-direction:column; gap:0; flex-shrink:0; width:175px; position:relative;">
+      <div class="proj-box" style="flex:1; min-height:210px; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div class="proj-title">Projection Head</div>
+        <div class="proj-subtitle">(shared weights)</div>
+      </div>
+      <!-- L_MI align indicator -->
+      <div style="display:flex; flex-direction:column; align-items:center; padding:5px 0; background:#fff8f0; border: 1px solid #fed7aa; border-radius:6px; margin: 2px 0;">
+        <span style="font-family:'Fira Code',monospace; font-size:15px; font-weight:700; color:#c05621;">ℒ<sub>MI</sub> align ↕</span>
+      </div>
+      <div class="proj-box" style="flex:1; min-height:210px; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div class="proj-title">Projection Head</div>
+        <div class="proj-subtitle">(shared weights)</div>
+      </div>
+    </div>
+
+    <!-- ARROW 3 (two arrows) -->
+    <div style="display:flex; flex-direction:column; justify-content:space-around; padding: 0 4px; align-items:center; flex-shrink:0; padding-top:8px; padding-bottom:32px;">
+      <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#4a5568" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#4a5568"/></svg>
+      </div>
+      <div style="flex:0.4;"></div>
+      <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#4a5568" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#4a5568"/></svg>
+      </div>
+    </div>
+
+    <!-- SHARED EMBEDDING SPACE -->
+    <div class="embed-box" style="width:215px; flex-shrink:0;">
+      <div class="embed-title">Shared Embedding Space</div>
+      <svg viewBox="0 0 180 160" class="embed-svg" xmlns="http://www.w3.org/2000/svg">
+        <!-- Clinical dots (lighter blue) -->
+        <circle cx="55" cy="45" r="7" fill="#63b3ed" opacity="0.9"/>
+        <circle cx="78" cy="58" r="6" fill="#63b3ed" opacity="0.85"/>
+        <circle cx="44" cy="70" r="8" fill="#63b3ed" opacity="0.9"/>
+        <circle cx="65" cy="82" r="6" fill="#63b3ed" opacity="0.8"/>
+        <circle cx="88" cy="44" r="7" fill="#63b3ed" opacity="0.85"/>
+        <circle cx="40" cy="52" r="5" fill="#63b3ed" opacity="0.75"/>
+        <circle cx="72" cy="70" r="5" fill="#63b3ed" opacity="0.8"/>
+        <circle cx="52" cy="92" r="6" fill="#63b3ed" opacity="0.7"/>
+        <!-- Dermoscopic dots (darker blue) -->
+        <circle cx="100" cy="95" r="7" fill="#2b6cb0" opacity="0.9"/>
+        <circle cx="118" cy="80" r="7" fill="#2b6cb0" opacity="0.85"/>
+        <circle cx="135" cy="100" r="8" fill="#2b6cb0" opacity="0.9"/>
+        <circle cx="110" cy="112" r="6" fill="#2b6cb0" opacity="0.8"/>
+        <circle cx="125" cy="68" r="7" fill="#2b6cb0" opacity="0.85"/>
+        <circle cx="145" cy="85" r="5" fill="#2b6cb0" opacity="0.75"/>
+        <circle cx="105" cy="128" r="6" fill="#2b6cb0" opacity="0.8"/>
+        <circle cx="138" cy="118" r="5" fill="#2b6cb0" opacity="0.7"/>
+        <circle cx="90" cy="108" r="6" fill="#2b6cb0" opacity="0.75"/>
+      </svg>
+      <div class="embed-legend">
+        <div class="legend-item"><span class="legend-dot" style="background:#63b3ed;"></span><span style="font-size:12px;">Clinical</span></div>
+        <div class="legend-item"><span class="legend-dot" style="background:#2b6cb0;"></span><span style="font-size:12px;">Dermoscopic</span></div>
+      </div>
+    </div>
+
+    <!-- ARROW 4 (four arrows to losses) -->
+    <div style="display:flex; flex-direction:column; justify-content:space-around; padding: 0 4px; flex-shrink:0; padding-top:2px; padding-bottom:2px; gap:0;">
+      <!-- Arrow to cls -->
+      <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#2b6cb0" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#2b6cb0"/></svg>
+      </div>
+      <!-- Arrow to conf -->
+      <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#c53030" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#c53030"/></svg>
+      </div>
+      <!-- Arrow to con -->
+      <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#c05621" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#c05621"/></svg>
+      </div>
+      <!-- Arrow to MI -->
+      <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+        <svg width="28" height="18"><line x1="0" y1="9" x2="20" y2="9" stroke="#2c7a7b" stroke-width="2.5"/><polygon points="20,4 28,9 20,14" fill="#2c7a7b"/></svg>
+      </div>
+    </div>
+
+    <!-- LOSS FUNCTIONS -->
+    <div class="loss-col" style="width:270px; flex-shrink:0; justify-content:space-around;">
+      <!-- Classification Loss -->
+      <div class="loss-box loss-cls">
+        <div class="loss-header">
+          <span class="loss-symbol">ℒ<sub style="font-size:12px;">cls</sub></span>
+          <span class="loss-name">Classification Loss</span>
+        </div>
+        <div class="loss-sub">(cross-entropy)</div>
+      </div>
+      <!-- Confusion Loss -->
+      <div class="loss-box loss-conf">
+        <div class="loss-header">
+          <span class="loss-symbol">ℒ<sub style="font-size:12px;">conf</sub></span>
+          <span class="loss-name">Confusion Loss</span>
+        </div>
+        <div class="loss-sub">(adversarial skin-tone)</div>
+      </div>
+      <!-- Contrastive Loss -->
+      <div class="loss-box loss-con">
+        <div class="loss-header">
+          <span class="loss-symbol">ℒ<sub style="font-size:12px;">con</sub></span>
+          <span class="loss-name">Contrastive Loss</span>
+        </div>
+        <div class="loss-sub">(supervised, disease)</div>
+      </div>
+      <!-- Modality Invariance -->
+      <div class="loss-box loss-mi">
+        <div class="loss-header">
+          <span class="loss-symbol">ℒ<sub style="font-size:12px;">MI</sub></span>
+          <span class="loss-name">Modality Invariance <span class="novel-badge">★ NOVEL</span></span>
+        </div>
+        <div class="loss-sub">(novel — paired only)</div>
+      </div>
+    </div>
+
+  </div><!-- end main diagram row -->
+
+  <!-- BOTTOM SECTIONS -->
+  <div class="bottom">
+    <!-- Formula -->
+    <div class="formula-box">
+      <div class="formula-text">
+        ℒ<sub>total</sub> = λ₁ℒ<sub>cls</sub> + λ₂ℒ<sub>conf</sub> + λ₃ℒ<sub>con</sub> + λ₄ℒ<sub>MI</sub>
+      </div>
+      <div class="formula-label">Multi-Objective Training Loss</div>
+    </div>
+
+    <!-- Two bottom cards -->
+    <div class="bottom-cards">
+      <div class="bottom-card inference">
+        <div class="bottom-card-title">Inference — Modality-Agnostic</div>
+        <div class="bottom-card-body">At test time: <strong>Clinical-only</strong> &nbsp;OR&nbsp; <strong>Dermoscopic-only</strong> &nbsp;OR&nbsp; <strong>Both modalities</strong></div>
+      </div>
+      <div class="bottom-card fairness">
+        <div class="bottom-card-title">Fairness Guarantee</div>
+        <div class="bottom-card-body">ℒ<sub>MI</sub> forces <strong>skin-tone-invariant</strong>, disease-only features to be learned in the shared embedding space.</div>
+      </div>
+    </div>
+
+    <!-- Citation box -->
+    <!-- <div class="citation">
+      <strong>Image Sources &amp; Citations:</strong><br>
+      <strong>Clinical Photo</strong> — "Melanoma in situ, Right Forehead" (surface/clinical view). Wikimedia Commons, public domain.
+      URL: <a href="https://upload.wikimedia.org/wikipedia/commons/e/e8/Melanoma_in_situ_Right_Forehead.jpg" target="_blank">commons.wikimedia.org · Melanoma_in_situ_Right_Forehead.jpg</a><br>
+      <strong>Dermoscopic Image</strong> — "Melanoma in situ, Right Forehead — Dermatoscope" (sub-surface dermoscopic view of the same lesion). Wikimedia Commons, public domain.
+      URL: <a href="https://upload.wikimedia.org/wikipedia/commons/b/b8/Melanoma_in_situ_Right_Forehead_dermatoscope.jpg" target="_blank">commons.wikimedia.org · Melanoma_in_situ_Right_Forehead_dermatoscope.jpg</a><br>
+      <em>Both images are from the same lesion, illustrating the paired clinical–dermoscopic data format used in this architecture. Source category: <a href="https://commons.wikimedia.org/wiki/Category:Melanoma" target="_blank">Wikimedia Commons — Category: Melanoma</a>.</em>
+    </div> -->
+  </div>
+
+</div>
+</body>
+</html>
