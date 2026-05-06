@@ -47,6 +47,16 @@ else
     echo "[INFO] No HF token found at $HF_TOKEN_FILE — downloads may be slow."
 fi
 
+# ── Kaggle credentials setup ──────────────────────────────────────────────────
+if [ -f "$WORK_DIR/kaggle.json" ]; then
+    # Use the kaggle.json file included in the project directory
+    export KAGGLE_CONFIG_DIR="$WORK_DIR"
+    chmod 600 "$WORK_DIR/kaggle.json"
+    echo "[INFO] Kaggle token loaded from $WORK_DIR/kaggle.json."
+else
+    echo "[INFO] No kaggle.json found in $WORK_DIR. Relying on ~/.kaggle/ or env vars."
+fi
+
 # ── Create required directories ───────────────────────────────────────────────
 mkdir -p "$WORK_DIR/logs"
 mkdir -p "$WORK_ROOT/csvs"
@@ -80,7 +90,8 @@ pip install --quiet \
     shap \
     captum \
     nbconvert \
-    scikit-image
+    scikit-image \
+    kaggle
 
 # ── GPU diagnostics ───────────────────────────────────────────────────────────
 echo ""
@@ -100,6 +111,12 @@ echo "────────────────────────�
 echo ""
 
 # ── Dataset path validation ───────────────────────────────────────────────────
+# Dataset Links:
+# - https://www.kaggle.com/datasets/asosenge/hibaskinlesionsdataset-main
+# - https://www.kaggle.com/datasets/asosenge/fitzpatrick17k
+# - https://www.kaggle.com/datasets/asosenge/ham10000
+# - https://www.kaggle.com/datasets/shubhamgoel27/dermnet
+
 echo "[CHECK] Validating dataset roots..."
 for DSET in \
     "asosenge/hibaskinlesionsdataset-main" \
@@ -110,7 +127,14 @@ for DSET in \
     if [ -d "$FULL_PATH" ]; then
         echo "  [OK]      $FULL_PATH"
     else
-        echo "  [MISSING] $FULL_PATH  ← update DATA_ROOT or stage this dataset"
+        echo "  [MISSING] $FULL_PATH  ← Attempting to download via Kaggle CLI..."
+        mkdir -p "$FULL_PATH"
+        if kaggle datasets download -d "$DSET" -p "$FULL_PATH" --unzip; then
+            echo "  [DOWNLOADED] $FULL_PATH"
+        else
+            echo "  [ERROR] Failed to download $DSET. Please check your Kaggle credentials (~/.kaggle/kaggle.json)."
+            exit 1
+        fi
     fi
 done
 echo ""
