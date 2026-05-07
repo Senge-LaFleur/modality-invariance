@@ -2,7 +2,7 @@
 
 A PyTorch-based framework for training skin disease classifiers with modality invariance, incorporating clinical + dermoscopic data, skin-type fairness, and explainability (SHAP).
 
-## Proposed Project Structure
+## Project Structure
 
 ```
 modality-invariance/
