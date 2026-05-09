@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modality-Invariant Dual-Encoder Pipeline</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #ffffff;
+    font-family: 'Nunito', sans-serif;
+    padding: 30px 20px 40px;
+    min-width: 1420px;
+  }
+  h1 { text-align:center; font-size:23.5px; font-weight:900; color:#1a1a2e; letter-spacing:-0.3px; margin-bottom:4px; }
+  h2.sub { text-align:center; font-size:14.5px; font-weight:600; color:#5a6a8a; margin-bottom:22px; font-style:italic; }
+
+  .pipeline { display:flex; align-items:stretch; gap:0; width:100%; }
+  .col { display:flex; flex-direction:column; align-items:center; position:relative; }
+  .col-input   { width:175px; flex-shrink:0; gap:10px; justify-content:center; }
+  .col-arrow   { width:36px; flex-shrink:0; justify-content:center; }
+  .col-encoder { width:170px; flex-shrink:0; gap:10px; justify-content:center; }
+  .col-proj    { width:155px; flex-shrink:0; gap:10px; justify-content:center; }
+  .col-embed   { width:200px; flex-shrink:0; justify-content:center; }
+  .col-loss    { width:195px; flex-shrink:0; gap:8px; justify-content:flex-start; }
+  .col-classes { width:155px; flex-shrink:0; justify-content:flex-start; }
+  .arr-svg { width:36px; }
+
+  .stream-badge {
+    writing-mode:vertical-rl; font-size:11.5px; font-weight:800; letter-spacing:1px;
+    padding:8px 4px; border-radius:6px; text-transform:uppercase; position:absolute;
+    left:-28px; top:50%; transform:translateY(-50%) rotate(180deg);
+  }
+  .badge-clin { background:#dbeafe; color:#1d4ed8; }
+  .badge-derm { background:#dcfce7; color:#15803d; }
+
+  .input-card { border-radius:14px; overflow:hidden; border:2.5px solid; position:relative; width:155px; box-shadow:3px 4px 0 rgba(0,0,0,0.08); }
+  .input-card-clin { border-color:#3b82f6; background:#eff6ff; }
+  .input-card-derm { border-color:#22c55e; background:#f0fdf4; }
+  .input-img-area { width:100%; height:120px; overflow:hidden; position:relative; }
+  .input-img-area img { width:100%; height:100%; object-fit:cover; display:block; }
+  .img-label { padding:5px 8px; text-align:center; font-size:12.5px; font-weight:700; color:#334155; line-height:1.3; }
+  .img-sublabel { font-size:11.5px; font-weight:400; color:#64748b; display:block; }
+
+  .encoder-block { border-radius:14px; border:2.5px solid; width:155px; padding:10px 10px 12px; text-align:center; position:relative; box-shadow:3px 4px 0 rgba(0,0,0,0.08); }
+  .enc-clin { border-color:#3b82f6; background:#dbeafe; }
+  .enc-derm { border-color:#22c55e; background:#dcfce7; }
+  .enc-icon { width:44px; height:44px; margin:0 auto 6px; border-radius:10px; display:flex; align-items:center; justify-content:center; }
+  .enc-icon-clin { background:#bfdbfe; }
+  .enc-icon-derm { background:#bbf7d0; }
+  .enc-title { font-size:13.5px; font-weight:800; color:#1e3a5f; line-height:1.2; }
+  .enc-sub   { font-size:11px; font-weight:600; color:#475569; margin-top:2px; }
+  .enc-badge { font-size:10px; font-weight:700; background:#fff; border-radius:20px; padding:2px 6px; margin-top:5px; display:inline-block; color:#334155; border:1px solid #cbd5e1; }
+
+  .proj-block { border-radius:14px; border:2.5px dashed #7c3aed; background:#ede9fe; width:138px; padding:8px 10px 10px; text-align:center; box-shadow:3px 4px 0 rgba(0,0,0,0.07); }
+  .proj-title { font-size:12.5px; font-weight:800; color:#4c1d95; }
+  .proj-sub   { font-size:10.5px; font-weight:600; color:#6d28d9; margin-top:2px; }
+  .proj-arch  { font-size:10px; color:#7c3aed; margin-top:4px; font-family:'Space Mono', monospace; }
+  .mi-align-badge { background:#fef9c3; border:2px solid #eab308; border-radius:20px; padding:4px 10px; font-size:11.5px; font-weight:800; color:#713f12; font-family:'Space Mono', monospace; box-shadow:2px 2px 0 rgba(234,179,8,0.25); text-align:center; }
+
+  /* ── EMBED BLOCK ── */
+  .embed-block { border-radius:16px; border:2.5px solid #8b5cf6; background:#f5f3ff; width:190px; padding:10px 8px; text-align:center; box-shadow:3px 4px 0 rgba(0,0,0,0.08); }
+  .embed-title { font-size:12.5px; font-weight:800; color:#4c1d95; margin-bottom:4px; }
+  .embed-svg   { width:100%; }
+
+  /* legend strips */
+  .embed-legend-row { display:flex; justify-content:center; gap:6px; flex-wrap:wrap; margin-top:4px; }
+  .leg-item { display:flex; align-items:center; gap:3px; font-size:9.5px; font-weight:700; color:#374151; }
+  .leg-shape { width:11px; height:11px; flex-shrink:0; }
+
+  /* ── LOSS ── */
+  .loss-block { border-radius:12px; border:2.5px solid; width:182px; padding:7px 10px; display:flex; align-items:flex-start; gap:7px; box-shadow:2px 3px 0 rgba(0,0,0,0.07); }
+  .loss-icon-wrap { width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+  .loss-text { flex:1; }
+  .loss-name  { font-size:12.5px; font-weight:800; color:#1a1a2e; line-height:1.2; }
+  .loss-type  { font-size:10.5px; font-weight:600; margin-top:1px; }
+  .loss-desc  { font-size:10px; font-weight:400; color:#475569; margin-top:2px; line-height:1.3; }
+  .loss-formula { font-family:'Space Mono', monospace; font-size:10.5px; font-weight:700; margin-top:2px; }
+  .loss-cls  { border-color:#3b82f6; background:#eff6ff; }
+  .loss-conf { border-color:#ef4444; background:#fef2f2; }
+  .loss-con  { border-color:#f97316; background:#fff7ed; }
+  .loss-mi   { border-color:#14b8a6; background:#f0fdfa; }
+  .loss-cls  .loss-icon-wrap { background:#dbeafe; }
+  .loss-conf .loss-icon-wrap { background:#fee2e2; }
+  .loss-con  .loss-icon-wrap { background:#ffedd5; }
+  .loss-mi   .loss-icon-wrap { background:#ccfbf1; }
+  .loss-cls  .loss-type { color:#1d4ed8; }
+  .loss-conf .loss-type { color:#dc2626; }
+  .loss-con  .loss-type { color:#c2410c; }
+  .loss-mi   .loss-type { color:#0f766e; }
+  .loss-cls  .loss-formula { color:#1d4ed8; }
+  .loss-conf .loss-formula { color:#dc2626; }
+  .loss-con  .loss-formula { color:#c2410c; }
+  .loss-mi   .loss-formula { color:#0f766e; }
+  .novel-badge { display:inline-block; background:#14b8a6; color:#fff; font-size:9px; font-weight:800; border-radius:10px; padding:1px 5px; vertical-align:middle; margin-left:3px; letter-spacing:0.5px; }
+
+  /* ── CLASSES ── */
+  .classes-block { border-radius:14px; border:2.5px solid #6366f1; background:#eef2ff; width:145px; padding:10px 8px; box-shadow:3px 4px 0 rgba(0,0,0,0.07); }
+  .classes-title { font-size:12.5px; font-weight:800; color:#3730a3; text-align:center; margin-bottom:7px; }
+  .class-chip { display:flex; align-items:center; gap:5px; padding:3px 6px; border-radius:7px; margin-bottom:3px; font-size:11px; font-weight:700; color:#1e293b; }
+  .class-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .class-id  { font-family:'Space Mono', monospace; font-size:9.5px; color:#64748b; width:12px; }
+  .fst-title { font-size:12.5px; font-weight:800; color:#374151; text-align:center; margin-bottom:8px; }
+  .fst-strip { display:flex; gap:4px; justify-content:center; flex-wrap:wrap; }
+  .fst-chip  { border-radius:8px; padding:5px 6px; font-size:10.5px; font-weight:800; text-align:center; border:2px solid rgba(0,0,0,0.1); line-height:1.3; min-width:36px; }
+
+  /* ── TOTAL LOSS ── */
+  .total-loss-row { margin-top:22px; background:#ffffff; border-radius:14px; padding:12px 24px; text-align:center; box-shadow:4px 5px 0 rgba(0,0,0,0.15); }
+  .total-loss-row .formula { font-family:'Space Mono', monospace; font-size:16.5px; font-weight:700; letter-spacing:0.5px; }
+  .total-loss-row .formula span { display:inline-block; margin:0 2px; }
+  .cls-c  { color:#60a5fa; }
+  .conf-c { color:#f87171; }
+  .con-c  { color:#fb923c; }
+  .mi-c   { color:#2dd4bf; }
+  .total-loss-row .sub-formula { font-size:11.5px; color:#758091; margin-top:4px; font-family:'Space Mono', monospace; }
+
+  /* ── BOTTOM ── */
+  .bottom-row { display:flex; gap:14px; margin-top:18px; }
+  .info-panel { flex:1; border-radius:14px; border:2px solid; padding:12px 16px; box-shadow:2px 3px 0 rgba(0,0,0,0.06); }
+  .info-panel-title { font-size:13.5px; font-weight:800; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+  .info-panel ul { list-style:none; font-size:12px; font-weight:600; color:#374151; line-height:1.7; }
+  .info-panel ul li::before { content:"→ "; color:#94a3b8; font-weight:700; }
+
+  /* step circles */
+  .step-circle { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:900; color:#fff; font-family:'Space Mono', monospace; margin-bottom:3px; }
+  .step-text { text-align:center; max-width:80px; color:#374155; line-height:1.2; font-size:10.5px; }
+  .step-connector { height:2px; background:#cbd5e1; flex:1; margin-bottom:13px; min-width:10px; }
+  .dataset-tag { display:inline-block; background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:5px; font-size:9.5px; font-weight:700; color:#475569; padding:1px 5px; margin:1px 1px 0; font-family:'Space Mono', monospace; }
+</style>
+</head>
+<body>
+
+<h1 style="margin-bottom: 30px;">Modality-Invariant Dual-Encoder Architecture</h1>
+
+<!-- MAIN PIPELINE -->
+<div class="pipeline" style="align-items:center; justify-content:center;">
+
+  <!-- ═══ COL 1 : INPUT IMAGES ═══ -->
+  <div class="col col-input" style="gap:12px; position:relative;">
+    <span class="stream-badge badge-clin" style="top:18%;">Clinical</span>
+    <span class="stream-badge badge-derm" style="top:74%;">Dermoscopic</span>
+
+    <div class="input-card input-card-clin">
+      <div class="input-img-area">
+        <img src="./images/clin.png" alt="Clinical Photo">
+      </div>
+      <div class="img-label">Clinical Photo<span class="img-sublabel">Surface / macroscopic view</span></div>
+    </div>
+
+    <div style="text-align:center; font-size:10.5px; font-weight:700; color:#64748b; font-style:italic; display:flex; align-items:center; gap:6px;">
+      <div style="height:1px; width:30px; border-top:1.5px dashed #94a3b8;"></div>
+      Same Lesion
+      <div style="height:1px; width:30px; border-top:1.5px dashed #94a3b8;"></div>
+    </div>
+
+    <div class="input-card input-card-derm">
+      <div class="input-img-area">
+        <img src="./images/derm.png" alt="Dermoscopic Image">
+      </div>
+      <div class="img-label">Dermoscopic Image<span class="img-sublabel">Sub-surface / dermatoscope view</span></div>
+    </div>
+  </div>
+
+  <!-- ARROW 1 -->
+  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+    <svg viewBox="0 0 36 20" class="arr-svg"><defs><marker id="ah1" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah1)"/></svg>
+    <svg viewBox="0 0 36 20" class="arr-svg" style="margin-top:100px;"><defs><marker id="ah1b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah1b)"/></svg>
+  </div>
+
+  <!-- ═══ COL 2 : ENCODERS ═══ -->
+  <div class="col col-encoder" style="gap:14px; justify-content:center; padding-bottom:40px;">
+    <div class="encoder-block enc-clin">
+      <div class="enc-icon enc-icon-clin">
+        <svg viewBox="0 0 40 40" width="32" height="32"><rect x="4" y="4" width="32" height="32" rx="5" fill="#3b82f6" opacity="0.15"/><g fill="none" stroke="#1d4ed8" stroke-width="1.5"><rect x="7" y="7" width="8" height="8" rx="2"/><rect x="17" y="7" width="8" height="8" rx="2"/><rect x="27" y="7" width="8" height="8" rx="2"/><rect x="7" y="17" width="8" height="8" rx="2"/><rect x="17" y="17" width="8" height="8" rx="2"/><rect x="27" y="17" width="8" height="8" rx="2"/><rect x="7" y="27" width="8" height="8" rx="2"/><rect x="17" y="27" width="8" height="8" rx="2"/><rect x="27" y="27" width="8" height="8" rx="2"/></g></svg>
+      </div>
+      <div class="enc-title">ViT Encoder</div>
+      <div class="enc-sub">Clinical Stream</div>
+      <div class="enc-badge">vit_small_patch16_224</div>
+      <div style="font-size:9.5px;color:#64748b;margin-top:3px;">Pre-trained ImageNet</div>
+    </div>
+    <div style="font-size:10px;color:#475569;font-style:italic;font-weight:600;text-align:center;">— Pre-trained ImageNet —</div>
+    <div class="encoder-block enc-derm">
+      <div class="enc-icon enc-icon-derm">
+        <svg viewBox="0 0 40 40" width="32" height="32"><rect x="4" y="4" width="32" height="32" rx="5" fill="#22c55e" opacity="0.15"/><g fill="none" stroke="#15803d" stroke-width="1.5"><rect x="7" y="7" width="8" height="8" rx="2"/><rect x="17" y="7" width="8" height="8" rx="2"/><rect x="27" y="7" width="8" height="8" rx="2"/><rect x="7" y="17" width="8" height="8" rx="2"/><rect x="17" y="17" width="8" height="8" rx="2"/><rect x="27" y="17" width="8" height="8" rx="2"/><rect x="7" y="27" width="8" height="8" rx="2"/><rect x="17" y="27" width="8" height="8" rx="2"/><rect x="27" y="27" width="8" height="8" rx="2"/></g></svg>
+      </div>
+      <div class="enc-title">ViT Encoder</div>
+      <div class="enc-sub">Dermoscopic Stream</div>
+      <div class="enc-badge">vit_small_patch16_224</div>
+      <div style="font-size:9.5px;color:#64748b;margin-top:3px;">Pre-trained ImageNet</div>
+    </div>
+  </div>
+
+  <!-- ARROW 2 -->
+  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+    <svg viewBox="0 0 36 20" class="arr-svg"><defs><marker id="ah2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah2)"/></svg>
+    <svg viewBox="0 0 36 20" class="arr-svg" style="margin-top:100px;"><defs><marker id="ah2b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah2b)"/></svg>
+  </div>
+
+  <!-- ═══ COL 3 : PROJECTION HEADS ═══ -->
+  <div class="col col-proj" style="gap:8px; justify-content:center; padding-bottom:40px; position:relative;">
+    <div class="proj-block" style="align-items: center; justify-content: center;">
+      <svg width="32" height="32" viewBox="0 0 32 32" style="margin:0 auto 4px;"><circle cx="16" cy="16" r="14" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5"/><path d="M8,16 L24,16 M16,8 L24,16 L16,24" fill="none" stroke="#5b21b6" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="16" r="3" fill="#7c3aed"/><circle cx="24" cy="16" r="3" fill="#7c3aed"/></svg>
+      <div class="proj-title">Projection Head</div>
+      <div class="proj-sub">Clinical</div>
+      <div class="proj-arch">Linear→BN→GELU→Linear<br/>→L2 Norm</div>
+      <div style="font-size:9.5px;color:#6d28d9;margin-top:3px;">512-d → 512-d embed</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+      <svg viewBox="0 0 10 24" width="10" height="24"><line x1="5" y1="0" x2="5" y2="24" stroke="#eab308" stroke-width="2" stroke-dasharray="3,2"/></svg>
+      <div class="mi-align-badge">ℒ<sub>MI</sub> align ↕</div>
+      <svg viewBox="0 0 10 24" width="10" height="24"><line x1="5" y1="0" x2="5" y2="24" stroke="#eab308" stroke-width="2" stroke-dasharray="3,2"/></svg>
+    </div>
+    <div class="proj-block" style="align-items: center; justify-content: center;">
+      <svg width="32" height="32" viewBox="0 0 32 32" style="margin:0 auto 4px;"><circle cx="16" cy="16" r="14" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5"/><path d="M8,16 L24,16 M16,8 L24,16 L16,24" fill="none" stroke="#5b21b6" stroke-width="2" stroke-linejoin="round"/><circle cx="8" cy="16" r="3" fill="#7c3aed"/><circle cx="24" cy="16" r="3" fill="#7c3aed"/></svg>
+      <div class="proj-title">Projection Head</div>
+      <div class="proj-sub">Dermoscopic</div>
+      <div class="proj-arch">Linear→BN→GELU→Linear<br/>→L2 Norm</div>
+      <div style="font-size:9.5px;color:#6d28d9;margin-top:3px;">512-d → 512-d embed</div>
+    </div>
+  </div>
+
+  <!-- ARROW 3 -->
+  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+    <svg viewBox="0 0 36 20" class="arr-svg"><defs><marker id="ah3" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah3)"/></svg>
+    <svg viewBox="0 0 36 20" class="arr-svg" style="margin-top:100px;"><defs><marker id="ah3b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah3b)"/></svg>
+  </div>
+
+  <!-- ═══ COL 4 : EMBEDDING SPACE ═══ -->
+  <div class="col col-embed" style="justify-content:center; padding-bottom:40px;">
+    <div class="embed-block">
+      <div class="embed-title">Shared Embedding Space</div>
+      <svg viewBox="0 0 190 155" class="embed-svg">
+        <defs>
+          <!-- soft cluster halos per class -->
+          <radialGradient id="h0" cx="50%" cy="50%"><stop offset="0%" stop-color="#db2777" stop-opacity="0.18"/><stop offset="100%" stop-color="#db2777" stop-opacity="0"/></radialGradient>
+          <radialGradient id="h1" cx="50%" cy="50%"><stop offset="0%" stop-color="#d97706" stop-opacity="0.18"/><stop offset="100%" stop-color="#d97706" stop-opacity="0"/></radialGradient>
+          <radialGradient id="h2" cx="50%" cy="50%"><stop offset="0%" stop-color="#ef4444" stop-opacity="0.18"/><stop offset="100%" stop-color="#ef4444" stop-opacity="0"/></radialGradient>
+          <radialGradient id="h3" cx="50%" cy="50%"><stop offset="0%" stop-color="#f97316" stop-opacity="0.18"/><stop offset="100%" stop-color="#f97316" stop-opacity="0"/></radialGradient>
+          <radialGradient id="h4" cx="50%" cy="50%"><stop offset="0%" stop-color="#22c55e" stop-opacity="0.18"/><stop offset="100%" stop-color="#22c55e" stop-opacity="0"/></radialGradient>
+          <radialGradient id="h5" cx="50%" cy="50%"><stop offset="0%" stop-color="#3b82f6" stop-opacity="0.18"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/></radialGradient>
+          <radialGradient id="h6" cx="50%" cy="50%"><stop offset="0%" stop-color="#64748b" stop-opacity="0.18"/><stop offset="100%" stop-color="#64748b" stop-opacity="0"/></radialGradient>
+          <!-- arrow marker -->
+          <marker id="emb_arr" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+            <path d="M0,0 L5,2.5 L0,5Z" fill="#6366f1" opacity="0.7"/>
+          </marker>
+          <marker id="emb_arr2" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+            <path d="M0,0 L5,2.5 L0,5Z" fill="#6366f1" opacity="0.55"/>
+          </marker>
+        </defs>
+
+        <!-- cluster halos -->
+        <ellipse cx="38"  cy="38"  rx="22" ry="18" fill="url(#h0)"/>
+        <ellipse cx="95"  cy="22"  rx="20" ry="16" fill="url(#h1)"/>
+        <ellipse cx="155" cy="38"  rx="22" ry="18" fill="url(#h2)"/>
+        <ellipse cx="20"  cy="100" rx="18" ry="16" fill="url(#h3)"/>
+        <ellipse cx="95"  cy="118" rx="22" ry="16" fill="url(#h4)"/>
+        <ellipse cx="165" cy="105" rx="18" ry="16" fill="url(#h5)"/>
+        <ellipse cx="155" cy="118" rx="16" ry="14" fill="url(#h6)"/>
+
+        <!-- 
+          ENCODING KEY:
+          Shape  = disease class
+            circle   = Melanoma (0)        pink/magenta
+            triangle = Nevus (1)           amber
+            square   = BCC (2)             red
+            diamond  = Actinic Ker. (3)    orange
+            pentagon = Seborrh. Ker. (4)   green
+            hexagon  = Squam. Cell C. (5)  blue
+            cross    = Other (6)           slate
+          Fill color = FST (skin tone)
+            FST I   #FFDFC4   FST II  #F0C08A   FST III #C68642
+            FST IV  #8D5524   FST V   #4A2511   FST VI  #1F0D04
+          Stroke     = modality (clinical = solid, derm = dashed)
+        -->
+
+        <!-- ══ CLUSTER 0: MELANOMA (circles) ══ -->
+        <!-- clinical FST I -->
+        <circle cx="32" cy="30" r="6" fill="#FFDFC4" stroke="#1e293b" stroke-width="2"/>
+        <!-- clinical FST III -->
+        <circle cx="44" cy="26" r="6" fill="#C68642" stroke="#1e293b" stroke-width="2"/>
+        <!-- derm FST V -->
+        <circle cx="30" cy="44" r="6" fill="#4A2511" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- derm FST I -->
+        <circle cx="44" cy="46" r="6" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- derm FST VI -->
+        <circle cx="38" cy="34" r="5.5" fill="#1F0D04" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- alignment arrows within cluster 0 -->
+        <line x1="36" y1="34" x2="42" y2="30" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+        <line x1="34" y1="44" x2="34" y2="36" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+
+        <!-- ══ CLUSTER 1: NEVUS (triangles) ══ -->
+        <!-- clinical FST II -->
+        <polygon points="95,10 103,24 87,24" fill="#F0C08A" stroke="#1e293b" stroke-width="2"/>
+        <!-- clinical FST IV -->
+        <polygon points="85,18 93,32 77,32" fill="#8D5524" stroke="#1e293b" stroke-width="2"/>
+        <!-- derm FST II -->
+        <polygon points="105,20 113,34 97,34" fill="#F0C08A" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- derm FST VI -->
+        <polygon points="95,25 103,39 87,39" fill="#1F0D04" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- alignment arrows cluster 1 -->
+        <line x1="95" y1="25" x2="95" y2="18" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+        <line x1="100" y1="30" x2="94" y2="22" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+
+        <!-- ══ CLUSTER 2: BCC (squares) ══ -->
+        <!-- clinical FST I -->
+        <rect x="148" y="26" width="12" height="12" fill="#FFDFC4" stroke="#1e293b" stroke-width="2"/>
+        <!-- clinical FST III -->
+        <rect x="158" y="32" width="12" height="12" fill="#C68642" stroke="#1e293b" stroke-width="2"/>
+        <!-- derm FST II -->
+        <rect x="145" y="37" width="12" height="12" fill="#F0C08A" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- derm FST IV -->
+        <rect x="158" y="44" width="12" height="12" fill="#8D5524" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- alignment arrows cluster 2 -->
+        <line x1="152" y1="42" x2="154" y2="34" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+        <line x1="162" y1="48" x2="162" y2="38" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+
+        <!-- ══ CLUSTER 3: ACTINIC KERATOSIS (diamonds) ══ -->
+        <!-- clinical FST I -->
+        <polygon points="20,90 27,100 20,110 13,100" fill="#FFDFC4" stroke="#1e293b" stroke-width="2"/>
+        <!-- clinical FST V -->
+        <polygon points="28,96 35,106 28,116 21,106" fill="#4A2511" stroke="#1e293b" stroke-width="2"/>
+        <!-- derm FST III -->
+        <polygon points="14,100 21,110 14,120 7,110" fill="#C68642" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- derm FST VI -->
+        <polygon points="22,104 29,114 22,124 15,114" fill="#1F0D04" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- alignment arrows cluster 3 -->
+        <line x1="20" y1="108" x2="20" y2="100" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+        <line x1="22" y1="116" x2="22" y2="106" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+
+        <!-- ══ CLUSTER 4: SEBORRHEIC KERATOSIS (pentagons) ══ -->
+        <!-- clinical FST II -->
+        <polygon points="88,108 95,113 92,121 84,121 81,113" fill="#F0C08A" stroke="#1e293b" stroke-width="2"/>
+        <!-- clinical FST IV -->
+        <polygon points="98,112 105,117 102,125 94,125 91,117" fill="#8D5524" stroke="#1e293b" stroke-width="2"/>
+        <!-- derm FST I -->
+        <polygon points="86,120 93,125 90,133 82,133 79,125" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- derm FST V -->
+        <polygon points="100,118 107,123 104,131 96,131 93,123" fill="#4A2511" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- alignment arrows cluster 4 -->
+        <line x1="88" y1="124" x2="88" y2="116" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+        <line x1="98" y1="126" x2="100" y2="118" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+
+        <!-- ══ CLUSTER 5: SCC (hexagons) ══ -->
+        <!-- clinical FST I -->
+        <polygon points="162,94 169,98 169,106 162,110 155,106 155,98" fill="#FFDFC4" stroke="#1e293b" stroke-width="2"/>
+        <!-- clinical FST III -->
+        <polygon points="172,99 179,103 179,111 172,115 165,111 165,103" fill="#C68642" stroke="#1e293b" stroke-width="2"/>
+        <!-- derm FST VI -->
+        <polygon points="158,106 165,110 165,118 158,122 151,118 151,110" fill="#1F0D04" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- derm FST II -->
+        <polygon points="170,108 177,112 177,120 170,124 163,120 163,112" fill="#F0C08A" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/>
+        <!-- alignment arrows cluster 5 -->
+        <line x1="162" y1="114" x2="162" y2="106" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+        <line x1="168" y1="118" x2="166" y2="108" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+
+        <!-- ══ CLUSTER 6: OTHER (crosses) ══ -->
+        <!-- clinical FST II -->
+        <line x1="148" y1="110" x2="160" y2="122" stroke="#F0C08A" stroke-width="3" stroke-linecap="round"/><line x1="160" y1="110" x2="148" y2="122" stroke="#F0C08A" stroke-width="3" stroke-linecap="round"/>
+        <line x1="148" y1="110" x2="160" y2="122" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/><line x1="160" y1="110" x2="148" y2="122" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+        <!-- derm FST IV -->
+        <line x1="157" y1="120" x2="169" y2="132" stroke="#8D5524" stroke-width="3" stroke-linecap="round" stroke-dasharray="3,2"/><line x1="169" y1="120" x2="157" y2="132" stroke="#8D5524" stroke-width="3" stroke-linecap="round" stroke-dasharray="3,2"/>
+        <line x1="157" y1="120" x2="169" y2="132" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round" opacity="0.4" stroke-dasharray="3,2"/><line x1="169" y1="120" x2="157" y2="132" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round" opacity="0.4" stroke-dasharray="3,2"/>
+        <!-- alignment arrows cluster 6 -->
+        <line x1="158" y1="126" x2="156" y2="118" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65"/>
+
+        <!-- BETWEEN-CLUSTER PUSH ARROWS (contrastive loss visual cue) -->
+        <line x1="56" y1="34" x2="76" y2="24" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2" opacity="0.35"/>
+        <line x1="115" y1="26" x2="140" y2="30" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2" opacity="0.35"/>
+        <line x1="40" y1="55" x2="26" y2="84" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2" opacity="0.35"/>
+
+      </svg>
+
+      <!-- LEGEND -->
+      <!-- Shape legend -->
+      <div style="font-size:9.5px;font-weight:800;color:#4c1d95;margin:4px 0 2px;text-align:left;padding-left:4px;">Shape = Disease Class</div>
+      <div class="embed-legend-row">
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><circle cx="5.5" cy="5.5" r="4.5" fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5"/></svg>Melanoma</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><polygon points="5.5,1 10,10 1,10" fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5"/></svg>Nevus</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect x="1" y="1" width="9" height="9" fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5"/></svg>BCC</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><polygon points="5.5,1 10,5.5 5.5,10 1,5.5" fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5"/></svg>Actinic K.</div>
+      </div>
+      <div class="embed-legend-row" style="margin-top:2px;">
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><polygon points="5.5,1 9.5,3.5 9.5,7.5 5.5,10 1.5,7.5 1.5,3.5" fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5"/></svg>Seborrh.K.</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><polygon points="5.5,1 9,3 9,8 5.5,10 2,8 2,3" fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5"/></svg>SCC</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><line x1="1" y1="1" x2="10" y2="10" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round"/><line x1="10" y1="1" x2="1" y2="10" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round"/></svg>Other</div>
+      </div>
+      <!-- Fill = FST -->
+      <div style="font-size:9.5px;font-weight:800;color:#4c1d95;margin:5px 0 2px;text-align:left;padding-left:4px;">Fill = Fitzpatrick Skin Type</div>
+      <div class="embed-legend-row">
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#FFDFC4" stroke="#aaa" stroke-width="0.5"/></svg>I</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#F0C08A" stroke="#aaa" stroke-width="0.5"/></svg>II</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#C68642" stroke="#aaa" stroke-width="0.5"/></svg>III</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#8D5524" stroke="#aaa" stroke-width="0.5"/></svg>IV</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#4A2511" stroke="#aaa" stroke-width="0.5"/></svg>V</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#1F0D04" stroke="#aaa" stroke-width="0.5"/></svg>VI</div>
+      </div>
+      <!-- Stroke = modality -->
+      <div style="font-size:9.5px;font-weight:800;color:#4c1d95;margin:5px 0 2px;text-align:left;padding-left:4px;">Stroke = Modality</div>
+      <div class="embed-legend-row">
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 22 11"><circle cx="11" cy="5.5" r="4.5" fill="none" stroke="#1e293b" stroke-width="2"/></svg>Clinical</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 22 11"><circle cx="11" cy="5.5" r="4.5" fill="none" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2"/></svg>Dermoscopic</div>
+        <div class="leg-item"><svg class="leg-shape" viewBox="0 0 22 11"><line x1="1" y1="5.5" x2="21" y2="5.5" stroke="#6366f1" stroke-width="1.5" stroke-dasharray="2,1.5" marker-end="url(#emb_arr)"/></svg>ℒ<sub>MI</sub> align</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARROW 4 -->
+  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+    <svg viewBox="0 0 36 20" class="arr-svg"><defs><marker id="ah4" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah4)"/></svg>
+  </div>
+
+  <!-- ═══ COL 5 : LOSS FUNCTIONS ═══ -->
+  <div class="col col-loss" style="gap:8px; justify-content:center; padding-bottom:40px;">
+    <div class="loss-block loss-cls">
+      <div class="loss-icon-wrap"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" fill="#3b82f6"/><path d="M7,12 L10,15 L17,9" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="loss-text">
+        <div class="loss-name">ℒ<sub>cls</sub> — Classification</div>
+        <div class="loss-type">Cross-Entropy</div>
+        <div class="loss-desc">Supervised disease class prediction over 7 classes</div>
+        <div class="loss-formula">λ₁ = 1.0</div>
+      </div>
+    </div>
+    <div class="loss-block loss-conf">
+      <div class="loss-icon-wrap"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#ef4444"/><path d="M12,7 L12,13" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="17" r="1.5" fill="#fff"/></svg></div>
+      <div class="loss-text">
+        <div class="loss-name">ℒ<sub>conf</sub> — Confusion</div>
+        <div class="loss-type">Adversarial Skin-Tone</div>
+        <div class="loss-desc">Gradient reversal: confuse skin-tone predictor (6 FSTs)</div>
+        <div class="loss-formula">λ₂ = 0.5</div>
+      </div>
+    </div>
+    <div class="loss-block loss-con">
+      <div class="loss-icon-wrap"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="8" cy="12" r="4.5" fill="#f97316"/><circle cx="16" cy="12" r="4.5" fill="#fb923c"/><line x1="12" y1="8" x2="12" y2="16" stroke="#fff" stroke-width="1.5" stroke-dasharray="2,1"/></svg></div>
+      <div class="loss-text">
+        <div class="loss-name">ℒ<sub>con</sub> — Contrastive</div>
+        <div class="loss-type">Supervised, Disease-level</div>
+        <div class="loss-desc">Pull same-class, push different-class embeddings (τ=0.07)</div>
+        <div class="loss-formula">λ₃ = 1.0</div>
+      </div>
+    </div>
+    <div class="loss-block loss-mi">
+      <div class="loss-icon-wrap"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="8" width="7" height="9" rx="3" fill="#14b8a6"/><rect x="14" y="8" width="7" height="9" rx="3" fill="#0d9488"/><path d="M10,12.5 L14,12.5" stroke="#fff" stroke-width="2" stroke-linecap="round"/><path d="M11.5,10.5 L10,12.5 L11.5,14.5" stroke="#fff" stroke-width="1.5" fill="none" stroke-linejoin="round"/><path d="M12.5,10.5 L14,12.5 L12.5,14.5" stroke="#fff" stroke-width="1.5" fill="none" stroke-linejoin="round"/></svg></div>
+      <div class="loss-text">
+        <div class="loss-name">ℒ<sub>MI</sub> — Modality Invariant</div>
+        <div class="loss-type">Paired samples only (HIBA)</div>
+        <div class="loss-desc">Align clinical & derm embeddings of same lesion; skin-tone-invariant</div>
+        <div class="loss-formula">λ₄ = 1.0</div>
+      </div>
+    </div>
+    <div style="background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:10px; padding:6px 10px; font-size:10.5px; font-weight:600; color:#475569; text-align:center;">
+      + Classifier Head: Linear(512 → 7)<br>
+      <span style="font-size:9.5px; color:#94a3b8;">+ MixUp in embedding space</span>
+    </div>
+  </div>
+
+  <!-- ARROW 5 -->
+  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+    <svg viewBox="0 0 36 20" class="arr-svg"><defs><marker id="ah5" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah5)"/></svg>
+  </div>
+
+  <!-- ═══ COL 6 : CLASSIFICATION OUTPUT ═══ -->
+  <div class="col col-classes" style="justify-content:flex-start; padding-top:10px;">
+    <div class="classes-block">
+      <div class="classes-title">7-Class Output</div>
+      <div class="class-chip" style="background:#fce7f3;"><div class="class-dot" style="background:#db2777;"></div><div class="class-id">0</div>Melanoma</div>
+      <div class="class-chip" style="background:#fef3c7;"><div class="class-dot" style="background:#d97706;"></div><div class="class-id">1</div>Nevus</div>
+      <div class="class-chip" style="background:#fee2e2;"><div class="class-dot" style="background:#ef4444;"></div><div class="class-id">2</div>Basal Cell Carc.</div>
+      <div class="class-chip" style="background:#ffedd5;"><div class="class-dot" style="background:#f97316;"></div><div class="class-id">3</div>Actinic Keratosis</div>
+      <div class="class-chip" style="background:#dcfce7;"><div class="class-dot" style="background:#22c55e;"></div><div class="class-id">4</div>Seborrheic Kerat.</div>
+      <div class="class-chip" style="background:#dbeafe;"><div class="class-dot" style="background:#3b82f6;"></div><div class="class-id">5</div>Squamous Cell Carc.</div>
+      <div class="class-chip" style="background:#f1f5f9;"><div class="class-dot" style="background:#64748b;"></div><div class="class-id">6</div>Other</div>
+    </div>
+    <div style="margin-top:12px;">
+      <div class="fst-title">6 Fitzpatrick Skin Types</div>
+      <div class="fst-strip">
+        <div class="fst-chip" style="background:#FFDFC4; color:#78350f; border-color:#FFDFC4;">I<br><span style="font-weight:400;font-size:9.5px;">Very fair</span></div>
+        <div class="fst-chip" style="background:#F0C08A; color:#7c3a00; border-color:#F0C08A;">II<br><span style="font-weight:400;font-size:9.5px;">Fair</span></div>
+        <div class="fst-chip" style="background:#C68642; color:#fff; border-color:#C68642;">III<br><span style="font-weight:400;font-size:9.5px;">Medium</span></div>
+        <div class="fst-chip" style="background:#8D5524; color:#fff; border-color:#8D5524;">IV<br><span style="font-weight:400;font-size:9.5px;">Olive</span></div>
+        <div class="fst-chip" style="background:#4A2511; color:#fde8d0; border-color:#4A2511;">V<br><span style="font-weight:400;font-size:9.5px;">Brown</span></div>
+        <div class="fst-chip" style="background:#1F0D04; color:#fde8d0; border-color:#1F0D04;">VI<br><span style="font-weight:400;font-size:9.5px;">Dark</span></div>
+      </div>
+      <div style="font-size:9.5px;color:#94a3b8;text-align:center;margin-top:5px;font-weight:600;">Used in ℒ<sub>conf</sub> adversarial training<br>+ fairness evaluation</div>
+    </div>
+  </div>
+
+</div><!-- end pipeline -->
+
+<!-- TOTAL LOSS -->
+<div class="total-loss-row" style="width: 80%; align-items: center; margin: auto;">
+  <div class="formula">ℒ<sub>total</sub> = <span class="cls-c">λ₁ℒ<sub>cls</sub></span> + <span class="conf-c">λ₂ℒ<sub>conf</sub></span> + <span class="con-c">λ₃ℒ<sub>con</sub></span> + <span class="mi-c">λ₄ℒ<sub>MI</sub></span></div>
+  <div class="sub-formula">λ₁=1.0 (cls) &nbsp;|&nbsp; λ₂=0.5 (conf) &nbsp;|&nbsp; λ₃=1.0 (con) &nbsp;|&nbsp; λ₄=1.0 (MI) &nbsp;|&nbsp; temperature τ=0.07</div>
+</div>
+
+</body>
+</html>
