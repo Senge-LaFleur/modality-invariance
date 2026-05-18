@@ -1,0 +1,5 @@
+Dataset,Total rows,FST known,FST %,Class=Other,Other %
+HIBA,4446,4386,98.7%,639,14.4%
+Fitzpatrick17k,13293,12854,96.7%,9693,72.9%
+HAM10000,10288,2420,23.5%,642,6.2%
+DermNet,19559,17156,87.7%,15702,80.3%

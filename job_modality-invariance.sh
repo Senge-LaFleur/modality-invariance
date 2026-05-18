@@ -7,10 +7,10 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=120G
-#SBATCH --gres=gpu:4
-#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --partition=bigpu
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=asosenge@gmail.com
+#SBATCH --mail-user=jerry.lacmou.zeutouo@u-picardie.fr
 
 # ── Environment ───────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -21,13 +21,14 @@ echo "Started:   $(date)"
 echo "========================================="
 
 module purge
-module load cuda/12.2
-module load cudnn/8.9
+module load cuda/12.6
+#module load cudnn/8.9
 module load python/3.11.7
 
-WORK_DIR="$HOME/modality-invariance"          
-NOTEBOOK="modality-invariance-v1-1.ipynb"
-SCRIPT_NAME="modality_invariance_v1-1.py"       
+WORK_DIR="process"          
+#NOTEBOOK="modality_invariance_v1_1.ipynb"
+NOTEBOOK=$(realpath "modality_invariance_v1_1.ipynb")
+SCRIPT_NAME="modality_invariance_v1_1.py"       
 
 export DATA_ROOT="$WORK_DIR/data/datasets"
 
@@ -141,10 +142,9 @@ echo ""
 
 # ── Convert notebook → Python script ─────────────────────────────────────────
 echo "[CONVERT] Converting notebook to Python script..."
-jupyter nbconvert \
-    --to script \
-    --output "$SCRIPT_NAME" \
-    "$NOTEBOOK"
+#jupyter nbconvert "$NOTEBOOK" \
+#    --to python \
+#    --output "$SCRIPT_NAME"
 
 echo "[PATCH] Redirecting Kaggle paths → cluster paths..."
 
@@ -177,14 +177,18 @@ print(f"  BB_CACHE   → {bb_cache}")
 print("  Patch applied successfully.")
 PYEOF
 
-python "$PATCH_SCRIPT" "$SCRIPT_NAME"
+python "$PATCH_SCRIPT" "../$SCRIPT_NAME"
 
 # ── Run the training script ───────────────────────────────────────────────────
 echo ""
 echo "[RUN] Starting training — $(date)"
 echo "========================================="
 
-python "$SCRIPT_NAME"
+pip install -q timm einops scikit-learn umap-learn \
+               matplotlib seaborn pandas tqdm Pillow \
+               shap captum
+
+python "../$SCRIPT_NAME"
 
 EXIT_CODE=$?
 
