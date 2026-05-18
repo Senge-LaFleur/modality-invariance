@@ -1,0 +1,474 @@
+=========================================
+Job:       modality_invariance_v1-1  (407998)
+Node:      bigpu01
+Started:   Fri May 15 06:31:14 PM CEST 2026
+=========================================
+[INFO] No HF token found at /users/jlacmou/.hf_token — downloads may be slow.
+[INFO] No kaggle.json found in process. Relying on ~/.kaggle/ or env vars.
+[SETUP] Installing / verifying Python dependencies...
+
+── GPU info ──────────────────────────────
+Tesla V100-PCIE-32GB, 32768 MiB, 575.57.08
+PyTorch : 2.12.0+cu130
+CUDA    : 13.0
+Devices : 1
+──────────────────────────────────────────
+
+[CHECK] Validating dataset roots...
+  [OK]      process/data/datasets/asosenge/hibaskinlesionsdataset-main
+  [OK]      process/data/datasets/asosenge/fitzpatrick17k
+  [OK]      process/data/datasets/asosenge/ham10000
+  [OK]      process/data/datasets/shubhamgoel27/dermnet
+
+[CONVERT] Converting notebook to Python script...
+[PATCH] Redirecting Kaggle paths → cluster paths...
+  DATA_ROOT  → process/data/datasets
+  WORK_ROOT  → process/outputs
+  BB_CACHE   → process/backbone_cache
+  Patch applied successfully.
+
+[RUN] Starting training — Fri May 15 06:31:22 PM CEST 2026
+=========================================
+Device : cpu
+[INFO] No HF_TOKEN found — downloads may be slow. Add it via Kaggle Secrets → HF_TOKEN.
+Backbone cache dir: process/backbone_cache
+Config ready. Checking dataset roots:
+  [OK]  hiba_root
+  [OK]  fitz_root
+  [OK]  ham_root
+  [OK]  dermnet_root
+Label taxonomy ready — 7 classes verified against real CSV values.
+  FITZ: reads "label" column (fine-grained diagnoses)
+  HIBA: reads "diagnosis" column + "fitzpatrick_skin_type" (roman numerals)
+  HAM:  reads "dx" column + ITA-estimated FST
+Split helpers ready.
+HIBA parser ready.
+Clinical parsers ready.
+Dermoscopic parsers ready.
+Evaluation parsers + ITA-FST estimator ready.
+============================================================ 
+Parsing datasets ...
+[HIBA] 1616 rows | columns: ['isic_id', 'attribution', 'copyright_license', 'age_approx', 'anatom_site_general', 'anatom_site_special', 'benign_malignant', 'concomitant_biopsy', 'dermoscopic_type', 'diagnosis', 'diagnosis_1', 'diagnosis_2', 'diagnosis_3', 'diagnosis_confirm_type', 'family_hx_mm', 'fitzpatrick_skin_type', 'image_type', 'lesion_id', 'patient_id', 'personal_hx_mm', 'sex']
+[HIBA] FST column: fitzpatrick_skin_type
+[HIBA] image map: 3232 entries
+[HIBA] paired    : 202 train | 44 val | 44 test
+[HIBA] unpaired clin: 38 train | 9 val | 9 test
+[HIBA] unpaired derm: 686 train | 147 val | 147 test
+[HIBA paired] classes: melanoma=46  nevus=44  basal cell carcinoma=99  actinic keratosis=15  seborrheic keratosis=20  squamous cell carcinoma=39  other=27
+[HIBA total  ] classes: melanoma=225  nevus=558  basal cell carcinoma=241  actinic keratosis=48  seborrheic keratosis=50  squamous cell carcinoma=119  other=85
+[HIBA] FST known: 1218/1326 images
+[DEBUG FITZ] Building image path map for process/data/datasets/asosenge/fitzpatrick17k...
+[DEBUG FITZ] Image map built with 33154 entries.
+Fitzpatrick17k —  11603 train   2487 val   2487 test  | FST known: 16012
+  classes: melanoma=573  nevus=558  basal cell carcinoma=596  actinic keratosis=358  seborrheic keratosis=69  squamous cell carcinoma=581  other=13842
+[DEBUG HAM] Found metadata at: process/data/datasets/asosenge/ham10000/HAM10000/HAM10000_metadata.csv
+[DEBUG HAM] Building image path map...
+[DEBUG HAM] Image map built with 40060 entries.
+HAM10000       —   7009 train   1503 val   1503 test
+
+Label verification ...
+  HIBA paired (all): 290 rows | melanoma=46  nevus=44  basal cell carcinoma=99  actinic keratosis=15  seborrheic keratosis=20  squamous cell carcinoma=39  other=27
+  Clinical unpaired (all): 16633 rows | melanoma=590  nevus=567  basal cell carcinoma=609  actinic keratosis=360  seborrheic keratosis=71  squamous cell carcinoma=589  other=13847
+  Derm unpaired (all): 10995 rows | melanoma=1275  nevus=7210  basal cell carcinoma=643  actinic keratosis=358  seborrheic keratosis=1127  squamous cell carcinoma=72  other=310
+
+Splitting combined pools (70/15/15 stratified) ...
+  Paired  : 202 tr | 44 va | 44 te
+  Clinical: 11643 tr | 2495 va | 2495 te
+  Derm    : 7695 tr | 1650 va | 1650 te
+
+Augmenting train splits ...
+  paired_train after aug: 4,446
+  clin_train   after aug: 13,293
+  derm_train   after aug: 10,288
+
+Building DermNet evaluation set ...
+DermNet          (eval) —  19559 images
+  class 0 (melanoma): 197
+  class 1 (nevus): 573
+  class 2 (basal cell carcinoma): 958
+  class 3 (actinic keratosis): 364
+  class 4 (seborrheic keratosis): 1630
+  class 5 (squamous cell carcinoma): 135
+  class 6 (other): 15702
+  DermNet eval: 19559 rows | melanoma=197  nevus=573  basal cell carcinoma=958  actinic keratosis=364  seborrheic keratosis=1630  squamous cell carcinoma=135  other=15702
+  Estimating FST via ITA for 19559 images (n_jobs=4) …
+  FST estimated: 17156/19559 (87.7%)
+    FST 1:  1061
+    FST 2:  4564
+    FST 3:  3686
+    FST 4:  5283
+    FST 5:  1992
+    FST 6:   570
+  Saved FST cache → eval_dermnet_fst_cache.csv
+  Saved paired_train.csv          (  4446 rows)
+  Saved paired_val.csv            (    44 rows)
+  Saved paired_test.csv           (    44 rows)
+  Saved clin_train.csv            ( 13293 rows)
+  Saved clin_val.csv              (  2495 rows)
+  Saved clin_test.csv             (  2495 rows)
+  Saved derm_train.csv            ( 10288 rows)
+  Saved derm_val.csv              (  1650 rows)
+  Saved derm_test.csv             (  1650 rows)
+  Saved eval_dermnet.csv          ( 19559 rows)
+
+Total train : 28,027
+Total val   : 4,189
+Total test  : 4,189
+
+── Coverage Summary ─────────────────────────────────────
+                Total rows  FST known  FST %  Class=Other Other %
+Dataset                                                          
+HIBA                  4446       4386  98.7%          639   14.4%
+Fitzpatrick17k       13293      12854  96.7%         9693   72.9%
+HAM10000             10288       2420  23.5%          642    6.2%
+DermNet              19559      17156  87.7%        15702   80.3%
+
+EDA visualizations saved.
+Transforms and Dataset classes defined.
+  Building WeightedRandomSampler (reading from DataFrames — no image I/O) ...
+  internal test set: 4189 samples
+  eval [dermnet]: 19559 samples
+
+Train batches : 875  |  Val batches: 65
+Eval sets      : ['dermnet']
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=44.4M
+Paired  forward OK  — logits: torch.Size([2, 7])
+Unpaired forward OK — logits: torch.Size([2, 7])
+  Class weights (inv-freq): [1.153 0.371 1.36  1.409 1.222 1.25  0.235]
+Loss functions ready: FocalLoss (alpha-weighted) | MixUp (embeddings) | L_conf | L_con | L_MI
+Training functions ready.
+Starting training from scratch — 30 epochs on cpu
+Ep   1/30  loss=4.5548  L_MI=0.1917  train_acc=0.3300  train_f1=0.2800  val_acc=0.1271  val_auroc=0.8976  val_f1=0.2266  lr=4.00e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.8976)
+  ✓  Best F1   checkpoint  (macro_F1=0.2266)
+Ep   2/30  loss=3.7869  L_MI=0.0697  train_acc=0.5623  train_f1=0.4793  val_acc=0.1407  val_auroc=0.9120  val_f1=0.1907  lr=6.00e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9120)
+Ep   3/30  loss=3.4243  L_MI=0.0503  train_acc=0.6081  train_f1=0.5109  val_acc=0.1481  val_auroc=0.9185  val_f1=0.1981  lr=8.00e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9185)
+Ep   4/30  loss=3.1604  L_MI=0.0418  train_acc=0.6176  train_f1=0.5257  val_acc=0.3112  val_auroc=0.9142  val_f1=0.3487  lr=1.00e-04
+  ✓  Best F1   checkpoint  (macro_F1=0.3487)
+Ep   5/30  loss=3.0217  L_MI=0.0367  train_acc=0.6784  train_f1=0.6275  val_acc=0.5006  val_auroc=0.9123  val_f1=0.4377  lr=1.00e-04
+  ✓  Best F1   checkpoint  (macro_F1=0.4377)
+  ↓  Periodic checkpoint saved → checkpoint_ep005.pt
+Ep   6/30  loss=2.8456  L_MI=0.0295  train_acc=0.7729  train_f1=0.7625  val_acc=0.5713  val_auroc=0.9034  val_f1=0.5087  lr=9.96e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.5087)
+Ep   7/30  loss=2.7130  L_MI=0.0244  train_acc=0.8173  train_f1=0.8140  val_acc=0.7973  val_auroc=0.9045  val_f1=0.6063  lr=9.84e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.6063)
+Ep   8/30  loss=2.6102  L_MI=0.0211  train_acc=0.8369  train_f1=0.8353  val_acc=0.7546  val_auroc=0.9334  val_f1=0.5942  lr=9.65e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9334)
+Ep   9/30  loss=2.5159  L_MI=0.0169  train_acc=0.8564  train_f1=0.8551  val_acc=0.7993  val_auroc=0.9221  val_f1=0.6381  lr=9.38e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.6381)
+Ep  10/30  loss=2.4765  L_MI=0.0160  train_acc=0.8662  train_f1=0.8653  val_acc=0.7843  val_auroc=0.9229  val_f1=0.6324  lr=9.05e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep010.pt
+Ep  11/30  loss=2.3908  L_MI=0.0141  train_acc=0.8785  train_f1=0.8776  val_acc=0.8270  val_auroc=0.9206  val_f1=0.6653  lr=8.64e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.6653)
+Ep  12/30  loss=2.3383  L_MI=0.0138  train_acc=0.8885  train_f1=0.8883  val_acc=0.8540  val_auroc=0.9291  val_f1=0.6891  lr=8.19e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.6891)
+Ep  13/30  loss=2.2723  L_MI=0.0107  train_acc=0.8979  train_f1=0.8969  val_acc=0.8550  val_auroc=0.9293  val_f1=0.6994  lr=7.68e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.6994)
+Ep  14/30  loss=2.2183  L_MI=0.0104  train_acc=0.9047  train_f1=0.9043  val_acc=0.8606  val_auroc=0.9295  val_f1=0.7028  lr=7.13e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.7028)
+Ep  15/30  loss=2.1579  L_MI=0.0091  train_acc=0.9136  train_f1=0.9134  val_acc=0.8376  val_auroc=0.9205  val_f1=0.6810  lr=6.55e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep015.pt
+     Removed old checkpoint: checkpoint_ep005.pt
+Ep  16/30  loss=2.1015  L_MI=0.0075  train_acc=0.9231  train_f1=0.9228  val_acc=0.8603  val_auroc=0.9262  val_f1=0.6964  lr=5.94e-05
+Ep  17/30  loss=2.0496  L_MI=0.0066  train_acc=0.9324  train_f1=0.9319  val_acc=0.8483  val_auroc=0.9236  val_f1=0.6912  lr=5.31e-05
+Ep  18/30  loss=2.0129  L_MI=0.0060  train_acc=0.9376  train_f1=0.9375  val_acc=0.8755  val_auroc=0.9281  val_f1=0.7259  lr=4.69e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.7259)
+Ep  19/30  loss=1.9687  L_MI=0.0042  train_acc=0.9438  train_f1=0.9434  val_acc=0.8772  val_auroc=0.9287  val_f1=0.7376  lr=4.06e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.7376)
+Ep  20/30  loss=1.9323  L_MI=0.0042  train_acc=0.9501  train_f1=0.9498  val_acc=0.8736  val_auroc=0.9155  val_f1=0.7293  lr=3.45e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep020.pt
+     Removed old checkpoint: checkpoint_ep010.pt
+Ep  21/30  loss=1.8773  L_MI=0.0032  train_acc=0.9578  train_f1=0.9574  val_acc=0.8813  val_auroc=0.9270  val_f1=0.7440  lr=2.87e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.7440)
+Ep  22/30  loss=1.8492  L_MI=0.0033  train_acc=0.9619  train_f1=0.9618  val_acc=0.8758  val_auroc=0.9150  val_f1=0.7318  lr=2.32e-05
+Ep  23/30  loss=1.8156  L_MI=0.0025  train_acc=0.9675  train_f1=0.9672  val_acc=0.8803  val_auroc=0.9219  val_f1=0.7393  lr=1.81e-05
+Ep  24/30  loss=1.7882  L_MI=0.0021  train_acc=0.9723  train_f1=0.9722  val_acc=0.8806  val_auroc=0.9213  val_f1=0.7479  lr=1.36e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.7479)
+Ep  25/30  loss=1.7665  L_MI=0.0018  train_acc=0.9742  train_f1=0.9743  val_acc=0.8919  val_auroc=0.9170  val_f1=0.7630  lr=9.55e-06
+  ✓  Best F1   checkpoint  (macro_F1=0.7630)
+  ↓  Periodic checkpoint saved → checkpoint_ep025.pt
+     Removed old checkpoint: checkpoint_ep015.pt
+Ep  26/30  loss=1.7333  L_MI=0.0017  train_acc=0.9805  train_f1=0.9804  val_acc=0.8881  val_auroc=0.9130  val_f1=0.7563  lr=6.18e-06
+Ep  27/30  loss=1.7206  L_MI=0.0016  train_acc=0.9795  train_f1=0.9794  val_acc=0.8943  val_auroc=0.9149  val_f1=0.7630  lr=3.51e-06
+Ep  28/30  loss=1.7255  L_MI=0.0016  train_acc=0.9819  train_f1=0.9817  val_acc=0.8910  val_auroc=0.9144  val_f1=0.7581  lr=1.57e-06
+Ep  29/30  loss=1.7030  L_MI=0.0015  train_acc=0.9834  train_f1=0.9834  val_acc=0.8943  val_auroc=0.9123  val_f1=0.7625  lr=3.94e-07
+Ep  30/30  loss=1.7163  L_MI=0.0014  train_acc=0.9831  train_f1=0.9830  val_acc=0.8967  val_auroc=0.9166  val_f1=0.7720  lr=0.00e+00
+  ✓  Best F1   checkpoint  (macro_F1=0.7720)
+  ↓  Periodic checkpoint saved → checkpoint_ep030.pt
+     Removed old checkpoint: checkpoint_ep020.pt
+
+Training complete.
+  Best AUROC   : 0.9334
+  Best macro-F1: 0.7720
+  History saved → process/outputs/results/history.json
+Eval loaders rebuilt with num_workers=0 — ready for post-training evaluation.
+  val_loader  : 65 batches
+  test_loader : 66 batches
+  eval_loaders: ['dermnet']
+
+=======================================================  L_cls only (baseline)  [running first for FATE]
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=44.4M
+
+=======================================================  Full Model
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=44.4M
+  Acc=0.0270  AUROC=0.5116  Prec=0.0127  Rec=0.1392  F1=0.0219  EOM=0.6071  FATE=0.1499
+
+=======================================================  w/o L_MI
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=44.4M
+  Acc=0.1074  AUROC=0.4758  Prec=0.1435  Rec=0.1069  F1=0.0776  EOM=0.6429  FATE=0.1650
+
+=======================================================  w/o L_conf
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=44.4M
+  Acc=0.0277  AUROC=0.4968  Prec=0.0105  Rec=0.1479  F1=0.0140  EOM=0.8500  FATE=0.6392
+
+=======================================================  w/o L_con
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=44.4M
+  Acc=0.2437  AUROC=0.6493  Prec=0.0536  Rec=0.1813  F1=0.0795  EOM=0.8631  FATE=0.9244
+
+=======================================================  L_cls only (baseline)
+  Acc=0.0647  AUROC=0.5920  Prec=0.1496  Rec=0.1718  F1=0.0384  EOM=0.4722  FATE=nan
+
+                        Accuracy  AUC-ROC  Precision (M)  Recall    (M)  F1        (M)     EOM     PQD     DPM    FATE
+Full Model               0.0270   0.5116         0.0127         0.1392         0.0219  0.6071  0.4505  0.7903  0.1499
+w/o L_MI                 0.1074   0.4758         0.1435         0.1069         0.0776  0.6429  0.2848  0.5567  0.1650
+w/o L_conf               0.0277   0.4968         0.0105         0.1479         0.0140  0.8500  0.0000  0.8523  0.6392
+w/o L_con                0.2437   0.6493         0.0536         0.1813         0.0795  0.8631  0.2683  0.7597  0.9244
+L_cls only (baseline)    0.0647   0.5920         0.1496         0.1718         0.0384  0.4722  0.2703  0.5468     NaN
+Loaded checkpoint: best macro-F1 (epoch 30)
+  Temperature scaling: T = 0.2505
+  Threshold-optimised macro-F1 on val: 0.7725
+  Per-class thresholds: [0.05  0.05  0.05  0.05  0.05  0.638 0.05 ]
+
+════════════════════════════════════════════════════════════
+  Val (T-scaled + threshold-opt) — Full Evaluation Report
+════════════════════════════════════════════════════════════
+
+────────────────────────────────────────
+  Overall Metrics
+────────────────────────────────────────
+  Accuracy          : 0.8967
+  AUC-ROC (macro)   : 0.9150
+  Precision (macro) : 0.8098
+  Recall    (macro) : 0.7439
+  F1        (macro) : 0.7725
+  F1        (micro) : 0.8967
+  F1     (weighted) : 0.8943
+
+────────────────────────────────────────
+  Per-Class Metrics
+────────────────────────────────────────
+  Class                        Prec     Rec      F1
+  ────────────────────────────────────────────────
+  Melanoma                   0.7138  0.7240  0.7189
+  Nevus                      0.9107  0.9083  0.9095
+  Basal Cell Carcinoma       0.7654  0.7249  0.7446
+  Actinic Keratosis          0.7875  0.5833  0.6702
+  Seborrheic Keratosis       0.7914  0.7167  0.7522
+  Squamous Cell Carcinoma    0.7600  0.5758  0.6552
+  Other                      0.9400  0.9746  0.9570
+
+────────────────────────────────────────
+  Confusion Matrix  (rows=True, cols=Pred)
+────────────────────────────────────────
+       melan  nevus  basal  actin  sebor  squam  other
+  melan    202     46      5      1      5      1     19
+  nevus     46   1060     10      1     16      1     33
+  basal      5      7    137      6      2      8     24
+  actin      2      2      6     63     10      1     24
+  sebor     11     30      3      3    129      0      4
+  squam      3      1      9      1      0     57     28
+  other     14     18      9      5      1      7   2069
+
+────────────────────────────────────────
+  Fairness Metrics
+────────────────────────────────────────
+  Equity of Opportunity           EOM (↑): 0.3667
+  Predictive Quality Disparity    PQD (↑): 0.9269
+  Demographic Parity Metric       DPM (↑): 0.2113
+  Fairness-Accuracy Trade-off     FATE (↑): 0.3220
+
+────────────────────────────────────────
+  Per-Fitzpatrick-Skin-Type AUROC
+────────────────────────────────────────
+  FST 1  n= 454  0.7858  ███████████████
+  FST 2  n= 825  0.8543  █████████████████
+  FST 3  n= 515  0.8608  █████████████████
+  FST 4  n= 436  0.9063  ██████████████████
+  FST 5  n= 226  0.8885  █████████████████
+  FST 6  n=  94  0.9678  ███████████████████
+
+────────────────────────────────────────
+  Per-Fitzpatrick-Skin-Type Accuracy
+────────────────────────────────────────
+  FST 1  n= 454  0.8921  █████████████████
+  FST 2  n= 825  0.8776  █████████████████
+  FST 3  n= 515  0.9223  ██████████████████
+  FST 4  n= 436  0.9404  ██████████████████
+  FST 5  n= 226  0.9248  ██████████████████
+  FST 6  n=  94  0.9468  ██████████████████
+
+════════════════════════════════════════════════════════════
+
+
+════════════════════════════════════════════════════════════
+  Test — Full Evaluation Report
+════════════════════════════════════════════════════════════
+
+────────────────────────────────────────
+  Overall Metrics
+────────────────────────────────────────
+  Accuracy          : 0.8871
+  AUC-ROC (macro)   : 0.8920
+  Precision (macro) : 0.7894
+  Recall    (macro) : 0.7198
+  F1        (macro) : 0.7481
+  F1        (micro) : 0.8871
+  F1     (weighted) : 0.8839
+
+────────────────────────────────────────
+  Per-Class Metrics
+────────────────────────────────────────
+  Class                        Prec     Rec      F1
+  ────────────────────────────────────────────────
+  Melanoma                   0.7018  0.6969  0.6993
+  Nevus                      0.9134  0.8893  0.9012
+  Basal Cell Carcinoma       0.7617  0.7277  0.7443
+  Actinic Keratosis          0.7738  0.5909  0.6701
+  Seborrheic Keratosis       0.6851  0.6776  0.6813
+  Squamous Cell Carcinoma    0.7576  0.4762  0.5848
+  Other                      0.9325  0.9803  0.9558
+
+────────────────────────────────────────
+  Confusion Matrix  (rows=True, cols=Pred)
+────────────────────────────────────────
+       melan  nevus  basal  actin  sebor  squam  other
+  melan    200     47      5      3     18      2     12
+  nevus     52   1044      8      2     21      1     46
+  basal      5      6    147      3      7      8     26
+  actin      6      2      7     65      8      2     20
+  sebor     11     27      7      6    124      0      8
+  squam      1      2     11      1      1     50     39
+  other     10     15      8      4      2      3   2086
+
+────────────────────────────────────────
+  Fairness Metrics
+────────────────────────────────────────
+  Equity of Opportunity           EOM (↑): 0.4457
+  Predictive Quality Disparity    PQD (↑): 0.9138
+  Demographic Parity Metric       DPM (↑): 0.1989
+  Fairness-Accuracy Trade-off     FATE (↑): 0.4505
+
+────────────────────────────────────────
+  Per-Fitzpatrick-Skin-Type AUROC
+────────────────────────────────────────
+  FST 1  n= 428  0.8222  ████████████████
+  FST 2  n= 879  0.7781  ███████████████
+  FST 3  n= 539  0.8521  █████████████████
+  FST 4  n= 416  0.8861  █████████████████
+  FST 5  n= 235  0.8433  ████████████████
+  FST 6  n=  78  0.8409  ████████████████
+
+────────────────────────────────────────
+  Per-Fitzpatrick-Skin-Type Accuracy
+────────────────────────────────────────
+  FST 1  n= 428  0.8925  █████████████████
+  FST 2  n= 879  0.8669  █████████████████
+  FST 3  n= 539  0.9295  ██████████████████
+  FST 4  n= 416  0.9471  ██████████████████
+  FST 5  n= 235  0.9319  ██████████████████
+  FST 6  n=  78  0.9487  ██████████████████
+
+════════════════════════════════════════════════════════════
+
+
+── Val vs Test Full Summary ─────────────────────────────────────
+                    Val    Test
+Accuracy         0.8967  0.8871
+AUC-ROC          0.9150  0.8920
+Precision (M)    0.8098  0.7894
+Recall    (M)    0.7439  0.7198
+F1        (M)    0.7725  0.7481
+F1   (weighted)  0.8943  0.8839
+EOM              0.3667  0.4457
+PQD              0.9269  0.9138
+DPM              0.2113  0.1989
+FATE             0.3220  0.4505
+
+════════════════════════════════════════════════════════════
+  Cross-Eval [dermnet] — Full Evaluation Report
+════════════════════════════════════════════════════════════
+
+────────────────────────────────────────
+  Overall Metrics
+────────────────────────────────────────
+  Accuracy          : 0.8122
+  AUC-ROC (macro)   : 0.6834
+  Precision (macro) : 0.4737
+  Recall    (macro) : 0.4156
+  F1        (macro) : 0.3805
+  F1        (micro) : 0.8122
+  F1     (weighted) : 0.7870
+
+────────────────────────────────────────
+  Per-Class Metrics
+────────────────────────────────────────
+  Class                        Prec     Rec      F1
+  ────────────────────────────────────────────────
+  Melanoma                   0.2733  0.6396  0.3830
+  Nevus                      0.5209  0.4572  0.4870
+  Basal Cell Carcinoma       0.5068  0.3121  0.3863
+  Actinic Keratosis          0.2676  0.2610  0.2643
+  Seborrheic Keratosis       0.8069  0.0718  0.1318
+  Squamous Cell Carcinoma    0.0629  0.2148  0.0973
+  Other                      0.8776  0.9526  0.9136
+
+────────────────────────────────────────
+  Confusion Matrix  (rows=True, cols=Pred)
+────────────────────────────────────────
+       melan  nevus  basal  actin  sebor  squam  other
+  melan    126     12      0      5      1      4     49
+  nevus     46    262     17      6     13      5    224
+  basal     48     11    299     41      2     91    466
+  actin      3      4     13     95      1     24    224
+  sebor     90     80     86     67    117    133   1057
+  squam      3      0     21     16      0     29     66
+  other    145    134    154    125     11    175  14958
+
+────────────────────────────────────────
+  Fairness Metrics
+────────────────────────────────────────
+  Equity of Opportunity           EOM (↑): 0.3997
+  Predictive Quality Disparity    PQD (↑): 0.9542
+  Demographic Parity Metric       DPM (↑): 0.4294
+  Fairness-Accuracy Trade-off     FATE (↑): 0.0008
+
+────────────────────────────────────────
+  Per-Fitzpatrick-Skin-Type AUROC
+────────────────────────────────────────
+  FST 1  n=1061  0.6905  █████████████
+  FST 2  n=4564  0.7340  ██████████████
+  FST 3  n=3686  0.7164  ██████████████
+  FST 4  n=5283  0.6699  █████████████
+  FST 5  n=1992  0.6105  ████████████
+  FST 6  n= 570  0.6106  ████████████
+
+────────────────────────────────────────
+  Per-Fitzpatrick-Skin-Type Accuracy
+────────────────────────────────────────
+  FST 1  n=1061  0.8115  ████████████████
+  FST 2  n=4564  0.8127  ████████████████
+  FST 3  n=3686  0.8158  ████████████████
+  FST 4  n=5283  0.8219  ████████████████
+  FST 5  n=1992  0.8143  ████████████████
+  FST 6  n= 570  0.7842  ███████████████
+
+════════════════════════════════════════════════════════════
+
+
+── Cross-Dataset Summary Table ───────────────────────────────────────
+         Accuracy  AUC-ROC  Precision (M)  Recall    (M)  F1        (M)  F1   (weighted)     EOM     PQD     DPM    FATE
+dermnet    0.8122   0.6834         0.4737         0.4156         0.3805            0.787  0.3997  0.9542  0.4294  0.0008
+Computing UMAP ...
+Computing t-SNE (perplexity=40) ...
