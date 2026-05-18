@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=modality_invariance_v1-1
+#SBATCH --job-name=modality_invariance-v2
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-#SBATCH --time=120:00:00
+#SBATCH --time=240:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=120G
+#SBATCH --mem=128G
 #SBATCH --gres=gpu:1
 #SBATCH --partition=bigpu
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -27,8 +27,8 @@ module load python/3.11.7
 
 WORK_DIR="process"          
 #NOTEBOOK="modality_invariance_v1_1.ipynb"
-NOTEBOOK=$(realpath "modality_invariance_v1_1.ipynb")
-SCRIPT_NAME="modality_invariance_v1_1.py"       
+NOTEBOOK=$(realpath "modality_invariance-v2.ipynb")
+SCRIPT_NAME="modality_invariance-v2.py"       
 
 export DATA_ROOT="$WORK_DIR/data/datasets"
 
