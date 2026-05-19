@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=modality_invariance-v2
+#SBATCH --job-name=modality_invariance_v2
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=240:00:00
@@ -27,8 +27,8 @@ module load python/3.11.7
 
 WORK_DIR="process"          
 #NOTEBOOK="modality_invariance_v1_1.ipynb"
-NOTEBOOK=$(realpath "modality_invariance-v2.ipynb")
-SCRIPT_NAME="modality_invariance-v2.py"       
+NOTEBOOK=$(realpath "modality_invariance_v2.ipynb")
+SCRIPT_NAME="modality_invariance_v2.py"       
 
 export DATA_ROOT="$WORK_DIR/data/datasets"
 
