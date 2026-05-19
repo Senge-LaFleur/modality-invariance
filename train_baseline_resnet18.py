@@ -74,10 +74,10 @@ CSV_DIR = WORK_ROOT / 'csvs'
 # The Dataset classes use these together with the image_id column in the CSVs
 # to resolve full image paths at load time (see evaluation.py / build_loaders).
 DATASET_ROOTS = {
-    'hiba':           Path('/kaggle/input/datasets/HIBASkinLesionsDataset-main'),
-    'fitzpatrick17k': Path('/kaggle/input/datasets/fitzpatrick17k'),
-    'ham10000':       Path('/kaggle/input/datasets/HAM10000'),
-    'derm7pt':        Path('/kaggle/input/datasets/Derm7pt'),
+    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main'),
+    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k'),
+    'ham10000':       Path('/kaggle/input/datasets/asosenge/ham10000'),
+    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt'),
 }
 
 # Verify paths exist and warn early rather than failing mid-training
@@ -196,7 +196,7 @@ def main():
     ).to(DEVICE)
 
     # Optimizer with stage-wise LR decay (same as full model)
-    from models_losses import get_layer_wise_lr_params
+    from models.models_losses import get_layer_wise_lr_params
     param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
     optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
 

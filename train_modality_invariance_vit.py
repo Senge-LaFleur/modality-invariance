@@ -83,10 +83,10 @@ CSV_DIR = WORK_ROOT / 'csvs'
 # The Dataset classes use these together with the image_id column in the CSVs
 # to resolve full image paths at load time (see evaluation.py / build_loaders).
 DATASET_ROOTS = {
-    'hiba':           Path('/kaggle/input/datasets/HIBASkinLesionsDataset-main'),
-    'fitzpatrick17k': Path('/kaggle/input/datasets/fitzpatrick17k'),
-    'ham10000':       Path('/kaggle/input/datasets/HAM10000'),
-    'derm7pt':        Path('/kaggle/input/datasets/Derm7pt'),
+    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main'),
+    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k'),
+    'ham10000':       Path('/kaggle/input/datasets/asosenge/ham10000'),
+    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt'),
 }
 
 # Verify paths exist and warn early rather than failing mid-training
