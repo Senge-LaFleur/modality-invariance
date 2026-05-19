@@ -45,8 +45,8 @@ The five classes are: **Melanoma, Nevus, Basal Cell Carcinoma, Actinic Keratosis
 git clone https://github.com/Senge-LaFleur/modality-invariance.git
 
 ### 2. Create and activate a Conda environment
-conda create -n modality-invariance python=3.9 -y
-conda activate modality-invariance
+conda create -n modality-invariance-env python=3.10 -y
+conda activate modality-invariance-env
 
 cd modality-invariance   # Path to the modality-invariance folder
 
