@@ -28,7 +28,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from models_losses import (
+from models.models_losses import (
     DualViT,
     SupConLoss,
     confusion_loss,
@@ -39,7 +39,7 @@ from models_losses import (
     compute_class_weights,
     get_layer_wise_lr_params_vit,   # ViT‑specific layer‑wise LR decay
 )
-from evaluation import (
+from models.evaluation import (
     validate,
     fairness,
     save_results_csv,

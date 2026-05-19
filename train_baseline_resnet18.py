@@ -29,8 +29,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import transforms
 
-from models_losses import DualResNet18, compute_class_weights
-from evaluation import (
+from models.models_losses import DualResNet18, compute_class_weights
+from models.evaluation import (
     validate,
     fairness,
     save_results_csv,
