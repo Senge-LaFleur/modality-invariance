@@ -2,10 +2,12 @@
 evaluation.py
 
 Provides functions for:
+- Loading data (paired/unpaired) with proper path resolution
 - Running validation (collecting predictions, computing metrics)
 - Fairness metrics (EOM, PQD, DPM, per-FST accuracy)
-- Plotting: confusion matrix, per-class metrics, fairness summary, training curves, t-SNE
+- Plotting: confusion matrix, per-class metrics, fairness summary, training curves, t‑SNE
 - Saving results as CSV files (overall, per-class, per-FST)
+- Building train/val/test/cross‑eval data loaders
 
 All functions are designed to be imported and reused across different model training scripts.
 """
@@ -14,6 +16,9 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+from torchvision import transforms
+from PIL import Image
 from sklearn.metrics import (
     roc_auc_score,
     f1_score,
@@ -26,6 +31,193 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 from collections import defaultdict
+
+
+# ------------------------------------------------------------
+# Custom Dataset Classes
+# ------------------------------------------------------------
+class UnpairedDataset(Dataset):
+    """Dataset for unpaired images (clinical only or derm only)."""
+    def __init__(self, df, dataset_roots, transform=None):
+        self.df = df.reset_index(drop=True)
+        self.dataset_roots = dataset_roots
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        row = self.df.iloc[idx]
+        ds = row['dataset']
+        rel_path = row['image_path']
+        full_path = self.dataset_roots[ds] / rel_path
+        img = Image.open(full_path).convert('RGB')
+        if self.transform:
+            img = self.transform(img)
+        return {
+            'image': img,
+            'label': torch.tensor(row['label'], dtype=torch.long),
+            'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
+            'dataset': ds
+        }
+
+
+class PairedDataset(Dataset):
+    """Dataset for paired clinical + dermoscopic images."""
+    def __init__(self, df, dataset_roots, transform=None):
+        self.df = df.reset_index(drop=True)
+        self.dataset_roots = dataset_roots
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        row = self.df.iloc[idx]
+        ds = row['dataset']
+        # Clinical image
+        clinical_path = self.dataset_roots[ds] / row['clinical_path']
+        clinical_img = Image.open(clinical_path).convert('RGB')
+        # Derm image
+        derm_path = self.dataset_roots[ds] / row['derm_path']
+        derm_img = Image.open(derm_path).convert('RGB')
+        if self.transform:
+            clinical_img = self.transform(clinical_img)
+            derm_img = self.transform(derm_img)
+        return {
+            'clinical': clinical_img,
+            'derm': derm_img,
+            'label': torch.tensor(row['label'], dtype=torch.long),
+            'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
+            'dataset': ds
+        }
+
+
+# ------------------------------------------------------------
+# DataLoader Builder
+# ------------------------------------------------------------
+def build_loaders(cfg, seed=42):
+    """
+    Build train, val, test, and cross-evaluation loaders from CSV files.
+
+    Args:
+        cfg: dict containing keys:
+            - 'csv_dir': Path to CSV files
+            - 'dataset_roots': dict mapping dataset names to root paths
+            - 'batch_size': int
+            - 'num_epochs': int (used for sampler, not directly used here)
+            - 'aug_probability': float (probability of augmentation)
+            - 'img_size': int (e.g., 224)
+            - 'num_classes': int (for sampler)
+        seed: random seed (unused but kept for consistency)
+
+    Returns:
+        train_loader, val_loader, test_loader, eval_loaders (dict)
+    """
+    csv_dir = Path(cfg['csv_dir'])
+    dataset_roots = cfg['dataset_roots']
+    batch_size = cfg['batch_size']
+    aug_prob = cfg.get('aug_probability', 0.85)
+    img_size = cfg.get('img_size', 224)
+
+    # Transforms
+    train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(img_size, scale=(0.85, 1.0)),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomVerticalFlip(p=0.3),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+    val_transform = transforms.Compose([
+        transforms.Resize((img_size, img_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+    # Load CSV files
+    paired_train = pd.read_csv(csv_dir / 'paired_train.csv') if (csv_dir / 'paired_train.csv').exists() else pd.DataFrame()
+    clin_train   = pd.read_csv(csv_dir / 'clin_train.csv')   if (csv_dir / 'clin_train.csv').exists() else pd.DataFrame()
+    derm_train   = pd.read_csv(csv_dir / 'derm_train.csv')   if (csv_dir / 'derm_train.csv').exists() else pd.DataFrame()
+
+    paired_val = pd.read_csv(csv_dir / 'paired_val.csv') if (csv_dir / 'paired_val.csv').exists() else pd.DataFrame()
+    clin_val   = pd.read_csv(csv_dir / 'clin_val.csv')   if (csv_dir / 'clin_val.csv').exists() else pd.DataFrame()
+    derm_val   = pd.read_csv(csv_dir / 'derm_val.csv')   if (csv_dir / 'derm_val.csv').exists() else pd.DataFrame()
+
+    paired_test = pd.read_csv(csv_dir / 'paired_test.csv') if (csv_dir / 'paired_test.csv').exists() else pd.DataFrame()
+    clin_test   = pd.read_csv(csv_dir / 'clin_test.csv')   if (csv_dir / 'clin_test.csv').exists() else pd.DataFrame()
+    derm_test   = pd.read_csv(csv_dir / 'derm_test.csv')   if (csv_dir / 'derm_test.csv').exists() else pd.DataFrame()
+
+    # Combine unpaired clinical and derm for training
+    train_unpaired = pd.concat([clin_train, derm_train], ignore_index=True) if not clin_train.empty or not derm_train.empty else pd.DataFrame()
+    train_paired = paired_train
+
+    # Build datasets
+    train_datasets = []
+    if not train_paired.empty:
+        train_datasets.append(PairedDataset(train_paired, dataset_roots, transform=train_transform))
+    if not train_unpaired.empty:
+        train_datasets.append(UnpairedDataset(train_unpaired, dataset_roots, transform=train_transform))
+
+    if not train_datasets:
+        raise FileNotFoundError("No training data found. Check CSV files in " + str(csv_dir))
+
+    train_dataset = torch.utils.data.ConcatDataset(train_datasets)
+
+    # Validation datasets
+    val_datasets = []
+    if not paired_val.empty:
+        val_datasets.append(PairedDataset(paired_val, dataset_roots, transform=val_transform))
+    if not clin_val.empty:
+        val_datasets.append(UnpairedDataset(clin_val, dataset_roots, transform=val_transform))
+    if not derm_val.empty:
+        val_datasets.append(UnpairedDataset(derm_val, dataset_roots, transform=val_transform))
+    val_dataset = torch.utils.data.ConcatDataset(val_datasets) if val_datasets else None
+
+    # Test datasets
+    test_datasets = []
+    if not paired_test.empty:
+        test_datasets.append(PairedDataset(paired_test, dataset_roots, transform=val_transform))
+    if not clin_test.empty:
+        test_datasets.append(UnpairedDataset(clin_test, dataset_roots, transform=val_transform))
+    if not derm_test.empty:
+        test_datasets.append(UnpairedDataset(derm_test, dataset_roots, transform=val_transform))
+    test_dataset = torch.utils.data.ConcatDataset(test_datasets) if test_datasets else None
+
+    # Weighted sampler for training (handle class imbalance)
+    labels = []
+    for ds in train_datasets:
+        # For PairedDataset, the label is inside the __getitem__ result; we need to extract efficiently
+        # Simpler: load labels from original DataFrames
+        if isinstance(ds, PairedDataset):
+            labels.extend(ds.df['label'].tolist())
+        else:
+            labels.extend(ds.df['label'].tolist())
+    class_counts = np.bincount(labels, minlength=cfg['num_classes'])
+    class_weights = 1.0 / (class_counts + 1e-6)
+    sample_weights = [class_weights[lbl] for lbl in labels]
+    sampler = WeightedRandomSampler(sample_weights, num_samples=len(train_dataset), replacement=True)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler,
+                              num_workers=4, pin_memory=True, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False,
+                            num_workers=4, pin_memory=True) if val_dataset else None
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False,
+                             num_workers=4, pin_memory=True) if test_dataset else None
+
+    # Cross-evaluation loaders (e.g., Derm7pt)
+    eval_loaders = {}
+    if (csv_dir / 'eval_derm7pt.csv').exists():
+        derm7pt_df = pd.read_csv(csv_dir / 'eval_derm7pt.csv')
+        # Derm7pt CSV has 'image_path' column
+        derm7pt_df = derm7pt_df[['image_path', 'label', 'skin_type', 'dataset']]
+        derm7pt_dataset = UnpairedDataset(derm7pt_df, dataset_roots, transform=val_transform)
+        eval_loaders['derm7pt'] = DataLoader(derm7pt_dataset, batch_size=batch_size, shuffle=False,
+                                             num_workers=4, pin_memory=True)
+
+    # Add any other cross-eval CSV if needed (e.g., eval_other.csv)
+    return train_loader, val_loader, test_loader, eval_loaders
 
 
 # ------------------------------------------------------------
@@ -440,3 +632,15 @@ def print_full_report(res, fair, split_name, label_names):
         note = "" if not np.isnan(v) else f"  ← n={n_grp} (no samples)"
         print(f"  FST {g+1}  n={n_grp:>4}  {v:.4f}  {bar}{note}")
     print(f"\n{'='*60}\n")
+
+
+# ------------------------------------------------------------
+# Label mapping (shared with training scripts)
+# ------------------------------------------------------------
+LABEL_NAMES = {
+    0: 'melanoma',
+    1: 'nevus',
+    2: 'basal cell carcinoma',
+    3: 'actinic keratosis',
+    4: 'squamous cell carcinoma',
+}
