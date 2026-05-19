@@ -113,11 +113,11 @@ CFG = {
 
     # Training
     'batch_size': 32,
-    'num_epochs': 200,
+    'num_epochs': 1,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 40,
+    'warmup_epochs': 1,
     'aug_probability': 0.85,
 
     # Loss weights

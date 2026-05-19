@@ -105,11 +105,11 @@ CFG = {
 
     # Training
     'batch_size': 32,
-    'num_epochs': 200,
+    'num_epochs': 1,
     'lr': 3e-5,                 # ViT typically needs lower LR than ResNet
     'min_lr': 1e-6,
     'weight_decay': 0.05,
-    'warmup_epochs': 40,
+    'warmup_epochs': 1,
     'aug_probability': 0.85,
 }
 
