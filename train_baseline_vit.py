@@ -19,6 +19,9 @@ from pathlib import Path
 from collections import defaultdict
 import warnings
 
+import matplotlib
+matplotlib.use('Agg')
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
