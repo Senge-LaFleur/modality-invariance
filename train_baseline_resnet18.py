@@ -60,8 +60,9 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
 # Directory structure (update paths as needed)
-DRIVE_ROOT = Path('/kaggle/input/datasets')   # e.g., /kaggle/input/datasets (change accordingly)
-WORK_ROOT = Path('.')                         # working directory, will create subdirs
+DRIVE_ROOT = Path('C:\\Users\\asose\\OneDrive\\Desktop\\SengeResearch\\datasets')   # e.g., /kaggle/input/datasets (change accordingly)
+
+WORK_ROOT = Path('process\\process\\outputs')                         # working directory, will create subdirs
 
 CFG = {
     # Dataset roots (must contain the pre‑processed CSV files)
@@ -78,11 +79,11 @@ CFG = {
 
     # Training
     'batch_size': 32,
-    'num_epochs': 200,
+    'num_epochs': 1,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 40,
+    'warmup_epochs': 1,
     'aug_probability': 0.85,
 }
 
