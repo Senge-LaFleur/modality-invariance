@@ -10,6 +10,8 @@ All outputs (checkpoints, results) are saved in:
     - results_baseline_vit/
 """
 
+import os
+os.environ['MPLBACKEND'] = 'Agg'
 import sys
 import random
 import math
