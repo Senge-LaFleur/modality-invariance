@@ -39,8 +39,24 @@ from models.evaluation import (
     plot_per_class_metrics, plot_fairness_metrics, plot_training_curves,
     plot_tsne, build_loaders, LABEL_NAMES,
 )
-from models.got_losses import Confusion_Loss
-from Masked_GOT_NewSinkhorn import got_loss
+from models.Masked_GOT_NewSinkhorn import got_loss
+
+class Confusion_Loss(torch.nn.Module):
+    """
+    Confusion loss — encourages uniform skin-type predictions so the backbone
+    cannot distinguish skin types.  Copied verbatim from models/got_losses.py
+    to avoid that module's top-level `from transformers import ...` import
+    which is not needed here and would crash if transformers is not installed.
+    Source: https://www.repository.cam.ac.uk/handle/1810/309834
+    """
+    def __init__(self):
+        super().__init__()
+        self.softmax = torch.nn.Softmax(dim=1)
+
+    def forward(self, output, label):
+        prediction = self.softmax(output)
+        log_prediction = torch.log(prediction)
+        return -torch.mean(torch.mean(log_prediction, dim=1), dim=0)
 
 warnings.filterwarnings("ignore")
 
