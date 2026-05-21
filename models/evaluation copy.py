@@ -256,27 +256,13 @@ def build_loaders(cfg, seed=42):
     eval_loaders = {}
     if (csv_dir / 'eval_derm7pt.csv').exists():
         derm7pt_df = pd.read_csv(csv_dir / 'eval_derm7pt.csv')
-        has_paired   = {'clinical', 'derm', 'label', 'skin_type', 'dataset'}.issubset(derm7pt_df.columns)
-        has_unpaired = {'image_id', 'label', 'skin_type', 'dataset'}.issubset(derm7pt_df.columns)
-        if has_paired:
-            # Derm7pt is a paired dataset: each row has a clinical AND a dermoscopic image ID
-            derm7pt_df = derm7pt_df[['clinical', 'derm', 'label', 'skin_type', 'dataset']]
-            derm7pt_dataset = PairedDataset(derm7pt_df, image_maps, transform=val_transform,
-                                            clinical_col='clinical', derm_col='derm')
-            eval_loaders['derm7pt'] = DataLoader(derm7pt_dataset, batch_size=batch_size, shuffle=False,
-                                                 num_workers=4, pin_memory=True)
-            print(f"[INFO] Loaded derm7pt paired eval set: {len(derm7pt_df)} samples")
-        elif has_unpaired:
-            # Fallback: unpaired CSV with a single image_id column
+        if 'image_id' in derm7pt_df.columns:
             derm7pt_df = derm7pt_df[['image_id', 'label', 'skin_type', 'dataset']]
             derm7pt_dataset = UnpairedDataset(derm7pt_df, image_maps, transform=val_transform, id_col='image_id')
             eval_loaders['derm7pt'] = DataLoader(derm7pt_dataset, batch_size=batch_size, shuffle=False,
                                                  num_workers=4, pin_memory=True)
-            print(f"[INFO] Loaded derm7pt unpaired eval set: {len(derm7pt_df)} samples")
         else:
-            print("[WARN] eval_derm7pt.csv must contain either "
-                  "('clinical','derm','label','skin_type','dataset') for paired mode "
-                  "or ('image_id','label','skin_type','dataset') for unpaired mode. Skipping.")
+            print("[WARN] eval_derm7pt.csv missing 'image_id' column, skipping.")
 
     return train_loader, val_loader, test_loader, eval_loaders
 

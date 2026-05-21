@@ -256,6 +256,8 @@ def main():
     start_epoch = 0
     best_auroc = 0.0
     best_f1 = 0.0
+    patience = 20
+    patience_counter = 0
     history = defaultdict(list)
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
@@ -266,6 +268,19 @@ def main():
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
+
+        # ----- EARLY STOPPING (patience=20) -----
+        current_f1 = val_metrics["macro_f1"]
+        if current_f1 > best_f1:
+            best_f1 = current_f1
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        if patience_counter >= patience:
+            print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
+            break
+        # -----------------------------------------
 
         # Record history
         for k, v in train_metrics.items():
