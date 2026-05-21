@@ -373,11 +373,11 @@ CFG = {
     'text_embed_dim':   768,
 
     'batch_size':    32,
-    'num_epochs':    100,          # Update as needed
+    'num_epochs':    150,          # Update as needed
     'lr':            3e-5,
     'min_lr':        1e-6,
     'weight_decay':  0.05,
-    'warmup_epochs': 20,           # Update as needed
+    'warmup_epochs': 30,           # Update as needed
     'aug_probability': 0.85,
 
     'alpha_conf': 0.5,
@@ -698,11 +698,15 @@ def main():
                               CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
         cross_results[ds_name] = {
             "accuracy": res["acc"],
-            "auroc":    res["auroc"],
+            "precision": res["macro_prec"],
+            "recall": res["macro_rec"],
+            "auroc": res["auroc"],
             "macro_f1": res["macro_f1"],
-            "EOM":      fair["EOM"],
-            "PQD":      fair["PQD"],
-            "DPM":      fair["DPM"],
+            "micro_f1": res["micro_f1"],
+            "weighted_f1": res["weighted_f1"],
+            "EOM": fair["EOM"],
+            "PQD": fair["PQD"],
+            "DPM": fair["DPM"],
         }
     if cross_results:
         cross_df = pd.DataFrame(cross_results).T

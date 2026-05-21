@@ -484,11 +484,11 @@ CFG = {
     'num_groups': 2,
     
     'batch_size': 32,
-    'num_epochs': 100,       # Update as needed
+    'num_epochs': 150,       # Update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 20,     # Update as needed
+    'warmup_epochs': 30,     # Update as needed
     'aug_probability': 0.85,
     'alpha': 1.0,          # weight for L_SD loss
 }
@@ -660,8 +660,12 @@ def main():
             plot_fairness_metrics(fair_metrics, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
             cross_results[ds_name] = {
                 "accuracy": res["acc"],
+                "precision": res["macro_prec"],
+                "recall": res["macro_rec"],
                 "auroc": res["auroc"],
                 "macro_f1": res["macro_f1"],
+                "micro_f1": res["micro_f1"],
+                "weighted_f1": res["weighted_f1"],
                 "EOM": fair_metrics.get("EOM", 0),
                 "PQD": fair_metrics.get("PQD", 0),
                 "DPM": fair_metrics.get("DPM", 0),

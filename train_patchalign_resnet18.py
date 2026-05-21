@@ -94,9 +94,9 @@ CFG = {
     'num_classes': 5, 'num_skin_types': 6, 'num_text_labels': 6,
     'text_embed_dim': 768,
     'batch_size': 32, 
-    'num_epochs': 100,        # Update as needed
+    'num_epochs': 150,        # Update as needed
     'lr': 1e-4, 'min_lr': 1e-6, 'weight_decay': 1e-4, 
-    'warmup_epochs': 20,      # Update as needed
+    'warmup_epochs': 30,      # Update as needed
     'aug_probability': 0.85,
     'alpha_conf': 0.5, 'beta_got': 1.0, 'lamb_got': 0.9,
 }
@@ -483,8 +483,18 @@ def main():
         plot_per_class_metrics(res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                f"Per-Class Metrics - {ds_name}", CFG["results_dir"]/f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"]/f"cross_{ds_name}_fairness.png")
-        cross_results[ds_name] = {"accuracy": res["acc"], "auroc": res["auroc"], "macro_f1": res["macro_f1"],
-                                  "EOM": fair["EOM"], "PQD": fair["PQD"], "DPM": fair["DPM"]}
+        cross_results[ds_name] = {
+            "accuracy": res["acc"],
+            "precision": res["macro_prec"],
+            "recall": res["macro_rec"],
+            "auroc": res["auroc"],
+            "macro_f1": res["macro_f1"],
+            "micro_f1": res["micro_f1"],
+            "weighted_f1": res["weighted_f1"],
+            "EOM": fair["EOM"],
+            "PQD": fair["PQD"],
+            "DPM": fair["DPM"],
+        }
     if cross_results:
         pd.DataFrame(cross_results).T.to_csv(CFG["results_dir"]/"cross_dataset_summary.csv")
         print("\nCross-dataset summary:\n", pd.DataFrame(cross_results).T)
