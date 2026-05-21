@@ -261,47 +261,29 @@ class PatchAlignResNet18(nn.Module):
         embeddings = None
         patches_list = []
 
-        if paired_mask.any() and "clinical" in batch and "derm" in batch:
-            clin_t = batch["clinical"][paired_mask].to(device)
-            derm_t = batch["derm"][paired_mask].to(device)
-            z_c, feat_c = self._extract_features(clin_t, "clinical")
-            z_d, feat_d = self._extract_features(derm_t, "derm")
-            z_paired = (z_c + z_d) / 2
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device, dtype=z_paired.dtype)
-            embeddings[paired_mask] = z_paired
-            p_c, m_c = self._patch_embeddings(feat_c)
-            p_d, m_d = self._patch_embeddings(feat_d)
-            fused_patches = torch.cat([p_c, p_d], dim=1)
-            fused_mask = torch.cat([m_c, m_d], dim=1)
-            patches_list.append((paired_mask, fused_patches, fused_mask))
-
-        if unpaired_mask.any() and "clinical" in batch:
-            img_t = batch["clinical"][unpaired_mask].to(device)
+        # Always use clinical modality for patches (ignoring derm)
+        if "clinical" in batch:
+            # Process all samples (paired and unpaired) using clinical images
+            clinical_t = batch["clinical"].to(device)
+            z, feat = self._extract_features(clinical_t, "clinical")
+            patches, mask = self._patch_embeddings(feat)   # (B, 49, 768), (B, 49, 6)
+            embeddings = z
+            # For paired samples we still use clinical patches only
+            # We don't fuse or use derm patches at all
+            # So patches and mask are already full batch size (B)
+            out_patches = patches
+            out_masks = mask
+        else:
+            # Fallback: use any available image (should not happen)
+            img_t = batch["image"].to(device)
             z, feat = self._extract_features(img_t, "clinical")
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device, dtype=z.dtype)
-            embeddings[unpaired_mask] = z
             patches, mask = self._patch_embeddings(feat)
-            patches_list.append((unpaired_mask, patches, mask))
+            embeddings = z
+            out_patches = patches
+            out_masks = mask
 
         if embeddings is None:
             embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
-
-        if patches_list:
-            n_patches = patches_list[0][1].size(1)
-            text_d = patches_list[0][1].size(2)
-            n_text = patches_list[0][2].size(2)
-            all_patches = torch.zeros(batch_size, n_patches, text_d, device=device, dtype=patches_list[0][1].dtype)
-            all_masks = torch.zeros(batch_size, n_patches, n_text, device=device, dtype=patches_list[0][2].dtype)
-            for sel_mask, p, m in patches_list:
-                all_patches[sel_mask] = p
-                all_masks[sel_mask] = m
-            out_patches = all_patches
-            out_masks = all_masks
-        else:
-            out_patches = None
-            out_masks = None
 
         out = {
             "z": embeddings,
