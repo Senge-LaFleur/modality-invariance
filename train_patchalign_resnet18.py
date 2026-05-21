@@ -39,7 +39,34 @@ from models.evaluation import (
     plot_per_class_metrics, plot_fairness_metrics, plot_training_curves,
     plot_tsne, build_loaders, LABEL_NAMES,
 )
-from models.Masked_GOT_NewSinkhorn import got_loss
+from models.Masked_GOT_NewSinkhorn import (
+    cost_matrix_batch_torch,
+    IPOT_distance_torch_batch_uniform,
+    GW_distance_uniform,
+)
+
+def got_loss(p, q, mask, lamb=0.9):
+    """
+    Combined Wasserstein + Gromov-Wasserstein loss (Eq. 1 of PatchAlign paper).
+    p    : (B, N_patches, D)  image patch embeddings
+    q    : (B, N_text,    D)  text label  embeddings
+    mask : (B, N_patches, N_text)  learnable soft mask in [0, 1]
+    lamb : weight on GWD term vs WD term
+    """
+    # cost_matrix_batch_torch expects (B, D, N) layout
+    p_t = p.transpose(1, 2)   # (B, D, N_patches)
+    q_t = q.transpose(1, 2)   # (B, D, N_text)
+
+    # Thresholded cosine distance matrix  (B, N_patches, N_text)
+    cos_distance = cost_matrix_batch_torch(p_t, q_t).transpose(1, 2)
+    beta = 0.1
+    threshold = cos_distance.min() + beta * (cos_distance.max() - cos_distance.min())
+    cos_dist = torch.nn.functional.relu(cos_distance - threshold)
+
+    bs, n_p, n_t = cos_dist.size()
+    wd, _T = IPOT_distance_torch_batch_uniform(cos_dist, mask, bs, n_p, n_t)
+    gwd    = GW_distance_uniform(p_t, q_t, mask)
+    return lamb * torch.mean(gwd) + (1.0 - lamb) * torch.mean(wd)
 
 class Confusion_Loss(torch.nn.Module):
     """
