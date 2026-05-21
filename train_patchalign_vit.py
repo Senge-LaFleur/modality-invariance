@@ -309,9 +309,10 @@ class PatchAlignViT(nn.Module):
         if paired_mask.any() and "clinical" in batch and "derm" in batch:
             clin_t = batch["clinical"][paired_mask].to(device)
             derm_t = batch["derm"][paired_mask].to(device)
-            _, z_c = self._extract_features(clin_t, "clinical")
-            _, z_d = self._extract_features(derm_t, "derm")
+            z_c, _, _ = self._extract_features(clin_t, "clinical")   # ignore patches & mask
+            z_d, _, _ = self._extract_features(derm_t, "derm")
             z_paired = (z_c + z_d) / 2
+            # embeddings is a tensor from the clinical branch, we can update it
             embeddings[paired_mask] = z_paired
 
         # Safety fallback
@@ -372,11 +373,11 @@ CFG = {
     'text_embed_dim':   768,
 
     'batch_size':    32,
-    'num_epochs':    1,         # Update as needed
+    'num_epochs':    1,
     'lr':            3e-5,
     'min_lr':        1e-6,
     'weight_decay':  0.05,
-    'warmup_epochs': 1,         # Update as needed
+    'warmup_epochs': 1,
     'aug_probability': 0.85,
 
     'alpha_conf': 0.5,
