@@ -333,9 +333,10 @@ def train_epoch_fair(model, loader, optimizer, epoch, scaler, device,
 # ------------------------------------------------------------
 def validate_fair(model, loader, device, num_classes, desc="Validation"):
     model.eval()
-    all_preds = []
+    all_preds  = []
+    all_probs  = []   # softmax probabilities for AUROC
     all_labels = []
-    all_sens = []
+    all_sens   = []
     all_losses = []
     criterion = nn.CrossEntropyLoss()
     
@@ -378,8 +379,10 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
             proc_labels = batch['label'][gathered_idx[restore]]
             proc_sens   = task_idx[gathered_idx[restore]]
 
-            preds = logits.argmax(dim=1)
+            probs = torch.softmax(logits, dim=1)
+            preds = probs.argmax(dim=1)
             all_preds.append(preds.cpu().numpy())
+            all_probs.append(probs.cpu().numpy())
             all_labels.append(proc_labels.cpu().numpy())
             all_sens.append(proc_sens.cpu().numpy())
             loss = criterion(logits, proc_labels)
@@ -390,33 +393,49 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
     if len(all_preds) == 0:
         return None
     
-    all_preds = np.concatenate(all_preds)
+    all_preds  = np.concatenate(all_preds)
+    all_probs  = np.concatenate(all_probs)
     all_labels = np.concatenate(all_labels)
-    all_sens = np.concatenate(all_sens)
-    
-    acc = accuracy_score(all_labels, all_preds)
-    macro_f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
+    all_sens   = np.concatenate(all_sens)
+
+    acc         = accuracy_score(all_labels, all_preds)
+    macro_f1    = f1_score(all_labels, all_preds, average='macro',    zero_division=0)
     weighted_f1 = f1_score(all_labels, all_preds, average='weighted', zero_division=0)
-    conf_mat = confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
-    
-    # For AUROC we would need probabilities; skip for simplicity (or compute later)
-    auroc = 0.0
-    
-    preds_by_sens = {0: all_preds[all_sens==0], 1: all_preds[all_sens==1]}
-    labels_by_sens = {0: all_labels[all_sens==0], 1: all_labels[all_sens==1]}
-    
+    conf_mat    = confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
+
+    # Compute macro-averaged one-vs-rest AUROC from collected softmax probabilities
+    try:
+        from sklearn.metrics import roc_auc_score
+        present_classes = np.unique(all_labels)
+        if len(present_classes) >= 2:
+            auroc = roc_auc_score(
+                all_labels, all_probs,
+                multi_class='ovr', average='macro',
+                labels=list(range(num_classes))
+            )
+        else:
+            auroc = 0.0
+    except Exception:
+        auroc = 0.0
+
+    preds_by_sens  = {0: all_preds[all_sens == 0],  1: all_preds[all_sens == 1]}
+    labels_by_sens = {0: all_labels[all_sens == 0], 1: all_labels[all_sens == 1]}
+
     return {
-        'acc': acc,
-        'auroc': auroc,
-        'macro_f1': macro_f1,
-        'weighted_f1': weighted_f1,
-        'conf_mat': conf_mat,
-        'preds': all_preds,
-        'labels': all_labels,
-        'sens': all_sens,
-        'preds_by_sens': preds_by_sens,
+        'acc':           acc,
+        'auroc':         auroc,
+        'macro_f1':      macro_f1,
+        'weighted_f1':   weighted_f1,
+        'conf_mat':      conf_mat,
+        'preds':         all_preds,
+        'probs':         all_probs,
+        'labels':        all_labels,
+        # 'skin' is the key expected by evaluation.fairness(); 'sens' kept as alias
+        'skin':          all_sens,
+        'sens':          all_sens,
+        'preds_by_sens':  preds_by_sens,
         'labels_by_sens': labels_by_sens,
-        'loss': np.mean(all_losses) if all_losses else 0.0
+        'loss':          np.mean(all_losses) if all_losses else 0.0
     }
 
 
