@@ -94,7 +94,7 @@ class FairAdaptiveBatchNorm2d(nn.Module):
                 break
             module = getattr(module, '_parent', None)
             if module is None:
-                # Try to traverse up using children's _modules? Simpler: assume root has attribute.
+                # Traverse up using children's _modules? Simpler: assume root has attribute.
                 break
         if task_idx is None:
             raise RuntimeError("FairAdaptiveBatchNorm2d could not find current_task_idx in parent modules. "
