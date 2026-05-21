@@ -4,8 +4,9 @@
 """
 PatchAlign — Dual ResNet-18 with Masked Graph Optimal Transport (MGOT)
 =======================================================================
-Extends train_BASE_resnet18.py with PatchAlign losses:
-  L = L_c + α·L_conf + L_s + β·L_got
+Extracts text embeddings for the 5 disease classes + eudermic from the original
+PatchAlign embedding file (115 clinical labels).  All other components are
+identical to the baseline dual ResNet-18 training.
 """
 
 import os
@@ -39,7 +40,7 @@ from models.evaluation import (
     plot_tsne, build_loaders, LABEL_NAMES,
 )
 from models.got_losses import Confusion_Loss
-from Masked_GOT_NewSinkhorn import got_loss   # <-- import from your existing module
+from Masked_GOT_NewSinkhorn import got_loss
 
 warnings.filterwarnings("ignore")
 
@@ -58,7 +59,9 @@ IMAGE_ROOTS = {
     'ham10000':       Path('/kaggle/input/datasets/asosenge/ham10000/HAM10000'),
     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
 }
-TEXT_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
+
+# Path to the original PatchAlign embedding file (115 labels, 768 dims)
+FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
 
 CFG = {
     'csv_dir': CSV_DIR, 'image_roots': IMAGE_ROOTS,
@@ -73,6 +76,64 @@ CFG = {
 }
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
 CFG["results_dir"].mkdir(parents=True, exist_ok=True)
+
+# ----------------------------- Original label list (115 items) --------------
+# Copied from train_PatchAlign_FitzPatrick_InDomain.py
+ORIGINAL_LABELS = [
+    'drug induced pigmentary changes', 'photodermatoses',
+    'dermatofibroma', 'psoriasis', 'kaposi sarcoma',
+    'neutrophilic dermatoses', 'granuloma annulare',
+    'nematode infection', 'allergic contact dermatitis',
+    'necrobiosis lipoidica', 'hidradenitis', 'melanoma',
+    'acne vulgaris', 'sarcoidosis', 'xeroderma pigmentosum',
+    'actinic keratosis', 'scleroderma', 'syringoma', 'folliculitis',
+    'pityriasis lichenoides chronica', 'porphyria',
+    'dyshidrotic eczema', 'seborrheic dermatitis', 'prurigo nodularis',
+    'acne', 'neurofibromatosis', 'eczema', 'pediculosis lids',
+    'basal cell carcinoma', 'pityriasis rubra pilaris',
+    'pityriasis rosea', 'livedo reticularis',
+    'stevens johnson syndrome', 'erythema multiforme',
+    'acrodermatitis enteropathica', 'epidermolysis bullosa',
+    'dermatomyositis', 'urticaria', 'basal cell carcinoma morpheiform',
+    'vitiligo', 'erythema nodosum', 'lupus erythematosus',
+    'lichen planus', 'sun damaged skin', 'drug eruption', 'scabies',
+    'cheilitis', 'urticaria pigmentosa', 'behcets disease',
+    'nevocytic nevus', 'mycosis fungoides',
+    'superficial spreading melanoma ssm', 'porokeratosis of mibelli',
+    'juvenile xanthogranuloma', 'milia', 'granuloma pyogenic',
+    'papilomatosis confluentes and reticulate',
+    'neurotic excoriations', 'epidermal nevus', 'naevus comedonicus',
+    'erythema annulare centrifigum', 'pilar cyst',
+    'pustular psoriasis', 'ichthyosis vulgaris', 'lyme disease',
+    'striae', 'rhinophyma', 'calcinosis cutis', 'stasis edema',
+    'neurodermatitis', 'congenital nevus', 'squamous cell carcinoma',
+    'mucinosis', 'keratosis pilaris', 'keloid', 'tuberous sclerosis',
+    'acquired autoimmune bullous diseaseherpes gestationis',
+    'fixed eruptions', 'lentigo maligna', 'lichen simplex',
+    'dariers disease', 'lymphangioma', 'pilomatricoma',
+    'lupus subacute', 'perioral dermatitis',
+    'disseminated actinic porokeratosis', 'erythema elevatum diutinum',
+    'halo nevus', 'aplasia cutis', 'incontinentia pigmenti',
+    'tick bite', 'fordyce spots', 'telangiectases',
+    'solid cystic basal cell carcinoma', 'paronychia', 'becker nevus',
+    'pyogenic granuloma', 'langerhans cell histiocytosis',
+    'port wine stain', 'malignant melanoma', 'factitial dermatitis',
+    'xanthomas', 'nevus sebaceous of jadassohn',
+    'hailey hailey disease', 'scleromyxedema', 'porokeratosis actinic',
+    'rosacea', 'acanthosis nigricans', 'myiasis',
+    'seborrheic keratosis', 'mucous cyst', 'lichen amyloidosis',
+    'ehlers danlos syndrome', 'tungiasis', 'eudermic'
+]
+
+# Mapping from our class names to the exact strings in ORIGINAL_LABELS
+CLASS_MAPPING = {
+    "melanoma":                 "melanoma",
+    "nevus":                    "nevocytic nevus",
+    "basal cell carcinoma":     "basal cell carcinoma",
+    "actinic keratosis":        "actinic keratosis",
+    "squamous cell carcinoma":  "squamous cell carcinoma",
+    "eudermic":                 "eudermic",
+}
 
 # ----------------------------- Model Definition ------------------------------
 _RESNET18_FEAT_DIM = 512
@@ -157,7 +218,6 @@ class PatchAlignResNet18(nn.Module):
         embeddings = None
         patches_list = []
 
-        # Paired samples
         if paired_mask.any() and "clinical" in batch and "derm" in batch:
             clin_t = batch["clinical"][paired_mask].to(device)
             derm_t = batch["derm"][paired_mask].to(device)
@@ -173,7 +233,6 @@ class PatchAlignResNet18(nn.Module):
             fused_mask = torch.cat([m_c, m_d], dim=1)
             patches_list.append((paired_mask, fused_patches, fused_mask))
 
-        # Unpaired samples
         if unpaired_mask.any() and "clinical" in batch:
             img_t = batch["clinical"][unpaired_mask].to(device)
             z, feat = self._extract_features(img_t, "clinical")
@@ -186,7 +245,6 @@ class PatchAlignResNet18(nn.Module):
         if embeddings is None:
             embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
 
-        # Assemble full batch patches/masks
         if patches_list:
             n_patches = patches_list[0][1].size(1)
             text_d = patches_list[0][1].size(2)
@@ -219,7 +277,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
     n_batches = 0
     criterion_cls = nn.CrossEntropyLoss()
     criterion_skin = nn.CrossEntropyLoss(ignore_index=-1)
-    confusion_loss = ConfusionLoss()   # from models.got_losses
+    confusion_loss = Confusion_Loss()   # from models.got_losses
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", dynamic_ncols=True, leave=False)
     for batch in pbar:
@@ -281,12 +339,25 @@ def main():
     print(f"Checkpoints: {CFG['ckpt_dir']}")
     print(f"Results: {CFG['results_dir']}")
 
-    # Load text embeddings
-    if TEXT_EMBEDDINGS_PATH.exists():
-        text_emb = torch.tensor(np.load(TEXT_EMBEDDINGS_PATH), dtype=torch.float32).to(DEVICE)
-        print(f"Loaded text embeddings: {text_emb.shape}")
+    # Load text embeddings from the original PatchAlign file (115 labels)
+    if FULL_EMBEDDINGS_PATH.exists():
+        full_emb = np.load(FULL_EMBEDDINGS_PATH)   # shape (115, 768)
+        print(f"Loaded full embedding matrix: {full_emb.shape}")
+
+        # Build index mapping from label string to row number
+        label_to_idx = {label: idx for idx, label in enumerate(ORIGINAL_LABELS)}
+        selected_indices = []
+        for our_class_name, orig_name in CLASS_MAPPING.items():
+            if orig_name not in label_to_idx:
+                raise ValueError(f"Label '{orig_name}' not found in original label list")
+            selected_indices.append(label_to_idx[orig_name])
+
+        # Extract the 6 embeddings in the order: melanoma, nevus, BCC, AK, SCC, eudermic
+        text_emb_np = full_emb[selected_indices]   # (6, 768)
+        print(f"Selected embeddings: {text_emb_np.shape}")
+        text_emb = torch.tensor(text_emb_np, dtype=torch.float32).to(DEVICE)
     else:
-        print("[WARN] Text embeddings not found; GOT loss will be zero.")
+        print("[WARN] Full text embeddings not found; GOT loss will be zero.")
         text_emb = None
 
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
@@ -357,7 +428,6 @@ def main():
     model.load_state_dict(ckpt["model"])
     print(f"Loaded best model from {best_ckpt.name} (epoch {ckpt['epoch']+1})")
 
-    # Standard validation, test, cross-dataset evaluation, plotting...
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
     save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
