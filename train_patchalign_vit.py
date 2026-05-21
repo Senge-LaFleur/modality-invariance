@@ -395,11 +395,11 @@ CFG = {
     'text_embed_dim':   768,
 
     'batch_size':    32,
-    'num_epochs':    20,
+    'num_epochs':    1,         # Update as needed
     'lr':            3e-5,
     'min_lr':        1e-6,
     'weight_decay':  0.05,
-    'warmup_epochs': 4,
+    'warmup_epochs': 1,         # Update as needed
     'aug_probability': 0.85,
 
     'alpha_conf': 0.5,
