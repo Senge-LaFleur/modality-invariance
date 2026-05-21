@@ -4,7 +4,9 @@
 """
 PatchAlign — Dual ViT (vit_small_patch16_224) with Masked Graph Optimal Transport
 ===================================================================================
-Extends train_BASE_vit.py with PatchAlign losses.
+Extracts text embeddings for the 5 disease classes + eudermic from the original
+PatchAlign embedding file (115 clinical labels).  All other components are
+identical to the baseline dual ViT training.
 """
 
 import os
@@ -37,7 +39,7 @@ from models.evaluation import (
     plot_tsne, build_loaders, LABEL_NAMES,
 )
 from models.got_losses import Confusion_Loss
-from Masked_GOT_NewSinkhorn import got_loss   # <-- import
+from Masked_GOT_NewSinkhorn import got_loss
 
 warnings.filterwarnings("ignore")
 
@@ -56,7 +58,9 @@ DATASET_ROOTS = {
     'ham10000':       Path('/kaggle/input/datasets/asosenge/ham10000'),
     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt'),
 }
-TEXT_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
+
+# Path to the original PatchAlign embedding file (115 labels, 768 dims)
+FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
 
 CFG = {
     'csv_dir': CSV_DIR, 'dataset_roots': DATASET_ROOTS,
@@ -71,6 +75,64 @@ CFG = {
 }
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
 CFG["results_dir"].mkdir(parents=True, exist_ok=True)
+
+# ----------------------------- Original label list (115 items) --------------
+# Copied from train_PatchAlign_FitzPatrick_InDomain.py
+ORIGINAL_LABELS = [
+    'drug induced pigmentary changes', 'photodermatoses',
+    'dermatofibroma', 'psoriasis', 'kaposi sarcoma',
+    'neutrophilic dermatoses', 'granuloma annulare',
+    'nematode infection', 'allergic contact dermatitis',
+    'necrobiosis lipoidica', 'hidradenitis', 'melanoma',
+    'acne vulgaris', 'sarcoidosis', 'xeroderma pigmentosum',
+    'actinic keratosis', 'scleroderma', 'syringoma', 'folliculitis',
+    'pityriasis lichenoides chronica', 'porphyria',
+    'dyshidrotic eczema', 'seborrheic dermatitis', 'prurigo nodularis',
+    'acne', 'neurofibromatosis', 'eczema', 'pediculosis lids',
+    'basal cell carcinoma', 'pityriasis rubra pilaris',
+    'pityriasis rosea', 'livedo reticularis',
+    'stevens johnson syndrome', 'erythema multiforme',
+    'acrodermatitis enteropathica', 'epidermolysis bullosa',
+    'dermatomyositis', 'urticaria', 'basal cell carcinoma morpheiform',
+    'vitiligo', 'erythema nodosum', 'lupus erythematosus',
+    'lichen planus', 'sun damaged skin', 'drug eruption', 'scabies',
+    'cheilitis', 'urticaria pigmentosa', 'behcets disease',
+    'nevocytic nevus', 'mycosis fungoides',
+    'superficial spreading melanoma ssm', 'porokeratosis of mibelli',
+    'juvenile xanthogranuloma', 'milia', 'granuloma pyogenic',
+    'papilomatosis confluentes and reticulate',
+    'neurotic excoriations', 'epidermal nevus', 'naevus comedonicus',
+    'erythema annulare centrifigum', 'pilar cyst',
+    'pustular psoriasis', 'ichthyosis vulgaris', 'lyme disease',
+    'striae', 'rhinophyma', 'calcinosis cutis', 'stasis edema',
+    'neurodermatitis', 'congenital nevus', 'squamous cell carcinoma',
+    'mucinosis', 'keratosis pilaris', 'keloid', 'tuberous sclerosis',
+    'acquired autoimmune bullous diseaseherpes gestationis',
+    'fixed eruptions', 'lentigo maligna', 'lichen simplex',
+    'dariers disease', 'lymphangioma', 'pilomatricoma',
+    'lupus subacute', 'perioral dermatitis',
+    'disseminated actinic porokeratosis', 'erythema elevatum diutinum',
+    'halo nevus', 'aplasia cutis', 'incontinentia pigmenti',
+    'tick bite', 'fordyce spots', 'telangiectases',
+    'solid cystic basal cell carcinoma', 'paronychia', 'becker nevus',
+    'pyogenic granuloma', 'langerhans cell histiocytosis',
+    'port wine stain', 'malignant melanoma', 'factitial dermatitis',
+    'xanthomas', 'nevus sebaceous of jadassohn',
+    'hailey hailey disease', 'scleromyxedema', 'porokeratosis actinic',
+    'rosacea', 'acanthosis nigricans', 'myiasis',
+    'seborrheic keratosis', 'mucous cyst', 'lichen amyloidosis',
+    'ehlers danlos syndrome', 'tungiasis', 'eudermic'
+]
+
+# Mapping from our class names to the exact strings in ORIGINAL_LABELS
+CLASS_MAPPING = {
+    "melanoma":                 "melanoma",
+    "nevus":                    "nevocytic nevus",
+    "basal cell carcinoma":     "basal cell carcinoma",
+    "actinic keratosis":        "actinic keratosis",
+    "squamous cell carcinoma":  "squamous cell carcinoma",
+    "eudermic":                 "eudermic",
+}
 
 # ----------------------------- Model Definition ------------------------------
 _VIT_SMALL_FEAT_DIM = 384
@@ -200,7 +262,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
     n_batches = 0
     criterion_cls = nn.CrossEntropyLoss()
     criterion_skin = nn.CrossEntropyLoss(ignore_index=-1)
-    confusion_loss = ConfusionLoss()
+    confusion_loss = Confusion_Loss()
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", dynamic_ncols=True, leave=False)
     for batch in pbar:
@@ -262,12 +324,25 @@ def main():
     print(f"Checkpoints: {CFG['ckpt_dir']}")
     print(f"Results: {CFG['results_dir']}")
 
-    # Load text embeddings
-    if TEXT_EMBEDDINGS_PATH.exists():
-        text_emb = torch.tensor(np.load(TEXT_EMBEDDINGS_PATH), dtype=torch.float32).to(DEVICE)
-        print(f"Loaded text embeddings: {text_emb.shape}")
+    # Load text embeddings from the original PatchAlign file (115 labels)
+    if FULL_EMBEDDINGS_PATH.exists():
+        full_emb = np.load(FULL_EMBEDDINGS_PATH)   # shape (115, 768)
+        print(f"Loaded full embedding matrix: {full_emb.shape}")
+
+        # Build index mapping from label string to row number
+        label_to_idx = {label: idx for idx, label in enumerate(ORIGINAL_LABELS)}
+        selected_indices = []
+        for our_class_name, orig_name in CLASS_MAPPING.items():
+            if orig_name not in label_to_idx:
+                raise ValueError(f"Label '{orig_name}' not found in original label list")
+            selected_indices.append(label_to_idx[orig_name])
+
+        # Extract the 6 embeddings in the order: melanoma, nevus, BCC, AK, SCC, eudermic
+        text_emb_np = full_emb[selected_indices]   # (6, 768)
+        print(f"Selected embeddings: {text_emb_np.shape}")
+        text_emb = torch.tensor(text_emb_np, dtype=torch.float32).to(DEVICE)
     else:
-        print("[WARN] Text embeddings not found; GOT loss will be zero.")
+        print("[WARN] Full text embeddings not found; GOT loss will be zero.")
         text_emb = None
 
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
@@ -328,7 +403,7 @@ def main():
 
     print(f"Training complete. Best AUROC: {best_auroc:.4f}, Best F1: {best_f1:.4f}")
 
-    # Load best model and evaluate (same as in ResNet version)
+    # Load best model and evaluate
     best_ckpt = CFG["ckpt_dir"]/"best_f1_model.pt"
     if not best_ckpt.exists():
         best_ckpt = CFG["ckpt_dir"]/"best_auroc_model.pt"

@@ -95,10 +95,8 @@ class FairAdaptiveBatchNorm2d(nn.Module):
             module = getattr(module, '_parent', None)
             if module is None:
                 # Try to traverse up using children's _modules? Simpler: assume root has attribute.
-                # For robustness, we can also check the global state.
                 break
         if task_idx is None:
-            # Fallback: try to get from a global variable or raise error
             raise RuntimeError("FairAdaptiveBatchNorm2d could not find current_task_idx in parent modules. "
                                "Set model.current_task_idx before forward.")
         if task_idx < 0 or task_idx >= self.num_groups:
@@ -157,50 +155,25 @@ def convert_module_to_fair_adanbn(module, num_groups=2, skip_names=None):
             convert_module_to_fair_adanbn(child, num_groups, skip_names)
 
 
-class FairDualResNet18(DualResNet18):
+class FairDualResNet18Wrapper(nn.Module):
     """
-    Extension of DualResNet18 where all BatchNorm layers are replaced with FairAdaptiveBatchNorm2d.
-    Adds a `current_task_idx` attribute that is used by the adaptive BN layers.
+    Wrapper around a standard DualResNet18 where all BatchNorm layers have been replaced
+    with FairAdaptiveBatchNorm2d. This wrapper holds a `current_task_idx` attribute
+    that is used by the adaptive BN layers during forward.
     """
-    def __init__(self, embed_dim=512, num_classes=5, num_skin_types=6,
-                 pretrained=True, use_projection=False, num_groups=2):
-        super(FairDualResNet18, self).__init__(
-            embed_dim=embed_dim,
-            num_classes=num_classes,
-            num_skin_types=num_skin_types,
-            pretrained=pretrained,
-            use_projection=use_projection
-        )
-        # Replace all BatchNorm2d in both backbones
-        convert_module_to_fair_adanbn(self.clinical_backbone, num_groups=num_groups, skip_names=[])
-        convert_module_to_fair_adanbn(self.dermoscopic_backbone, num_groups=num_groups, skip_names=[])
+    def __init__(self, base_model, num_groups=2):
+        super().__init__()
+        # Replace all BN layers in the base model
+        convert_module_to_fair_adanbn(base_model, num_groups=num_groups, skip_names=[])
+        self.base_model = base_model
         self.num_groups = num_groups
-        self.current_task_idx = None  # will be set before forward
+        self.current_task_idx = None
 
     def forward(self, batch):
-        """
-        Args:
-            batch: dict with keys 'clinical', 'dermoscopic', optionally 'skin_type'
-        Returns:
-            dict with 'logits', 'z'
-        """
-        clinical_img = batch['clinical']
-        dermoscopic_img = batch['dermoscopic']
-        
-        # Set current_task_idx for all adaptive BN layers
+        """Forward pass. Requires self.current_task_idx to be set beforehand."""
         if self.current_task_idx is None:
             raise RuntimeError("Must set model.current_task_idx before forward()")
-        
-        # Forward through backbones
-        clinical_feat = self.clinical_backbone(clinical_img)
-        dermoscopic_feat = self.dermoscopic_backbone(dermoscopic_img)
-        
-        # Concatenate
-        z = torch.cat([clinical_feat, dermoscopic_feat], dim=1)
-        if self.use_projection:
-            z = self.projection(z)
-        logits = self.classifier(z)
-        return {'logits': logits, 'z': z}
+        return self.base_model(batch)
 
 
 # ------------------------------------------------------------
@@ -469,24 +442,28 @@ def main():
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
+    # Build data loaders (same as baseline)
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     if test_loader:
         print(f"Test batches: {len(test_loader)}")
     print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
 
-    # Create FairDualResNet18 model
-    model = FairDualResNet18(
+    # Instantiate base model (standard DualResNet18)
+    base_model = DualResNet18(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
         num_skin_types=CFG["num_skin_types"],
         pretrained=True,
         use_projection=False,
-        num_groups=CFG["num_groups"]
     ).to(DEVICE)
 
-    # Layer-wise learning rate
-    param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
+    # Wrap with FairAdaBN conversion
+    model = FairDualResNet18Wrapper(base_model, num_groups=CFG["num_groups"])
+    model = model.to(DEVICE)
+
+    # Layer-wise learning rate (apply to the base model's parameters)
+    param_groups = get_layer_wise_lr_params(model.base_model, base_lr=CFG["lr"], lr_decay=0.85)
     optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
 
     def lr_lambda(epoch):
@@ -566,7 +543,7 @@ def main():
     model.load_state_dict(ckpt["model"])
     print(f"Loaded best model from {best_ckpt.name} (epoch {ckpt['epoch']+1})")
 
-    # Validation final
+    # Final evaluation on validation set
     val_res = validate_fair(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     if val_res:
         val_fair = fairness(val_res)
@@ -577,7 +554,7 @@ def main():
                                "Per-Class Metrics - Validation", CFG["results_dir"] / "val_per_class.png")
         plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"] / "val_fairness.png")
 
-    # Test
+    # Test set evaluation
     if test_loader:
         test_res = validate_fair(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         if test_res:
@@ -619,7 +596,7 @@ def main():
     plot_training_curves(history, "Training History (FairAdaBN ResNet-18)",
                          CFG["results_dir"] / "training_curves.png")
 
-    # t-SNE on test set
+    # t-SNE visualization on test set
     if test_loader:
         model.eval()
         all_embs, all_labels_tsne = [], []
