@@ -198,8 +198,10 @@ class PatchAlignViT(nn.Module):
     patch_proj.  If you switch to vit_base (D=768) you can set
     text_embed_dim=768 and the projection becomes an identity.
 
-    Number of patch tokens = (224/16)² = 196.  For paired samples, clinical
-    and derm patches are concatenated → 392 patches per sample.
+    Number of patch tokens = (224/16)² = 196.  For paired samples, the global
+    embedding is the average of clinical and derm CLS tokens, but patch
+    embeddings are taken from the clinical modality only (to keep shape
+    consistent across the batch).
     """
 
     def __init__(
@@ -284,70 +286,45 @@ class PatchAlignViT(nn.Module):
 
     # ── Forward ─────────────────────────────────────────────────────────────
     def forward(self, batch: dict) -> dict:
-        device     = batch["label"].device
+        device = batch["label"].device
         batch_size = len(batch["label"])
-        embed_dim  = self.classifier[1].in_features
-        embeddings = None
 
-        paired_mask   = torch.tensor(batch["paired"], dtype=torch.bool, device=device)
-        unpaired_mask = ~paired_mask
+        # Always use clinical modality for patches (consistent 196 patches)
+        if "clinical" in batch:
+            clinical_t = batch["clinical"].to(device)
+            z_clin, patches, mask = self._extract_features(clinical_t, "clinical")
+            embeddings = z_clin
+            out_patches = patches
+            out_masks = mask
+        else:
+            # Fallback: use any available image (should not happen)
+            img_t = batch["image"].to(device)
+            z, patches, mask = self._extract_features(img_t, "clinical")
+            embeddings = z
+            out_patches = patches
+            out_masks = mask
 
-        out = {}
-        patches_list = []
-
-        # ── Paired samples ───────────────────────────────────────────────────
+        # Enhance global embedding if paired samples exist (clinical + derm average)
+        paired_mask = torch.tensor(batch.get("paired", torch.zeros(batch_size, dtype=torch.bool)), dtype=torch.bool, device=device)
         if paired_mask.any() and "clinical" in batch and "derm" in batch:
             clin_t = batch["clinical"][paired_mask].to(device)
             derm_t = batch["derm"][paired_mask].to(device)
-
-            z_c, p_c, m_c = self._extract_features(clin_t, "clinical")
-            z_d, p_d, m_d = self._extract_features(derm_t, "derm")
+            _, z_c = self._extract_features(clin_t, "clinical")
+            _, z_d = self._extract_features(derm_t, "derm")
             z_paired = (z_c + z_d) / 2
-
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, embed_dim, device=device,
-                                         dtype=z_paired.dtype)
             embeddings[paired_mask] = z_paired
-            out["z_c"] = z_c
-            out["z_d"] = z_d
 
-            # Fuse patches from both modalities along the patch dimension
-            fused_patches = torch.cat([p_c, p_d], dim=1)   # (B_p, 392, 768)
-            fused_mask    = torch.cat([m_c, m_d], dim=1)   # (B_p, 392,   6)
-            patches_list.append((paired_mask, fused_patches, fused_mask))
-
-        # ── Unpaired samples ─────────────────────────────────────────────────
-        if unpaired_mask.any() and "clinical" in batch:
-            img_t = batch["clinical"][unpaired_mask].to(device)
-            z, patches, mask = self._extract_features(img_t, "clinical")
-
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, embed_dim, device=device, dtype=z.dtype)
-            embeddings[unpaired_mask] = z
-            patches_list.append((unpaired_mask, patches, mask))
-
-        # Fallback
+        # Safety fallback
         if embeddings is None:
-            embeddings = torch.zeros(batch_size, embed_dim, device=device)
+            embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
 
-        # ── Assemble patch/mask tensors at full batch size ───────────────────
-        if patches_list:
-            n_patches = patches_list[0][1].size(1)
-            text_d    = patches_list[0][1].size(2)
-            n_text    = patches_list[0][2].size(2)
-            all_patches = torch.zeros(batch_size, n_patches, text_d,
-                                      device=device, dtype=patches_list[0][1].dtype)
-            all_masks   = torch.zeros(batch_size, n_patches, n_text,
-                                      device=device, dtype=patches_list[0][2].dtype)
-            for sel_mask, p, m in patches_list:
-                all_patches[sel_mask] = p
-                all_masks[sel_mask]   = m
-            out["patches"] = all_patches
-            out["mask"]    = all_masks
-
-        out["z"]           = embeddings
-        out["logits"]      = self.classifier(embeddings)
-        out["skin_logits"] = self.skin_clf(embeddings)
+        out = {
+            "z": embeddings,
+            "logits": self.classifier(embeddings),
+            "skin_logits": self.skin_clf(embeddings),
+            "patches": out_patches,
+            "mask": out_masks,
+        }
         return out
 
 
@@ -395,11 +372,11 @@ CFG = {
     'text_embed_dim':   768,
 
     'batch_size':    32,
-    'num_epochs':    1,         # Update as needed
+    'num_epochs':    20,
     'lr':            3e-5,
     'min_lr':        1e-6,
     'weight_decay':  0.05,
-    'warmup_epochs': 1,         # Update as needed
+    'warmup_epochs': 4,
     'aug_probability': 0.85,
 
     'alpha_conf': 0.5,
@@ -454,7 +431,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
                 # Convert from 1..6 to 0..5 if needed
                 if skin_labels.max() > 5:
                     skin_labels = skin_labels - 1
-                # Clamp to 0..5
                 skin_labels = torch.clamp(skin_labels, 0, 5)
                 loss_conf = confusion_loss(out["skin_logits"])
                 loss_s    = skin_type_loss(out["skin_logits"].detach(), skin_labels)
