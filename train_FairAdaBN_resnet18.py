@@ -336,7 +336,7 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
     all_preds  = []
     all_probs  = []   # softmax probabilities for AUROC
     all_labels = []
-    all_sens   = []
+    all_skins  = []    # raw Fitzpatrick skin-type (0-5) — required by fairness()
     all_losses = []
     criterion = nn.CrossEntropyLoss()
     
@@ -377,14 +377,14 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
 
             # Labels/sens for the exact samples processed, in their original order
             proc_labels = batch['label'][gathered_idx[restore]]
-            proc_sens   = task_idx[gathered_idx[restore]]
+            proc_skins  = batch['skin_type'][gathered_idx[restore]]  # raw FST (0-5)
 
             probs = torch.softmax(logits, dim=1)
             preds = probs.argmax(dim=1)
             all_preds.append(preds.cpu().numpy())
             all_probs.append(probs.cpu().numpy())
             all_labels.append(proc_labels.cpu().numpy())
-            all_sens.append(proc_sens.cpu().numpy())
+            all_skins.append(proc_skins.cpu().numpy())
             loss = criterion(logits, proc_labels)
             all_losses.append(loss.item())
             pbar.set_postfix(loss=f"{np.mean(all_losses):.4f}")
@@ -393,49 +393,56 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
     if len(all_preds) == 0:
         return None
     
+    from sklearn.metrics import (
+        precision_score as _prec, recall_score as _rec, roc_auc_score as _auroc
+    )
+
     all_preds  = np.concatenate(all_preds)
     all_probs  = np.concatenate(all_probs)
     all_labels = np.concatenate(all_labels)
-    all_sens   = np.concatenate(all_sens)
+    all_skins  = np.concatenate(all_skins)   # raw Fitzpatrick values (0-5), NOT binarised
 
     acc         = accuracy_score(all_labels, all_preds)
     macro_f1    = f1_score(all_labels, all_preds, average='macro',    zero_division=0)
+    micro_f1    = f1_score(all_labels, all_preds, average='micro',    zero_division=0)
     weighted_f1 = f1_score(all_labels, all_preds, average='weighted', zero_division=0)
-    conf_mat    = confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
+    macro_prec  = _prec(all_labels, all_preds, average='macro',  zero_division=0)
+    macro_rec   = _rec( all_labels, all_preds, average='macro',  zero_division=0)
+    per_class_prec = _prec(all_labels, all_preds, average=None, zero_division=0,
+                           labels=list(range(num_classes)))
+    per_class_rec  = _rec( all_labels, all_preds, average=None, zero_division=0,
+                           labels=list(range(num_classes)))
+    per_class_f1   = f1_score(all_labels, all_preds, average=None, zero_division=0,
+                              labels=list(range(num_classes)))
+    conf_mat = confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
 
-    # Compute macro-averaged one-vs-rest AUROC from collected softmax probabilities
-    try:
-        from sklearn.metrics import roc_auc_score
-        present_classes = np.unique(all_labels)
-        if len(present_classes) >= 2:
-            auroc = roc_auc_score(
-                all_labels, all_probs,
-                multi_class='ovr', average='macro',
-                labels=list(range(num_classes))
-            )
-        else:
-            auroc = 0.0
-    except Exception:
+    # Macro one-vs-rest AUROC using evaluation.py's robust helper
+    from models.evaluation import robust_macro_auroc
+    auroc = robust_macro_auroc(all_probs, all_labels)
+    if np.isnan(auroc):
         auroc = 0.0
 
-    preds_by_sens  = {0: all_preds[all_sens == 0],  1: all_preds[all_sens == 1]}
-    labels_by_sens = {0: all_labels[all_sens == 0], 1: all_labels[all_sens == 1]}
-
     return {
-        'acc':           acc,
-        'auroc':         auroc,
-        'macro_f1':      macro_f1,
-        'weighted_f1':   weighted_f1,
-        'conf_mat':      conf_mat,
-        'preds':         all_preds,
-        'probs':         all_probs,
-        'labels':        all_labels,
-        # 'skin' is the key expected by evaluation.fairness(); 'sens' kept as alias
-        'skin':          all_sens,
-        'sens':          all_sens,
-        'preds_by_sens':  preds_by_sens,
-        'labels_by_sens': labels_by_sens,
-        'loss':          np.mean(all_losses) if all_losses else 0.0
+        # ── overall metrics (match evaluation.validate() key names exactly) ──
+        'acc':             acc,
+        'auroc':           auroc,
+        'macro_f1':        macro_f1,
+        'micro_f1':        micro_f1,
+        'weighted_f1':     weighted_f1,
+        'macro_prec':      macro_prec,
+        'macro_rec':       macro_rec,
+        # ── per-class arrays ──
+        'per_class_prec':  per_class_prec,
+        'per_class_rec':   per_class_rec,
+        'per_class_f1':    per_class_f1,
+        'conf_mat':        conf_mat,
+        # ── sample-level arrays ──
+        'preds':           all_preds,
+        'probs':           all_probs,
+        'labels':          all_labels,
+        # 'skin' = raw Fitzpatrick skin-type (0-5), required by evaluation.fairness()
+        'skin':            all_skins,
+        'loss':            np.mean(all_losses) if all_losses else 0.0,
     }
 
 
