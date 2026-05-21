@@ -98,11 +98,11 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 100,       # Update as needed
+    'num_epochs': 1,       # Update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 20,    #Update as needed
+    'warmup_epochs': 1,    #Update as needed
     'aug_probability': 0.85,
 }
 
@@ -201,6 +201,8 @@ def main():
     start_epoch = 0
     best_auroc = 0.0
     best_f1 = 0.0
+    patience = 20
+    patience_counter = 0
     history = defaultdict(list)
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
@@ -208,6 +210,19 @@ def main():
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
+
+        # ----- EARLY STOPPING (patience=20) -----
+        current_f1 = val_metrics["macro_f1"]
+        if current_f1 > best_f1:
+            best_f1 = current_f1
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        if patience_counter >= patience:
+            print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
+            break
+        # -----------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
