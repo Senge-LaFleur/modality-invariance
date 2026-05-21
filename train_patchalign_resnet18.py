@@ -33,7 +33,7 @@ from torchvision import transforms
 from torchvision.models import resnet18, ResNet18_Weights
 
 from sklearn.metrics import f1_score
-from models.models_losses import get_layer_wise_lr_params
+from models.models_losses import get_layer_wise_lr_params, confusion_loss, skin_type_loss
 from models.evaluation import (
     validate, fairness, save_results_csv, plot_confusion_matrix,
     plot_per_class_metrics, plot_fairness_metrics, plot_training_curves,
@@ -53,11 +53,9 @@ def got_loss(p, q, mask, lamb=0.9):
     mask : (B, N_patches, N_text)  learnable soft mask in [0, 1]
     lamb : weight on GWD term vs WD term
     """
-    # cost_matrix_batch_torch expects (B, D, N) layout
     p_t = p.transpose(1, 2)   # (B, D, N_patches)
     q_t = q.transpose(1, 2)   # (B, D, N_text)
 
-    # Thresholded cosine distance matrix  (B, N_patches, N_text)
     cos_distance = cost_matrix_batch_torch(p_t, q_t).transpose(1, 2)
     beta = 0.1
     threshold = cos_distance.min() + beta * (cos_distance.max() - cos_distance.min())
@@ -67,23 +65,6 @@ def got_loss(p, q, mask, lamb=0.9):
     wd, _T = IPOT_distance_torch_batch_uniform(cos_dist, mask, bs, n_p, n_t)
     gwd    = GW_distance_uniform(p_t, q_t, mask)
     return lamb * torch.mean(gwd) + (1.0 - lamb) * torch.mean(wd)
-
-class Confusion_Loss(torch.nn.Module):
-    """
-    Confusion loss — encourages uniform skin-type predictions so the backbone
-    cannot distinguish skin types.  Copied verbatim from models/got_losses.py
-    to avoid that module's top-level `from transformers import ...` import
-    which is not needed here and would crash if transformers is not installed.
-    Source: https://www.repository.cam.ac.uk/handle/1810/309834
-    """
-    def __init__(self):
-        super().__init__()
-        self.softmax = torch.nn.Softmax(dim=1)
-
-    def forward(self, output, label):
-        prediction = self.softmax(output)
-        log_prediction = torch.log(prediction)
-        return -torch.mean(torch.mean(log_prediction, dim=1), dim=0)
 
 warnings.filterwarnings("ignore")
 
@@ -103,7 +84,6 @@ IMAGE_ROOTS = {
     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
 }
 
-# Path to the original PatchAlign embedding file (115 labels, 768 dims)
 FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
 
 CFG = {
@@ -113,15 +93,14 @@ CFG = {
     'backbone': 'resnet18', 'embed_dim': 512, 'img_size': 224,
     'num_classes': 5, 'num_skin_types': 6, 'num_text_labels': 6,
     'text_embed_dim': 768,
-    'batch_size': 32, 'num_epochs': 1, 'lr': 1e-4, 'min_lr': 1e-6,
-    'weight_decay': 1e-4, 'warmup_epochs': 1, 'aug_probability': 0.85,
+    'batch_size': 32, 'num_epochs': 20, 'lr': 1e-4, 'min_lr': 1e-6,
+    'weight_decay': 1e-4, 'warmup_epochs': 4, 'aug_probability': 0.85,
     'alpha_conf': 0.5, 'beta_got': 1.0, 'lamb_got': 0.9,
 }
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
 CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 
 # ----------------------------- Original label list (115 items) --------------
-# Copied from train_PatchAlign_FitzPatrick_InDomain.py
 ORIGINAL_LABELS = [
     'drug induced pigmentary changes', 'photodermatoses',
     'dermatofibroma', 'psoriasis', 'kaposi sarcoma',
@@ -168,7 +147,6 @@ ORIGINAL_LABELS = [
     'ehlers danlos syndrome', 'tungiasis', 'eudermic'
 ]
 
-# Mapping from our class names to the exact strings in ORIGINAL_LABELS
 CLASS_MAPPING = {
     "melanoma":                 "melanoma",
     "nevus":                    "nevocytic nevus",
@@ -224,7 +202,6 @@ class PatchAlignResNet18(nn.Module):
             nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.2),
             nn.Linear(256, num_skin_types),
         )
-        # PatchAlign components
         self.patch_proj = nn.Sequential(
             nn.Linear(feat_dim, text_embed_dim),
             nn.LayerNorm(text_embed_dim),
@@ -240,7 +217,7 @@ class PatchAlignResNet18(nn.Module):
 
     def _extract_features(self, x, modality):
         backbone = self.clinical_backbone if modality == "clinical" else self.derm_backbone
-        feat = backbone(x)                     # (B,512,7,7)
+        feat = backbone(x)
         pooled = self.global_pool(feat).flatten(1)
         z = self.proj_head(pooled)
         return z, feat
@@ -256,25 +233,15 @@ class PatchAlignResNet18(nn.Module):
     def forward(self, batch):
         device = batch["label"].device
         batch_size = len(batch["label"])
-        paired_mask = torch.tensor(batch["paired"], dtype=torch.bool, device=device)
-        unpaired_mask = ~paired_mask
-        embeddings = None
-        patches_list = []
-
-        # Always use clinical modality for patches (ignoring derm)
+        # Always use clinical modality for patches (ignore derm to keep shape consistent)
         if "clinical" in batch:
-            # Process all samples (paired and unpaired) using clinical images
             clinical_t = batch["clinical"].to(device)
             z, feat = self._extract_features(clinical_t, "clinical")
-            patches, mask = self._patch_embeddings(feat)   # (B, 49, 768), (B, 49, 6)
+            patches, mask = self._patch_embeddings(feat)
             embeddings = z
-            # For paired samples we still use clinical patches only
-            # We don't fuse or use derm patches at all
-            # So patches and mask are already full batch size (B)
             out_patches = patches
             out_masks = mask
         else:
-            # Fallback: use any available image (should not happen)
             img_t = batch["image"].to(device)
             z, feat = self._extract_features(img_t, "clinical")
             patches, mask = self._patch_embeddings(feat)
@@ -301,8 +268,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
     all_preds, all_labels = [], []
     n_batches = 0
     criterion_cls = nn.CrossEntropyLoss()
-    criterion_skin = nn.CrossEntropyLoss(ignore_index=-1)
-    confusion_loss = Confusion_Loss()   # from models.got_losses
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", dynamic_ncols=True, leave=False)
     for batch in pbar:
@@ -314,20 +279,33 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
         with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
             out = model(batch)
             loss_c = criterion_cls(out["logits"], batch["label"])
+
+            # Skin‑type losses
             skin_labels = batch.get("fitzpatrick", None)
             if skin_labels is not None:
                 skin_labels = skin_labels.long()
-                loss_conf = confusion_loss(out["skin_logits"], skin_labels)
-                loss_s = criterion_skin(out["skin_logits"], skin_labels)
+                # L_conf : encourage uniform predictions
+                loss_conf = confusion_loss(out["skin_logits"])
+                # L_s : standard CE on skin types (updates skin_clf only)
+                # We detach the input to skin_clf so it doesn't affect the main encoder
+                loss_s = skin_type_loss(out["skin_logits"].detach(), skin_labels)
             else:
                 loss_conf = out["logits"].new_tensor(0.)
-                loss_s = out["logits"].new_tensor(0.)
+                loss_s    = out["logits"].new_tensor(0.)
+                if epoch == 0 and n_batches == 0:
+                    print("[WARN] No 'fitzpatrick' labels in batch; L_conf and L_s are zero.")
+
+            # MGOT loss
             loss_got = out["logits"].new_tensor(0.)
             if out["patches"] is not None and text_emb is not None:
                 B = out["patches"].size(0)
                 text_batch = text_emb.unsqueeze(0).expand(B, -1, -1)
                 loss_got = got_loss(out["patches"], text_batch, out["mask"], lamb=cfg['lamb_got'])
-            loss = loss_c + cfg['alpha_conf'] * loss_conf + loss_s + cfg['beta_got'] * loss_got
+
+            loss = (loss_c
+                    + cfg['alpha_conf'] * loss_conf
+                    + loss_s
+                    + cfg['beta_got'] * loss_got)
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -364,25 +342,21 @@ def main():
     print(f"Checkpoints: {CFG['ckpt_dir']}")
     print(f"Results: {CFG['results_dir']}")
 
-    # Load text embeddings from the original PatchAlign file (115 labels)
+    # Load text embeddings
     if FULL_EMBEDDINGS_PATH.exists():
-        full_emb = np.load(FULL_EMBEDDINGS_PATH)   # shape (115, 768)
+        full_emb = np.load(FULL_EMBEDDINGS_PATH)
         print(f"Loaded full embedding matrix: {full_emb.shape}")
-
-        # Build index mapping from label string to row number
         label_to_idx = {label: idx for idx, label in enumerate(ORIGINAL_LABELS)}
         selected_indices = []
-        for our_class_name, orig_name in CLASS_MAPPING.items():
+        for our_name, orig_name in CLASS_MAPPING.items():
             if orig_name not in label_to_idx:
-                raise ValueError(f"Label '{orig_name}' not found in original label list")
+                raise ValueError(f"Label '{orig_name}' not found")
             selected_indices.append(label_to_idx[orig_name])
-
-        # Extract the 6 embeddings in the order: melanoma, nevus, BCC, AK, SCC, eudermic
-        text_emb_np = full_emb[selected_indices]   # (6, 768)
+        text_emb_np = full_emb[selected_indices]
         print(f"Selected embeddings: {text_emb_np.shape}")
         text_emb = torch.tensor(text_emb_np, dtype=torch.float32).to(DEVICE)
     else:
-        print("[WARN] Full text embeddings not found; GOT loss will be zero.")
+        print("[WARN] Text embeddings not found; GOT loss will be zero.")
         text_emb = None
 
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)

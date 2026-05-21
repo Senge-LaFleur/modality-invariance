@@ -61,7 +61,7 @@ from torchvision import transforms
 import timm
 
 from sklearn.metrics import f1_score
-from models.models_losses import compute_class_weights
+from models.models_losses import confusion_loss, skin_type_loss
 from models.evaluation import (
     validate,
     fairness,
@@ -103,23 +103,6 @@ def got_loss(p, q, mask, lamb=0.9):
     wd, _T = IPOT_distance_torch_batch_uniform(cos_dist, mask, bs, n_p, n_t)
     gwd    = GW_distance_uniform(p_t, q_t, mask)
     return lamb * torch.mean(gwd) + (1.0 - lamb) * torch.mean(wd)
-
-class Confusion_Loss(torch.nn.Module):
-    """
-    Confusion loss — encourages uniform skin-type predictions so the backbone
-    cannot distinguish skin types.  Copied verbatim from models/got_losses.py
-    to avoid that module's top-level `from transformers import ...` import
-    which is not needed here and would crash if transformers is not installed.
-    Source: https://www.repository.cam.ac.uk/handle/1810/309834
-    """
-    def __init__(self):
-        super().__init__()
-        self.softmax = torch.nn.Softmax(dim=1)
-
-    def forward(self, output, label):
-        prediction = self.softmax(output)
-        log_prediction = torch.log(prediction)
-        return -torch.mean(torch.mean(log_prediction, dim=1), dim=0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -401,8 +384,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
     n_batches = 0
 
     criterion_cls  = nn.CrossEntropyLoss()
-    criterion_skin = nn.CrossEntropyLoss(ignore_index=-1)
-    confusion_loss = Confusion_Loss()
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", unit="batch",
                 dynamic_ncols=True, leave=False)
@@ -424,11 +405,13 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
             skin_labels = batch.get("fitzpatrick", None)
             if skin_labels is not None:
                 skin_labels = skin_labels.long()
-                loss_conf = confusion_loss(out["skin_logits"], skin_labels)
-                loss_s    = criterion_skin(out["skin_logits"], skin_labels)
+                loss_conf = confusion_loss(out["skin_logits"])
+                loss_s    = skin_type_loss(out["skin_logits"].detach(), skin_labels)
             else:
                 loss_conf = out["skin_logits"].new_tensor(0.)
                 loss_s    = out["skin_logits"].new_tensor(0.)
+                if epoch == 0 and n_batches == 0:
+                    print("[WARN] No 'fitzpatrick' labels in batch; L_conf and L_s are zero.")
 
             # L_got
             loss_got = out["logits"].new_tensor(0.)
