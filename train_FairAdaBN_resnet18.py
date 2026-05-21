@@ -55,7 +55,8 @@ class FairAdaptiveBatchNorm2d(nn.Module):
     """
     Adaptive BatchNorm that maintains separate affine parameters (gamma, beta)
     and running statistics for each sensitive subgroup.
-    task_idx is obtained from the parent model's current_task_idx attribute.
+    The root model (which holds `current_task_idx`) is stored as a weak reference
+    at conversion time via `set_root(model)`.
     """
     def __init__(self, num_features, num_groups=2, eps=1e-5, momentum=0.1,
                  affine=True, track_running_stats=True):
@@ -66,6 +67,7 @@ class FairAdaptiveBatchNorm2d(nn.Module):
         self.momentum = momentum
         self.affine = affine
         self.track_running_stats = track_running_stats
+        self._root_ref = None  # set after conversion via set_root()
 
         if self.affine:
             self.weight = nn.Parameter(torch.zeros(num_groups, num_features))
@@ -84,39 +86,33 @@ class FairAdaptiveBatchNorm2d(nn.Module):
             self.register_parameter('running_mean', None)
             self.register_parameter('running_var', None)
 
+    def set_root(self, root):
+        """Store a (non-parameter) reference to the root model so forward() can
+        read current_task_idx without any parent traversal hacks."""
+        import weakref
+        self._root_ref = weakref.ref(root)
+
     def forward(self, x):
-        # Get task_idx from the root module (the model)
+        # Resolve task_idx from root model reference
         task_idx = None
-        module = self
-        while module is not None:
-            if hasattr(module, 'current_task_idx'):
-                task_idx = module.current_task_idx
-                break
-            module = getattr(module, '_parent', None)
-            if module is None:
-                # Try to traverse up using children's _modules? Simpler: assume root has attribute.
-                # For robustness, we can also check the global state.
-                break
+        if self._root_ref is not None:
+            root = self._root_ref()
+            if root is not None and hasattr(root, 'current_task_idx'):
+                task_idx = root.current_task_idx
         if task_idx is None:
-            # Fallback: try to get from a global variable or raise error
-            raise RuntimeError("FairAdaptiveBatchNorm2d could not find current_task_idx in parent modules. "
-                               "Set model.current_task_idx before forward.")
+            raise RuntimeError(
+                "FairAdaptiveBatchNorm2d: could not resolve current_task_idx. "
+                "Call model.set_task_idx_on_all_bn(root) after construction, "
+                "and set model.current_task_idx before each forward pass."
+            )
         if task_idx < 0 or task_idx >= self.num_groups:
             raise ValueError(f"task_idx={task_idx} out of range [0, {self.num_groups-1}]")
 
-        if self.affine:
-            weight = self.weight[task_idx]
-            bias = self.bias[task_idx]
-        else:
-            weight = None
-            bias = None
+        weight = self.weight[task_idx] if self.affine else None
+        bias   = self.bias[task_idx]   if self.affine else None
 
-        if self.track_running_stats:
-            running_mean = self.running_mean[task_idx]
-            running_var = self.running_var[task_idx]
-        else:
-            running_mean = None
-            running_var = None
+        running_mean = self.running_mean[task_idx] if self.track_running_stats else None
+        running_var  = self.running_var[task_idx]  if self.track_running_stats else None
 
         return F.batch_norm(
             x, running_mean, running_var, weight, bias,
@@ -171,11 +167,32 @@ class FairDualResNet18(DualResNet18):
             pretrained=pretrained,
             use_projection=use_projection
         )
-        # Replace all BatchNorm2d in both backbones
-        convert_module_to_fair_adanbn(self.clinical_backbone, num_groups=num_groups, skip_names=[])
-        convert_module_to_fair_adanbn(self.dermoscopic_backbone, num_groups=num_groups, skip_names=[])
         self.num_groups = num_groups
         self.current_task_idx = None  # will be set before forward
+
+        # Replace all BatchNorm2d across the entire model.
+        # We skip the classifier and projection heads (Linear layers have no BN,
+        # but being explicit avoids any future issues). We discover backbone
+        # sub-modules dynamically so we are robust to whatever attribute names
+        # DualResNet18 uses internally (e.g. clinical_encoder, derm_encoder, etc.)
+        _SKIP = ['classifier', 'projection', 'fc', 'skin_type_head']
+        for name, child in self.named_children():
+            if any(skip in name for skip in _SKIP):
+                continue
+            # Only recurse into modules that actually contain BatchNorm2d
+            has_bn = any(isinstance(m, nn.BatchNorm2d) for m in child.modules())
+            if has_bn:
+                convert_module_to_fair_adanbn(child, num_groups=num_groups, skip_names=[])
+
+        # After all BN layers are replaced, wire each one back to this root model
+        # so they can read self.current_task_idx during forward.
+        self._wire_bn_roots()
+
+    def _wire_bn_roots(self):
+        """Give every FairAdaptiveBatchNorm2d a weak-ref back to this root model."""
+        for m in self.modules():
+            if isinstance(m, FairAdaptiveBatchNorm2d):
+                m.set_root(self)
 
     def forward(self, batch):
         """
@@ -184,23 +201,12 @@ class FairDualResNet18(DualResNet18):
         Returns:
             dict with 'logits', 'z'
         """
-        clinical_img = batch['clinical']
-        dermoscopic_img = batch['dermoscopic']
-        
-        # Set current_task_idx for all adaptive BN layers
+        # current_task_idx must be set by the caller before each forward pass
+        # so that FairAdaptiveBatchNorm2d layers know which group's stats to use.
         if self.current_task_idx is None:
             raise RuntimeError("Must set model.current_task_idx before forward()")
-        
-        # Forward through backbones
-        clinical_feat = self.clinical_backbone(clinical_img)
-        dermoscopic_feat = self.dermoscopic_backbone(dermoscopic_img)
-        
-        # Concatenate
-        z = torch.cat([clinical_feat, dermoscopic_feat], dim=1)
-        if self.use_projection:
-            z = self.projection(z)
-        logits = self.classifier(z)
-        return {'logits': logits, 'z': z}
+        # Delegate to parent's forward — it knows the correct backbone attribute names.
+        return super(FairDualResNet18, self).forward(batch)
 
 
 # ------------------------------------------------------------
