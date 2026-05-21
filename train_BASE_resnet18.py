@@ -301,8 +301,12 @@ def main():
         plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
         cross_results[ds_name] = {
             "accuracy": res["acc"],
+            "precision": res["macro_prec"],
+            "recall": res["macro_rec"],
             "auroc": res["auroc"],
             "macro_f1": res["macro_f1"],
+            "micro_f1": res["micro_f1"],
+            "weighted_f1": res["weighted_f1"],
             "EOM": fair["EOM"],
             "PQD": fair["PQD"],
             "DPM": fair["DPM"],
