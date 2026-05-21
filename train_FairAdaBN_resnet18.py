@@ -352,30 +352,37 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
             else:
                 task_idx = sens.long()
             
-            # Process each subgroup separately
-            all_logits = []
-            all_batch_order = []
+            # Process each subgroup separately, tracking original positions
+            idx_list   = []   # original positions within this batch
+            logit_list = []   # corresponding logits
             for t in [0, 1]:
                 mask = (task_idx == t)
-                if mask.sum() > 0:
-                    batch_t = {k: v[mask] for k, v in batch.items() if isinstance(v, torch.Tensor)}
-                    model.current_task_idx = t
-                    out_t = model(batch_t)
-                    all_logits.append(out_t['logits'])
-                    all_batch_order.append(mask.nonzero(as_tuple=True)[0].cpu())
-            if len(all_logits) == 0:
+                if mask.sum() == 0:
+                    continue
+                orig_idx = mask.nonzero(as_tuple=True)[0]          # positions in full batch
+                batch_t  = {k: v[orig_idx] for k, v in batch.items() if isinstance(v, torch.Tensor)}
+                model.current_task_idx = t
+                out_t = model(batch_t)
+                idx_list.append(orig_idx.cpu())
+                logit_list.append(out_t['logits'].cpu())
+
+            if len(logit_list) == 0:
                 continue
-            logits = torch.cat(all_logits, dim=0)
-            # Reorder to original batch order
-            batch_order = torch.cat(all_batch_order, dim=0)
-            _, orig_order = batch_order.sort()
-            logits = logits[orig_order]
-            
+
+            # Restore original batch order: argsort of collected positions = inverse permutation
+            gathered_idx = torch.cat(idx_list, dim=0)
+            restore      = gathered_idx.argsort()
+            logits       = torch.cat(logit_list, dim=0)[restore].to(device)
+
+            # Labels/sens for the exact samples processed, in their original order
+            proc_labels = batch['label'][gathered_idx[restore]]
+            proc_sens   = task_idx[gathered_idx[restore]]
+
             preds = logits.argmax(dim=1)
             all_preds.append(preds.cpu().numpy())
-            all_labels.append(batch['label'].cpu().numpy())
-            all_sens.append(task_idx.cpu().numpy())
-            loss = criterion(logits, batch['label'])
+            all_labels.append(proc_labels.cpu().numpy())
+            all_sens.append(proc_sens.cpu().numpy())
+            loss = criterion(logits, proc_labels)
             all_losses.append(loss.item())
             pbar.set_postfix(loss=f"{np.mean(all_losses):.4f}")
     
@@ -639,18 +646,24 @@ def main():
                     task_idx = (sens >= 3).long()
                 else:
                     task_idx = sens.long()
-                embs_batch = []
+                idx_list  = []
+                emb_list  = []
                 for t in [0, 1]:
                     mask = (task_idx == t)
-                    if mask.sum() > 0:
-                        batch_t = {k: v[mask] for k, v in batch.items() if isinstance(v, torch.Tensor)}
-                        model.current_task_idx = t
-                        out_t = model(batch_t)
-                        embs_batch.append(out_t["z"].cpu().numpy())
-                if embs_batch:
-                    embs = np.concatenate(embs_batch, axis=0)
-                    all_embs.append(embs)
-                    all_labels_tsne.append(batch['label'].cpu().numpy())
+                    if mask.sum() == 0:
+                        continue
+                    orig_idx = mask.nonzero(as_tuple=True)[0]
+                    batch_t  = {k: v[orig_idx] for k, v in batch.items() if isinstance(v, torch.Tensor)}
+                    model.current_task_idx = t
+                    out_t = model(batch_t)
+                    idx_list.append(orig_idx.cpu())
+                    emb_list.append(out_t["z"].cpu())
+                if emb_list:
+                    gathered_idx = torch.cat(idx_list, dim=0)
+                    restore      = gathered_idx.argsort()
+                    embs_ordered = torch.cat(emb_list, dim=0)[restore].numpy()
+                    all_embs.append(embs_ordered)
+                    all_labels_tsne.append(batch['label'][gathered_idx[restore]].cpu().numpy())
         if all_embs:
             embs = np.concatenate(all_embs)
             labels_tsne = np.concatenate(all_labels_tsne)
