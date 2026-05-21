@@ -105,6 +105,64 @@ def got_loss(p, q, mask, lamb=0.9):
     return lamb * torch.mean(gwd) + (1.0 - lamb) * torch.mean(wd)
 
 
+# ----------------------------- Original label list (115 items) --------------
+# Copied from train_PatchAlign_FitzPatrick_InDomain.py
+ORIGINAL_LABELS = [
+    'drug induced pigmentary changes', 'photodermatoses',
+    'dermatofibroma', 'psoriasis', 'kaposi sarcoma',
+    'neutrophilic dermatoses', 'granuloma annulare',
+    'nematode infection', 'allergic contact dermatitis',
+    'necrobiosis lipoidica', 'hidradenitis', 'melanoma',
+    'acne vulgaris', 'sarcoidosis', 'xeroderma pigmentosum',
+    'actinic keratosis', 'scleroderma', 'syringoma', 'folliculitis',
+    'pityriasis lichenoides chronica', 'porphyria',
+    'dyshidrotic eczema', 'seborrheic dermatitis', 'prurigo nodularis',
+    'acne', 'neurofibromatosis', 'eczema', 'pediculosis lids',
+    'basal cell carcinoma', 'pityriasis rubra pilaris',
+    'pityriasis rosea', 'livedo reticularis',
+    'stevens johnson syndrome', 'erythema multiforme',
+    'acrodermatitis enteropathica', 'epidermolysis bullosa',
+    'dermatomyositis', 'urticaria', 'basal cell carcinoma morpheiform',
+    'vitiligo', 'erythema nodosum', 'lupus erythematosus',
+    'lichen planus', 'sun damaged skin', 'drug eruption', 'scabies',
+    'cheilitis', 'urticaria pigmentosa', 'behcets disease',
+    'nevocytic nevus', 'mycosis fungoides',
+    'superficial spreading melanoma ssm', 'porokeratosis of mibelli',
+    'juvenile xanthogranuloma', 'milia', 'granuloma pyogenic',
+    'papilomatosis confluentes and reticulate',
+    'neurotic excoriations', 'epidermal nevus', 'naevus comedonicus',
+    'erythema annulare centrifigum', 'pilar cyst',
+    'pustular psoriasis', 'ichthyosis vulgaris', 'lyme disease',
+    'striae', 'rhinophyma', 'calcinosis cutis', 'stasis edema',
+    'neurodermatitis', 'congenital nevus', 'squamous cell carcinoma',
+    'mucinosis', 'keratosis pilaris', 'keloid', 'tuberous sclerosis',
+    'acquired autoimmune bullous diseaseherpes gestationis',
+    'fixed eruptions', 'lentigo maligna', 'lichen simplex',
+    'dariers disease', 'lymphangioma', 'pilomatricoma',
+    'lupus subacute', 'perioral dermatitis',
+    'disseminated actinic porokeratosis', 'erythema elevatum diutinum',
+    'halo nevus', 'aplasia cutis', 'incontinentia pigmenti',
+    'tick bite', 'fordyce spots', 'telangiectases',
+    'solid cystic basal cell carcinoma', 'paronychia', 'becker nevus',
+    'pyogenic granuloma', 'langerhans cell histiocytosis',
+    'port wine stain', 'malignant melanoma', 'factitial dermatitis',
+    'xanthomas', 'nevus sebaceous of jadassohn',
+    'hailey hailey disease', 'scleromyxedema', 'porokeratosis actinic',
+    'rosacea', 'acanthosis nigricans', 'myiasis',
+    'seborrheic keratosis', 'mucous cyst', 'lichen amyloidosis',
+    'ehlers danlos syndrome', 'tungiasis', 'eudermic'
+]
+
+# Mapping from our class names to the exact strings in ORIGINAL_LABELS
+CLASS_MAPPING = {
+    "melanoma":                 "melanoma",
+    "nevus":                    "nevocytic nevus",
+    "basal cell carcinoma":     "basal cell carcinoma",
+    "actinic keratosis":        "actinic keratosis",
+    "squamous cell carcinoma":  "squamous cell carcinoma",
+    "eudermic":                 "eudermic",
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PatchAlign Dual ViT model
 # ─────────────────────────────────────────────────────────────────────────────
@@ -158,9 +216,6 @@ class PatchAlignViT(nn.Module):
         super().__init__()
 
         # ── ViT backbones (output: last_hidden_state) ────────────────────────
-        # We need the full hidden states, so we use the HuggingFace-style
-        # forward that returns all patch tokens, not the timm pooled output.
-        # timm's `forward_features` returns (B, N_patches+1, D) including CLS.
         self.clinical_vit = timm.create_model(
             vit_model_name, pretrained=pretrained, num_classes=0
         )
@@ -193,7 +248,6 @@ class PatchAlignViT(nn.Module):
         )
 
         # Mask generator: flattened patch embeddings → soft mask (B, N_p, N_text)
-        # N_p = 196 for vit_small_patch16_224; N_text = num_text_labels
         n_patches = 196
         self.num_text_labels = num_text_labels
         self.mask_net = nn.Sequential(
@@ -214,9 +268,6 @@ class PatchAlignViT(nn.Module):
           mask    : (B, 196, num_text_labels) learnable MGOT mask
         """
         vit = self.clinical_vit if modality == "clinical" else self.derm_vit
-
-        # timm's forward_features returns (B, N_patches+1, D)
-        # where token 0 is the [CLS] token and tokens 1..196 are patch tokens
         hidden = vit.forward_features(x)           # (B, 197, 384)
 
         cls_token    = hidden[:, 0, :]             # (B, 384)  — CLS
@@ -242,7 +293,7 @@ class PatchAlignViT(nn.Module):
         unpaired_mask = ~paired_mask
 
         out = {}
-        patches_list, mask_list_idx = [], []
+        patches_list = []
 
         # ── Paired samples ───────────────────────────────────────────────────
         if paired_mask.any() and "clinical" in batch and "derm" in batch:
@@ -327,15 +378,7 @@ DATASET_ROOTS = {
     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt'),
 }
 
-TEXT_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
-
-print("Checking configured paths:")
-print(f"  WORK_ROOT          : {WORK_ROOT}  {'[OK]' if WORK_ROOT.exists() else '[MISSING]'}")
-print(f"  CSV_DIR            : {CSV_DIR}  {'[OK]' if CSV_DIR.exists() else '[MISSING]'}")
-print(f"  TEXT_EMBEDDINGS    : {TEXT_EMBEDDINGS_PATH}  "
-      f"{'[OK]' if TEXT_EMBEDDINGS_PATH.exists() else '[MISSING — run Create_Embeddings.ipynb first]'}")
-for name, root in DATASET_ROOTS.items():
-    print(f"  {name:<15}: {root}  {'[OK]' if root.exists() else '[MISSING — update DATASET_ROOTS]'}")
+FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
 
 CFG = {
     'csv_dir':       CSV_DIR,
@@ -352,14 +395,13 @@ CFG = {
     'text_embed_dim':   768,
 
     'batch_size':    32,
-    'num_epochs':    1,         # paper trains for 20 epochs
+    'num_epochs':    20,
     'lr':            3e-5,
     'min_lr':        1e-6,
     'weight_decay':  0.05,
-    'warmup_epochs': 1,          # ≈ 1/5 × num_epochs
+    'warmup_epochs': 4,
     'aug_probability': 0.85,
 
-    # ── PatchAlign loss weights (Eq. 3 of the paper) ─────────────────────
     'alpha_conf': 0.5,
     'beta_got':   1.0,
     'lamb_got':   0.9,
@@ -401,17 +443,26 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
             # L_c
             loss_c = criterion_cls(out["logits"], batch["label"])
 
-            # L_conf + L_s
+            # ── Extract skin labels from possible column names ─────────────────
             skin_labels = batch.get("fitzpatrick", None)
+            if skin_labels is None:
+                skin_labels = batch.get("skin_type", None)
+            if skin_labels is None:
+                skin_labels = batch.get("fitzpatrick_scale", None)
             if skin_labels is not None:
                 skin_labels = skin_labels.long()
+                # Convert from 1..6 to 0..5 if needed
+                if skin_labels.max() > 5:
+                    skin_labels = skin_labels - 1
+                # Clamp to 0..5
+                skin_labels = torch.clamp(skin_labels, 0, 5)
                 loss_conf = confusion_loss(out["skin_logits"])
                 loss_s    = skin_type_loss(out["skin_logits"].detach(), skin_labels)
             else:
                 loss_conf = out["skin_logits"].new_tensor(0.)
                 loss_s    = out["skin_logits"].new_tensor(0.)
                 if epoch == 0 and n_batches == 0:
-                    print("[WARN] No 'fitzpatrick' labels in batch; L_conf and L_s are zero.")
+                    print("[WARN] No skin type column ('fitzpatrick'/'skin_type'/'fitzpatrick_scale') found in batch. L_conf and L_s are zero.")
 
             # L_got
             loss_got = out["logits"].new_tensor(0.)
@@ -482,14 +533,26 @@ def main():
     for name, root in CFG['dataset_roots'].items():
         print(f"  {name:<15}: {root}")
 
-    # ── Load text embeddings ─────────────────────────────────────────────────
-    if TEXT_EMBEDDINGS_PATH.exists():
-        text_emb_np = np.load(TEXT_EMBEDDINGS_PATH)
-        text_emb    = torch.tensor(text_emb_np, dtype=torch.float32).to(DEVICE)
-        print(f"Loaded text embeddings: {text_emb.shape}")
+    # ── Load text embeddings and extract the 6 relevant classes ───────────────
+    if FULL_EMBEDDINGS_PATH.exists():
+        full_emb = np.load(FULL_EMBEDDINGS_PATH)   # shape (115, 768)
+        print(f"Loaded full embedding matrix: {full_emb.shape}")
+
+        # Build index mapping from label string to row number
+        label_to_idx = {label: idx for idx, label in enumerate(ORIGINAL_LABELS)}
+        selected_indices = []
+        for our_name, orig_name in CLASS_MAPPING.items():
+            if orig_name not in label_to_idx:
+                raise ValueError(f"Label '{orig_name}' not found in original label list")
+            selected_indices.append(label_to_idx[orig_name])
+
+        # Extract the 6 embeddings (melanoma, nevus, BCC, AK, SCC, eudermic)
+        text_emb_np = full_emb[selected_indices]   # (6, 768)
+        print(f"Selected embeddings: {text_emb_np.shape}")
+        text_emb = torch.tensor(text_emb_np, dtype=torch.float32).to(DEVICE)
     else:
-        print("[WARN] Text embeddings not found — GOT loss will be skipped.")
-        print("       Run Create_Embeddings.ipynb first.")
+        print("[WARN] Full text embeddings not found — GOT loss will be skipped.")
+        print("       Please ensure the file exists at:", FULL_EMBEDDINGS_PATH)
         text_emb = None
 
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)

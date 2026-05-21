@@ -93,8 +93,8 @@ CFG = {
     'backbone': 'resnet18', 'embed_dim': 512, 'img_size': 224,
     'num_classes': 5, 'num_skin_types': 6, 'num_text_labels': 6,
     'text_embed_dim': 768,
-    'batch_size': 32, 'num_epochs': 1, 'lr': 1e-4, 'min_lr': 1e-6,
-    'weight_decay': 1e-4, 'warmup_epochs': 1, 'aug_probability': 0.85,
+    'batch_size': 32, 'num_epochs': 20, 'lr': 1e-4, 'min_lr': 1e-6,
+    'weight_decay': 1e-4, 'warmup_epochs': 4, 'aug_probability': 0.85,
     'alpha_conf': 0.5, 'beta_got': 1.0, 'lamb_got': 0.9,
 }
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -280,20 +280,26 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
             out = model(batch)
             loss_c = criterion_cls(out["logits"], batch["label"])
 
-            # Skin‑type losses
+            # ── Extract skin labels from possible column names ─────────────────
             skin_labels = batch.get("fitzpatrick", None)
+            if skin_labels is None:
+                skin_labels = batch.get("skin_type", None)
+            if skin_labels is None:
+                skin_labels = batch.get("fitzpatrick_scale", None)
             if skin_labels is not None:
                 skin_labels = skin_labels.long()
-                # L_conf : encourage uniform predictions
+                # Convert from 1..6 to 0..5 if needed
+                if skin_labels.max() > 5:
+                    skin_labels = skin_labels - 1
+                # Ensure values are within 0..5
+                skin_labels = torch.clamp(skin_labels, 0, 5)
                 loss_conf = confusion_loss(out["skin_logits"])
-                # L_s : standard CE on skin types (updates skin_clf only)
-                # We detach the input to skin_clf so it doesn't affect the main encoder
-                loss_s = skin_type_loss(out["skin_logits"].detach(), skin_labels)
+                loss_s    = skin_type_loss(out["skin_logits"].detach(), skin_labels)
             else:
                 loss_conf = out["logits"].new_tensor(0.)
                 loss_s    = out["logits"].new_tensor(0.)
                 if epoch == 0 and n_batches == 0:
-                    print("[WARN] No 'fitzpatrick' labels in batch; L_conf and L_s are zero.")
+                    print("[WARN] No skin type column ('fitzpatrick'/'skin_type'/'fitzpatrick_scale') found in batch. L_conf and L_s are zero.")
 
             # MGOT loss
             loss_got = out["logits"].new_tensor(0.)
