@@ -127,11 +127,11 @@ CFG = {
     'num_text_labels': 6,
     'text_embed_dim': 768,
     'batch_size': 32,
-    'num_epochs': 150,        # adjust as needed
+    'num_epochs': 1,        # adjust as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 30,      # adjust as needed
+    'warmup_epochs': 1,      # adjust as needed
     'aug_probability': 0.85,
     'alpha_conf': 0.5,
     'beta_got': 1.0,
