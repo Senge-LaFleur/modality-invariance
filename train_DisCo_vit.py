@@ -234,8 +234,10 @@ def evaluate_test_loaders(model, test_loaders, device, cfg, results_dir, label_n
             results_dir / f"{split_tag}_fairness.png")
         summary[mod_name] = {
             "accuracy":   res["acc"],
+            "precision":  res["macro_prec"],
+            "recall":     res["macro_rec"],
+            "f1_score":   res["macro_f1"],
             "auroc":      res["auroc"],
-            "macro_f1":   res["macro_f1"],
             "EOM":        fair["EOM"],
             "PQD":        fair["PQD"],
             "DPM":        fair["DPM"],
