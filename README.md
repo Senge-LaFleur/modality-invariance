@@ -76,3 +76,12 @@ python train_modality_invariance_vit.py
 
 ## Evaluation
 Run the notebook `evaluation.ipynb` to evaluate the models. Make sure to update the paths in the notebook to point to the correct result directory depending on which model you are evaluating.
+
+
+
+
+python train_BASE_resnet18.py --train_modality clin
+python train_BASE_resnet18.py --train_modality derm
+python train_BASE_resnet18.py --train_modality both
+
+
