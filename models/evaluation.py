@@ -10,13 +10,14 @@ Provides functions for:
 - Building train/val/test/cross‑eval data loaders
 
 build_loaders() now accepts train_modality in cfg:
-    'clin'  → train/val on clin CSVs only;  test on clin_test + derm_test separately
-    'derm'  → train/val on derm CSVs only;  test on clin_test + derm_test separately
-    'both'  → train/val on paired+clin+derm; test on clin_test + derm_test separately
+    'clin'  → train/val on clin CSVs only;  test on clin_test + derm_test + paired_test (clinical/derm)
+    'derm'  → train/val on derm CSVs only;  test on clin_test + derm_test + paired_test (clinical/derm)
+    'both'  → train/val on paired+clin+derm; test on clin_test + derm_test + paired_test (clinical/derm)
 
-test_loaders returned is now a dict:
-    {'clin': DataLoader, 'derm': DataLoader}
-instead of a single loader — training scripts iterate over it.
+Returns:
+    train_loader, val_loader, test_loaders (unpaired clin/derm), 
+    paired_test_loaders (unpaired clin/derm from paired_test.csv),
+    eval_loaders (cross‑dataset unpaired clin/derm for derm7pt)
 """
 
 import numpy as np
@@ -158,19 +159,15 @@ class PairedDataset(Dataset):
 # ------------------------------------------------------------
 def build_loaders(cfg, seed=42):
     """
-    Build train, val, test, and cross-evaluation loaders.
-
-    cfg must contain:
-        train_modality : 'clin' | 'derm' | 'both'
+    Build train, val, test, paired-test, and cross-evaluation loaders.
 
     Returns
     -------
     train_loader : DataLoader
     val_loader   : DataLoader
-    test_loaders : dict  {'clin': DataLoader, 'derm': DataLoader}
-        Always returns separate clinical-test and derm-test loaders so every
-        training regime is evaluated on both modalities.
-    eval_loaders : dict  (cross-dataset, unchanged)
+    test_loaders : dict  {'clin': DataLoader, 'derm': DataLoader}  from clin_test/derm_test
+    paired_test_loaders : dict  {'clin': DataLoader, 'derm': DataLoader}  from paired_test.csv (clinical/derm split)
+    eval_loaders : dict  cross-dataset unpaired loaders, e.g. {'derm7pt_clin': DataLoader, 'derm7pt_derm': DataLoader}
     """
     csv_dir = Path(cfg['csv_dir'])
     if 'dataset_roots' in cfg:
@@ -280,7 +277,7 @@ def build_loaders(cfg, seed=42):
     val_dataset   = (torch.utils.data.ConcatDataset(val_datasets)
                      if val_datasets else None)
 
-    # ── Test loaders — always clin_test AND derm_test separately ────────
+    # ── Test loaders — always clin_test AND derm_test (unpaired) ────────
     clin_test_df = _load('clin_test.csv')
     derm_test_df = _load('derm_test.csv')
 
@@ -297,6 +294,42 @@ def build_loaders(cfg, seed=42):
         test_loaders['derm'] = DataLoader(derm_test_ds, batch_size=batch_size,
                                           shuffle=False, num_workers=4, pin_memory=True)
         print(f"[build_loaders] derm_test : {len(derm_test_df)} samples")
+
+    # ── Paired test loader (paired_test.csv) split into clinical and derm ──
+    paired_test_df = _load('paired_test.csv')
+    paired_test_loaders = {}
+    if not paired_test_df.empty:
+        # Clinical images from paired_test (use column 'clinical' as image_id)
+        paired_clin_ds = UnpairedDataset(paired_test_df, image_maps,
+                                         transform=val_transform, id_col='clinical')
+        paired_test_loaders['clin'] = DataLoader(paired_clin_ds, batch_size=batch_size,
+                                                 shuffle=False, num_workers=4, pin_memory=True)
+        # Dermoscopic images from paired_test (use column 'derm' as image_id)
+        paired_derm_ds = UnpairedDataset(paired_test_df, image_maps,
+                                         transform=val_transform, id_col='derm')
+        paired_test_loaders['derm'] = DataLoader(paired_derm_ds, batch_size=batch_size,
+                                                 shuffle=False, num_workers=4, pin_memory=True)
+        print(f"[build_loaders] paired_test (clinical) : {len(paired_test_df)} samples")
+        print(f"[build_loaders] paired_test (derm)      : {len(paired_test_df)} samples")
+
+    # ── Cross‑evaluation loaders: derm7pt (split into clinical and derm) ──
+    eval_loaders = {}
+    derm7pt_df = _load('eval_derm7pt.csv') if (csv_dir / 'eval_derm7pt.csv').exists() else pd.DataFrame()
+    if not derm7pt_df.empty:
+        # Clinical: use column 'clinical' as image_id
+        derm7pt_clin_ds = UnpairedDataset(derm7pt_df, image_maps,
+                                          transform=val_transform, id_col='clinical')
+        eval_loaders['derm7pt_clin'] = DataLoader(derm7pt_clin_ds, batch_size=batch_size,
+                                                  shuffle=False, num_workers=4, pin_memory=True)
+        # Derm: use column 'derm' as image_id
+        derm7pt_derm_ds = UnpairedDataset(derm7pt_df, image_maps,
+                                          transform=val_transform, id_col='derm')
+        eval_loaders['derm7pt_derm'] = DataLoader(derm7pt_derm_ds, batch_size=batch_size,
+                                                  shuffle=False, num_workers=4, pin_memory=True)
+        print(f"[INFO] Loaded derm7pt clinical eval set: {len(derm7pt_df)} samples")
+        print(f"[INFO] Loaded derm7pt derm eval set: {len(derm7pt_df)} samples")
+    else:
+        print("[WARN] eval_derm7pt.csv not found. Skipping cross‑eval.")
 
     # ── Weighted sampler for training ────────────────────────────────────
     labels = []
@@ -315,30 +348,7 @@ def build_loaders(cfg, seed=42):
                                num_workers=4, pin_memory=True)
                     if val_dataset else None)
 
-    # ── Cross-evaluation loaders (unchanged) ─────────────────────────────
-    eval_loaders = {}
-    if (csv_dir / 'eval_derm7pt.csv').exists():
-        derm7pt_df = pd.read_csv(csv_dir / 'eval_derm7pt.csv')
-        has_paired   = {'clinical', 'derm', 'label', 'skin_type', 'dataset'}.issubset(derm7pt_df.columns)
-        has_unpaired = {'image_id', 'label', 'skin_type', 'dataset'}.issubset(derm7pt_df.columns)
-        if has_paired:
-            derm7pt_ds = PairedDataset(
-                derm7pt_df[['clinical', 'derm', 'label', 'skin_type', 'dataset']],
-                image_maps, transform=val_transform)
-            eval_loaders['derm7pt'] = DataLoader(derm7pt_ds, batch_size=batch_size,
-                                                 shuffle=False, num_workers=4, pin_memory=True)
-            print(f"[INFO] Loaded derm7pt paired eval set: {len(derm7pt_df)} samples")
-        elif has_unpaired:
-            derm7pt_ds = UnpairedDataset(
-                derm7pt_df[['image_id', 'label', 'skin_type', 'dataset']],
-                image_maps, transform=val_transform, id_col='image_id')
-            eval_loaders['derm7pt'] = DataLoader(derm7pt_ds, batch_size=batch_size,
-                                                 shuffle=False, num_workers=4, pin_memory=True)
-            print(f"[INFO] Loaded derm7pt unpaired eval set: {len(derm7pt_df)} samples")
-        else:
-            print("[WARN] eval_derm7pt.csv columns not recognised. Skipping.")
-
-    return train_loader, val_loader, test_loaders, eval_loaders
+    return train_loader, val_loader, test_loaders, paired_test_loaders, eval_loaders
 
 
 # ------------------------------------------------------------
