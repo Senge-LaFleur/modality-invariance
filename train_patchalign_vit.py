@@ -501,7 +501,7 @@ def evaluate_test_loaders(model, test_loaders, device, cfg, results_dir, label_n
         }
     return summary
 
-# ----------------------------- Main ------------------------------------------
+# ----------------------------- Main -----------------------------------------
 def main():
     print(f"CSV dir      : {CFG['csv_dir']}")
     print(f"Checkpoints  : {CFG['ckpt_dir']}")
