@@ -1,2 +1,0 @@
-,Accuracy,AUC-ROC,Precision (M),Recall    (M),F1        (M),F1   (weighted),EOM,PQD,DPM,FATE
-dermnet,0.8122,0.6834,0.4737,0.4156,0.3805,0.787,0.3997,0.9542,0.4294,0.0008

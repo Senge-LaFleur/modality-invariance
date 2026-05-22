@@ -25,7 +25,7 @@ module load cuda/12.6
 #module load cudnn/8.9
 module load python/3.11.7
 
-WORK_DIR="process"          
+WORK_DIR="process_v2"          
 #NOTEBOOK="modality_invariance_v1_1.ipynb"
 NOTEBOOK=$(realpath "modality_invariance_v2.ipynb")
 SCRIPT_NAME="modality_invariance_v2.py"       
