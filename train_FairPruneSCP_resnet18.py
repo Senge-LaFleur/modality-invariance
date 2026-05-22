@@ -6,13 +6,17 @@ train_FairPruneSCP_resnet18.py
 Implements Sensitive Channel Pruning (SCP) using SNNL on dual-encoder ResNet-18.
 Iteratively prunes sensitive channels, fine-tunes, and tracks fairness.
 
-All outputs are saved under:
-    checkpoints_SCP_resnet18/ and results_SCP_resnet18/
+Now supports three training regimes: clin, derm, both.
+
+All outputs saved under:
+    checkpoints_FairPruneSCP_resnet18/{clin,derm,both}/
+    results_FairPruneSCP_resnet18/{clin,derm,both}/
 """
 
 import os
 os.environ['MPLBACKEND'] = 'Agg'
 import sys
+import argparse
 import random
 import math
 import json
@@ -51,9 +55,22 @@ from models.evaluation import (
 
 warnings.filterwarnings("ignore")
 
-# ------------------------------------------------------------
-# Configuration – copy from train_BASE_resnet18.py, but with pruning parameters
-# ------------------------------------------------------------
+# ============================================================
+# Argument parsing
+# ============================================================
+parser = argparse.ArgumentParser(description="FairPruneSCP ResNet-18 — modality ablation")
+parser.add_argument(
+    '--train_modality',
+    choices=['clin', 'derm', 'both'],
+    default='both',
+    help="Training regime: 'clin' (clinical only), 'derm' (derm only), 'both' (dual encoder)."
+)
+args = parser.parse_args()
+TRAIN_MODALITY = args.train_modality
+
+# ============================================================
+# Seeds
+# ============================================================
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -63,9 +80,12 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Device: {DEVICE}")
+print(f"Device        : {DEVICE}")
+print(f"Train modality: {TRAIN_MODALITY}")
 
-# Paths (adjust to your environment)
+# ============================================================
+# PATH CONFIGURATION — update for each environment
+# ============================================================
 WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 IMAGE_ROOTS = {
@@ -78,9 +98,10 @@ IMAGE_ROOTS = {
 CFG = {
     'csv_dir':      CSV_DIR,
     'image_roots':  IMAGE_ROOTS,
-    'ckpt_dir':     WORK_ROOT / 'checkpoints_FairPruneSCP_resnet18',
-    'results_dir':  WORK_ROOT / 'results_FairPruneSCP_resnet18',
+    'ckpt_dir':     WORK_ROOT / f'checkpoints_FairPruneSCP_resnet18' / TRAIN_MODALITY,
+    'results_dir':  WORK_ROOT / f'results_FairPruneSCP_resnet18'     / TRAIN_MODALITY,
 
+    'train_modality': TRAIN_MODALITY,
     'backbone': 'resnet18',
     'embed_dim': 512,
     'img_size': 224,
@@ -88,11 +109,11 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 150,           # Update as needed
+    'num_epochs': 150,           # adjust as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 30,         # Update as needed
+    'warmup_epochs': 30,         # adjust as needed
     'aug_probability': 0.85,
 
     # SCP specific
@@ -100,14 +121,13 @@ CFG = {
     'max_prune_iters': 5,        # maximum number of pruning iterations
     'finetune_epochs_per_iter': 10,  # fine‑tune epochs after each prune
     'snnl_temperature': 1.0,
-    'sensitive_attr': 'skin_type_binary',  # or 'gender'
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
 CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 
 # ------------------------------------------------------------
-# SNNL computation (same as in SNNL_SCP_resnet18.py)
+# SNNL computation
 # ------------------------------------------------------------
 class SoftNearestNeighborLoss(nn.Module):
     def __init__(self, temperature=1.0, eps=1e-8):
@@ -147,6 +167,7 @@ def compute_channel_snnl(feature_maps, sensitive_labels, temperature=1.0):
 
 def get_last_conv_layer(model, encoder_name):
     encoder = getattr(model, encoder_name)
+    # ResNet: last conv is in layer4[-1].conv2
     return encoder.layer4[-1].conv2
 
 def register_hook(layer, outputs_dict, key):
@@ -158,13 +179,7 @@ def register_hook(layer, outputs_dict, key):
 # Pruning function (zero out entire output channels)
 # ------------------------------------------------------------
 def prune_channels_by_indices(layer, channel_indices):
-    """
-    Zero out the weights and biases of specified output channels.
-    layer: nn.Conv2d
-    channel_indices: list of ints (0‑based)
-    """
     with torch.no_grad():
-        # Zero weight filters
         for idx in channel_indices:
             layer.weight.data[idx] = 0.0
         if layer.bias is not None:
@@ -173,7 +188,7 @@ def prune_channels_by_indices(layer, channel_indices):
     print(f"Pruned {len(channel_indices)} channels from {layer}")
 
 # ------------------------------------------------------------
-# Training function (identical to base, but accepts a prefix for logging)
+# Training function (standard cross-entropy)
 # ------------------------------------------------------------
 def train_epoch(model, loader, optimizer, epoch, scaler, device):
     model.train()
@@ -217,6 +232,41 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device):
     return {"total": avg_loss, "acc": acc, "macro_f1": macro_f1}
 
 # ------------------------------------------------------------
+# Evaluation helper for test loaders
+# ------------------------------------------------------------
+def evaluate_test_loaders(model, test_loaders, device, cfg, results_dir, label_names):
+    summary = {}
+    for mod_name, loader in test_loaders.items():
+        split_tag = f"test_{mod_name}"
+        print(f"\n── Test on {mod_name} images ──")
+        res  = validate(model, loader, device, cfg["num_classes"], desc=f"Test [{mod_name}]")
+        fair = fairness(res)
+        save_results_csv(res, fair, split_tag, results_dir, label_names)
+        plot_confusion_matrix(
+            res["conf_mat"],
+            [label_names[i] for i in range(cfg["num_classes"])],
+            f"Confusion Matrix — Test [{mod_name.upper()}]",
+            results_dir / f"{split_tag}_confusion.png")
+        plot_per_class_metrics(
+            res,
+            [label_names[i] for i in range(cfg["num_classes"])],
+            f"Per-Class Metrics — Test [{mod_name.upper()}]",
+            results_dir / f"{split_tag}_per_class.png")
+        plot_fairness_metrics(
+            fair,
+            f"Fairness — Test [{mod_name.upper()}]",
+            results_dir / f"{split_tag}_fairness.png")
+        summary[mod_name] = {
+            "accuracy":   res["acc"],
+            "auroc":      res["auroc"],
+            "macro_f1":   res["macro_f1"],
+            "EOM":        fair["EOM"],
+            "PQD":        fair["PQD"],
+            "DPM":        fair["DPM"],
+        }
+    return summary
+
+# ------------------------------------------------------------
 # Main pruning & training loop
 # ------------------------------------------------------------
 def main():
@@ -226,32 +276,30 @@ def main():
     print(f"Prune ratio  : {CFG['prune_ratio']}, max iters: {CFG['max_prune_iters']}")
 
     # Build loaders
-    train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
-    print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
+    train_loader, val_loader, test_loaders, eval_loaders = build_loaders(CFG, seed=SEED)
+    print(f"Train batches: {len(train_loader)}")
+    if val_loader:
+        print(f"Val batches  : {len(val_loader)}")
+    print(f"Test loaders : {list(test_loaders.keys())}")
+    print(f"Cross-eval   : {list(eval_loaders.keys())}")
 
-    # Baseline model (pretrained)
+    # Baseline model (pretrained) with train_modality
     model = DualResNet18(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
         num_skin_types=CFG["num_skin_types"],
         pretrained=True,
         use_projection=False,
+        train_modality=TRAIN_MODALITY,
     ).to(DEVICE)
 
-    # Optional: load a previously trained baseline checkpoint
-    # baseline_ckpt = CFG['ckpt_dir'].parent / 'checkpoints_BASE_resnet18/best_f1_model.pt'
-    # if baseline_ckpt.exists():
-    #     ckpt = torch.load(baseline_ckpt, map_location=DEVICE)
-    #     model.load_state_dict(ckpt['model'])
-    #     print(f"Loaded baseline from {baseline_ckpt}")
-
-    # Identify layers to prune
-    clinical_conv = get_last_conv_layer(model, 'clinical_encoder')
-    derm_conv = get_last_conv_layer(model, 'dermoscopic_encoder')
+    # Identify layers to prune (last conv of each backbone)
+    clinical_conv = get_last_conv_layer(model, 'clinical_backbone')
+    derm_conv = get_last_conv_layer(model, 'derm_backbone')
     print(f"Clinical conv out_channels: {clinical_conv.out_channels}")
-    print(f"Dermoscopic conv out_channels: {derm_conv.out_channels}")
+    print(f"Derm conv out_channels: {derm_conv.out_channels}")
 
-    # Storage for history and FATE
+    # Storage for history
     prune_history = {
         'iteration': [],
         'val_acc': [],
@@ -264,7 +312,7 @@ def main():
         'n_pruned_derm': [],
     }
 
-    # Evaluate baseline fairness (needed for FATE)
+    # Baseline fairness
     print("\n=== Baseline evaluation (before pruning) ===")
     baseline_val = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Baseline validation")
     baseline_fair = fairness(baseline_val)
@@ -272,11 +320,10 @@ def main():
     baseline_eodd = baseline_fair.get('EOdd', 0.0)
     print(f"Baseline: acc={baseline_val['acc']:.4f}, f1={baseline_val['macro_f1']:.4f}, EOpp={baseline_eopp:.4f}, EOdd={baseline_eodd:.4f}")
 
-    # Best metrics for early stopping
     best_fate_eopp = -np.inf
     best_fate_eodd = -np.inf
     patience_counter = 0
-    patience = 2  # stop if FATE does not improve for 2 iterations
+    patience = 2
 
     # Pruning iterations
     for it in range(CFG['max_prune_iters']):
@@ -296,16 +343,19 @@ def main():
         model.eval()
         with torch.no_grad():
             for batch in tqdm(train_loader, desc="SNNL batches"):
+                # Get images and binarised sensitive attribute
                 clinical = batch['clinical'].to(DEVICE)
-                dermoscopic = batch['dermoscopic'].to(DEVICE)
-                sensitive = batch[CFG['sensitive_attr']].to(DEVICE)
+                derm = batch['derm'].to(DEVICE)
+                sens = batch['skin_type']
+                # Binarise: 0-2 light (0), 3-5 dark (1)
+                sensitive_binary = (sens >= 3).long().to(DEVICE)
 
-                _ = model({'clinical': clinical, 'dermoscopic': dermoscopic})
+                _ = model({'clinical': clinical, 'derm': derm})
                 feat_clin = clinical_output['out']
                 feat_derm = derm_output['out']
 
-                scores_clin = compute_channel_snnl(feat_clin, sensitive, CFG['snnl_temperature'])
-                scores_derm = compute_channel_snnl(feat_derm, sensitive, CFG['snnl_temperature'])
+                scores_clin = compute_channel_snnl(feat_clin, sensitive_binary, CFG['snnl_temperature'])
+                scores_derm = compute_channel_snnl(feat_derm, sensitive_binary, CFG['snnl_temperature'])
 
                 all_clin_scores.append(scores_clin.cpu().numpy())
                 all_derm_scores.append(scores_derm.cpu().numpy())
@@ -316,21 +366,20 @@ def main():
         avg_clin = np.mean(all_clin_scores, axis=0)
         avg_derm = np.mean(all_derm_scores, axis=0)
 
-        # ---- Step 2: Select channels to prune (lowest scores) ----
+        # ---- Step 2: Select channels to prune ----
         n_prune_clin = max(1, int(len(avg_clin) * CFG['prune_ratio']))
         n_prune_derm = max(1, int(len(avg_derm) * CFG['prune_ratio']))
         clin_sorted = np.argsort(avg_clin)
         derm_sorted = np.argsort(avg_derm)
         prune_clin = clin_sorted[:n_prune_clin].tolist()
         prune_derm = derm_sorted[:n_prune_derm].tolist()
-        print(f"Pruning {len(prune_clin)} clinical channels, {len(prune_derm)} dermoscopic channels")
+        print(f"Pruning {len(prune_clin)} clinical channels, {len(prune_derm)} derm channels")
 
-        # ---- Step 3: Apply pruning (zero out) ----
+        # ---- Step 3: Apply pruning ----
         prune_channels_by_indices(clinical_conv, prune_clin)
         prune_channels_by_indices(derm_conv, prune_derm)
 
-        # ---- Step 4: Fine‑tune the model ----
-        # Reinitialize optimizer and scheduler for fine‑tuning
+        # ---- Step 4: Fine‑tune ----
         from models.models_losses import get_layer_wise_lr_params
         param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
         optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
@@ -347,13 +396,10 @@ def main():
         scaler = torch.cuda.amp.GradScaler(enabled=(DEVICE.type == "cuda"))
 
         print(f"Fine‑tuning for {CFG['finetune_epochs_per_iter']} epochs...")
-        best_val_f1 = 0.0
         for epoch in range(CFG['finetune_epochs_per_iter']):
             train_metrics = train_epoch(model, train_loader, optimizer, epoch, scaler, DEVICE)
             scheduler.step()
             val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
-            if val_metrics['macro_f1'] > best_val_f1:
-                best_val_f1 = val_metrics['macro_f1']
             print(f"  FT Ep{epoch+1}: tr_loss={train_metrics['total']:.4f}, val_acc={val_metrics['acc']:.4f}, val_f1={val_metrics['macro_f1']:.4f}")
 
         # ---- Step 5: Evaluate fairness after this iteration ----
@@ -362,13 +408,11 @@ def main():
         eopp = fair.get('EOpp', 0.0)
         eodd = fair.get('EOdd', 0.0)
 
-        # Compute FATE (relative improvement over baseline)
         fate_eopp = (baseline_eopp - eopp) / (baseline_eopp + 1e-8)
         fate_eodd = (baseline_eodd - eodd) / (baseline_eodd + 1e-8)
 
         print(f"Iteration {it+1}: acc={val_metrics['acc']:.4f}, f1={val_metrics['macro_f1']:.4f}, EOpp={eopp:.4f} (FATE={fate_eopp:.4f}), EOdd={eodd:.4f} (FATE={fate_eodd:.4f})")
 
-        # Save history
         prune_history['iteration'].append(it+1)
         prune_history['val_acc'].append(val_metrics['acc'])
         prune_history['val_f1'].append(val_metrics['macro_f1'])
@@ -379,14 +423,12 @@ def main():
         prune_history['n_pruned_clinical'].append(len(prune_clin))
         prune_history['n_pruned_derm'].append(len(prune_derm))
 
-        # Save checkpoint after this iteration
         torch.save({
             'iteration': it+1,
             'model': model.state_dict(),
             'history': prune_history,
         }, CFG['ckpt_dir'] / f'iter_{it+1}_model.pt')
 
-        # Early stopping based on FATE (if no improvement in either metric)
         current_best = max(fate_eopp, fate_eodd)
         if current_best > max(best_fate_eopp, best_fate_eodd):
             best_fate_eopp = fate_eopp
@@ -399,15 +441,14 @@ def main():
                 break
 
     # ------------------------------------------------------------
-    # Final evaluation on test and cross-datasets
+    # Final evaluation
     # ------------------------------------------------------------
     print("\n=== Final evaluation with best pruned model ===")
-    # Load best iteration model (or last)
     final_ckpt = CFG['ckpt_dir'] / f'iter_{prune_history["iteration"][-1]}_model.pt'
     ckpt = torch.load(final_ckpt, map_location=DEVICE, weights_only=False)
     model.load_state_dict(ckpt['model'])
 
-    # Validation
+    # Validation final
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Final validation")
     val_fair = fairness(val_res)
     save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
@@ -417,16 +458,16 @@ def main():
                            "Per-Class Metrics - Validation", CFG["results_dir"] / "val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"] / "val_fairness.png")
 
-    # Test
-    if test_loader:
-        test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
-        test_fair = fairness(test_res)
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES)
-        plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
-                              "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
-        plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
-                               "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
-        plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
+    # Test on both modalities
+    test_summary = evaluate_test_loaders(
+        model, test_loaders, DEVICE, CFG, CFG["results_dir"], LABEL_NAMES)
+    print("\nTest summary:")
+    for mod_name, metrics in test_summary.items():
+        print(f"  [{mod_name}]  acc={metrics['accuracy']:.4f}  "
+              f"auroc={metrics['auroc']:.4f}  f1={metrics['macro_f1']:.4f}  "
+              f"EOM={metrics['EOM']:.4f}  PQD={metrics['PQD']:.4f}")
+    if test_summary:
+        pd.DataFrame(test_summary).T.to_csv(CFG["results_dir"] / "test_modality_summary.csv")
 
     # Cross-dataset evaluation
     cross_results = {}
@@ -441,16 +482,10 @@ def main():
                                f"Per-Class Metrics - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair_metrics, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
         cross_results[ds_name] = {
-            "accuracy": res["acc"],
-            "precision": res["macro_prec"],
-            "recall": res["macro_rec"],
-            "auroc": res["auroc"],
-            "macro_f1": res["macro_f1"],
-            "micro_f1": res["micro_f1"],
+            "accuracy": res["acc"], "precision": res["macro_prec"], "recall": res["macro_rec"],
+            "auroc": res["auroc"], "macro_f1": res["macro_f1"], "micro_f1": res["micro_f1"],
             "weighted_f1": res["weighted_f1"],
-            "EOM": fair_metrics["EOM"],
-            "PQD": fair_metrics["PQD"],
-            "DPM": fair_metrics["DPM"],
+            "EOM": fair_metrics["EOM"], "PQD": fair_metrics["PQD"], "DPM": fair_metrics["DPM"],
         }
     if cross_results:
         cross_df = pd.DataFrame(cross_results).T
@@ -460,12 +495,12 @@ def main():
     # Save pruning history
     pd.DataFrame(prune_history).to_csv(CFG["results_dir"] / "prune_history.csv", index=False)
 
-    # (Optional) t‑SNE plot for test set
-    if test_loader:
+    # t‑SNE on clin test
+    if 'clin' in test_loaders:
         model.eval()
         all_embs, all_labels_tsne = [], []
         with torch.no_grad():
-            for batch in test_loader:
+            for batch in test_loaders['clin']:
                 for k, v in batch.items():
                     if isinstance(v, torch.Tensor):
                         batch[k] = v.to(DEVICE)
@@ -474,7 +509,9 @@ def main():
                 all_labels_tsne.append(batch["label"].cpu().numpy())
         embs = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
-        plot_tsne(embs, labels_tsne, "t-SNE - Test Set (SCP)", CFG["results_dir"] / "tsne_test.png")
+        plot_tsne(embs, labels_tsne,
+                  f"t-SNE — Test [clin] (FairPruneSCP ResNet-18, {TRAIN_MODALITY} trained)",
+                  CFG["results_dir"] / "tsne_test_clin.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")

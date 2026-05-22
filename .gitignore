@@ -8,3 +8,4 @@ openai_key.txt
 checkpoints_*/
 checkpoint
 checkpoint*.pt
+modality-invariance-bash.ipynb

@@ -5,13 +5,20 @@
 PatchAlign — Dual ResNet-18 with Masked Graph Optimal Transport (MGOT)
 =======================================================================
 Extracts text embeddings for the 5 disease classes + eudermic from the original
-PatchAlign embedding file (115 clinical labels).  All other components are
+PatchAlign embedding file (115 clinical labels). All other components are
 identical to the baseline dual ResNet-18 training.
+
+Now supports three training regimes: clin, derm, both.
+
+All outputs saved in:
+    - checkpoints_patchalign_resnet18/{clin,derm,both}/
+    - results_patchalign_resnet18/{clin,derm,both}/
 """
 
 import os
 os.environ['MPLBACKEND'] = 'Agg'
 import sys
+import argparse
 import random
 import math
 import json
@@ -68,13 +75,32 @@ def got_loss(p, q, mask, lamb=0.9):
 
 warnings.filterwarnings("ignore")
 
-# ----------------------------- Configuration ---------------------------------
+# ============================================================
+# Argument parsing
+# ============================================================
+parser = argparse.ArgumentParser(description="PatchAlign ResNet-18 — modality ablation")
+parser.add_argument(
+    '--train_modality',
+    choices=['clin', 'derm', 'both'],
+    default='both',
+    help="Training regime: 'clin' (clinical only), 'derm' (derm only), 'both' (dual encoder)."
+)
+args = parser.parse_args()
+TRAIN_MODALITY = args.train_modality
+
+# ============================================================
+# Seeds
+# ============================================================
 SEED = 42
 random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED); torch.backends.cudnn.deterministic = True
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
+print(f"Train modality: {TRAIN_MODALITY}")
 
+# ============================================================
+# PATH CONFIGURATION
+# ============================================================
 WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 IMAGE_ROOTS = {
@@ -87,18 +113,29 @@ IMAGE_ROOTS = {
 FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
 
 CFG = {
-    'csv_dir': CSV_DIR, 'image_roots': IMAGE_ROOTS,
-    'ckpt_dir': WORK_ROOT / 'checkpoints_patchalign_resnet18',
-    'results_dir': WORK_ROOT / 'results_patchalign_resnet18',
-    'backbone': 'resnet18', 'embed_dim': 512, 'img_size': 224,
-    'num_classes': 5, 'num_skin_types': 6, 'num_text_labels': 6,
+    'csv_dir': CSV_DIR,
+    'image_roots': IMAGE_ROOTS,
+    'ckpt_dir': WORK_ROOT / f'checkpoints_patchalign_resnet18' / TRAIN_MODALITY,
+    'results_dir': WORK_ROOT / f'results_patchalign_resnet18' / TRAIN_MODALITY,
+
+    'train_modality': TRAIN_MODALITY,
+    'backbone': 'resnet18',
+    'embed_dim': 512,
+    'img_size': 224,
+    'num_classes': 5,
+    'num_skin_types': 6,
+    'num_text_labels': 6,
     'text_embed_dim': 768,
-    'batch_size': 32, 
-    'num_epochs': 150,        # Update as needed
-    'lr': 1e-4, 'min_lr': 1e-6, 'weight_decay': 1e-4, 
-    'warmup_epochs': 30,      # Update as needed
+    'batch_size': 32,
+    'num_epochs': 150,        # adjust as needed
+    'lr': 1e-4,
+    'min_lr': 1e-6,
+    'weight_decay': 1e-4,
+    'warmup_epochs': 30,      # adjust as needed
     'aug_probability': 0.85,
-    'alpha_conf': 0.5, 'beta_got': 1.0, 'lamb_got': 0.9,
+    'alpha_conf': 0.5,
+    'beta_got': 1.0,
+    'lamb_got': 0.9,
 }
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
 CFG["results_dir"].mkdir(parents=True, exist_ok=True)
@@ -180,9 +217,15 @@ class ProjectionHead(nn.Module):
         return F.normalize(out, dim=-1)
 
 class PatchAlignResNet18(nn.Module):
+    """
+    Dual ResNet-18 with PatchAlign losses. Supports train_modality regimes.
+    """
     def __init__(self, embed_dim=512, num_classes=5, num_skin_types=6,
-                 num_text_labels=6, text_embed_dim=768, pretrained=True, use_projection=False):
+                 num_text_labels=6, text_embed_dim=768, pretrained=True,
+                 use_projection=False, train_modality='both'):
         super().__init__()
+        self.train_modality = train_modality
+
         weights = ResNet18_Weights.DEFAULT if pretrained else None
         def _make_backbone():
             net = resnet18(weights=weights)
@@ -191,20 +234,23 @@ class PatchAlignResNet18(nn.Module):
                 net.layer1, net.layer2, net.layer3, net.layer4,
             )
         self.clinical_backbone = _make_backbone()
-        self.derm_backbone = _make_backbone()
+        self.derm_backbone     = _make_backbone()
         self.global_pool = nn.AdaptiveAvgPool2d(1)
         feat_dim = _RESNET18_FEAT_DIM
+
         self.use_projection = use_projection
         if use_projection:
             self.proj_head = ProjectionHead(feat_dim, 1024, embed_dim)
         else:
             self.proj_head = nn.Identity()
             embed_dim = feat_dim
+
         self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
         self.skin_clf = nn.Sequential(
             nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.2),
             nn.Linear(256, num_skin_types),
         )
+
         self.patch_proj = nn.Sequential(
             nn.Linear(feat_dim, text_embed_dim),
             nn.LayerNorm(text_embed_dim),
@@ -217,6 +263,16 @@ class PatchAlignResNet18(nn.Module):
         )
         self._n_patches = n_patches
         self._text_embed_dim = text_embed_dim
+
+        # --- Weight-tying + freezing for single-modality regimes ---
+        if train_modality == 'clin':
+            self.derm_backbone.load_state_dict(self.clinical_backbone.state_dict())
+            for p in self.derm_backbone.parameters():
+                p.requires_grad = False
+        elif train_modality == 'derm':
+            self.clinical_backbone.load_state_dict(self.derm_backbone.state_dict())
+            for p in self.clinical_backbone.parameters():
+                p.requires_grad = False
 
     def _extract_features(self, x, modality):
         backbone = self.clinical_backbone if modality == "clinical" else self.derm_backbone
@@ -236,21 +292,46 @@ class PatchAlignResNet18(nn.Module):
     def forward(self, batch):
         device = batch["label"].device
         batch_size = len(batch["label"])
-        # Always use clinical modality for patches (ignore derm to keep shape consistent)
-        if "clinical" in batch:
-            clinical_t = batch["clinical"].to(device)
-            z, feat = self._extract_features(clinical_t, "clinical")
+
+        # Single-modality regimes
+        if self.train_modality in ('clin', 'derm'):
+            if self.train_modality == 'clin':
+                img_t = batch["clinical"].to(device)
+                z, feat = self._extract_features(img_t, "clinical")
+            else:
+                img_t = batch["derm"].to(device)
+                z, feat = self._extract_features(img_t, "derm")
             patches, mask = self._patch_embeddings(feat)
             embeddings = z
             out_patches = patches
             out_masks = mask
-        else:
-            img_t = batch["image"].to(device)
-            z, feat = self._extract_features(img_t, "clinical")
-            patches, mask = self._patch_embeddings(feat)
-            embeddings = z
-            out_patches = patches
-            out_masks = mask
+        else:  # both regime: original logic (use clinical for patches)
+            # For paired averaging we still use clinical branch for patches
+            if "clinical" in batch:
+                clinical_t = batch["clinical"].to(device)
+                z, feat = self._extract_features(clinical_t, "clinical")
+                patches, mask = self._patch_embeddings(feat)
+                embeddings = z
+                out_patches = patches
+                out_masks = mask
+            else:
+                # fallback
+                img_t = batch["image"].to(device)
+                z, feat = self._extract_features(img_t, "clinical")
+                patches, mask = self._patch_embeddings(feat)
+                embeddings = z
+                out_patches = patches
+                out_masks = mask
+
+            # If paired, average embeddings from both modalities (but patches remain from clinical)
+            paired_mask = torch.tensor(batch.get("paired", [False]*batch_size), dtype=torch.bool, device=device)
+            if paired_mask.any() and "clinical" in batch and "derm" in batch:
+                clin_t = batch["clinical"][paired_mask].to(device)
+                derm_t = batch["derm"][paired_mask].to(device)
+                z_c, _ = self._extract_features(clin_t, "clinical")
+                z_d, _ = self._extract_features(derm_t, "derm")
+                z_paired = (z_c + z_d) / 2
+                embeddings[paired_mask] = z_paired
 
         if embeddings is None:
             embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
@@ -283,7 +364,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
             out = model(batch)
             loss_c = criterion_cls(out["logits"], batch["label"])
 
-            # ── Extract skin labels from possible column names ─────────────────
+            # Extract skin labels
             skin_labels = batch.get("fitzpatrick", None)
             if skin_labels is None:
                 skin_labels = batch.get("skin_type", None)
@@ -291,10 +372,8 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
                 skin_labels = batch.get("fitzpatrick_scale", None)
             if skin_labels is not None:
                 skin_labels = skin_labels.long()
-                # Convert from 1..6 to 0..5 if needed
                 if skin_labels.max() > 5:
                     skin_labels = skin_labels - 1
-                # Ensure values are within 0..5
                 skin_labels = torch.clamp(skin_labels, 0, 5)
                 loss_conf = confusion_loss(out["skin_logits"])
                 loss_s    = skin_type_loss(out["skin_logits"].detach(), skin_labels)
@@ -302,7 +381,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
                 loss_conf = out["logits"].new_tensor(0.)
                 loss_s    = out["logits"].new_tensor(0.)
                 if epoch == 0 and n_batches == 0:
-                    print("[WARN] No skin type column ('fitzpatrick'/'skin_type'/'fitzpatrick_scale') found in batch. L_conf and L_s are zero.")
+                    print("[WARN] No skin type column found. L_conf and L_s are zero.")
 
             # MGOT loss
             loss_got = out["logits"].new_tensor(0.)
@@ -345,11 +424,44 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
         "macro_f1": f1_score(all_labels, all_preds, average="macro", zero_division=0),
     }
 
+# ----------------------------- Evaluation helper -----------------------------
+def evaluate_test_loaders(model, test_loaders, device, cfg, results_dir, label_names):
+    summary = {}
+    for mod_name, loader in test_loaders.items():
+        split_tag = f"test_{mod_name}"
+        print(f"\n── Test on {mod_name} images ──")
+        res  = validate(model, loader, device, cfg["num_classes"], desc=f"Test [{mod_name}]")
+        fair = fairness(res)
+        save_results_csv(res, fair, split_tag, results_dir, label_names)
+        plot_confusion_matrix(
+            res["conf_mat"],
+            [label_names[i] for i in range(cfg["num_classes"])],
+            f"Confusion Matrix — Test [{mod_name.upper()}]",
+            results_dir / f"{split_tag}_confusion.png")
+        plot_per_class_metrics(
+            res,
+            [label_names[i] for i in range(cfg["num_classes"])],
+            f"Per-Class Metrics — Test [{mod_name.upper()}]",
+            results_dir / f"{split_tag}_per_class.png")
+        plot_fairness_metrics(
+            fair,
+            f"Fairness — Test [{mod_name.upper()}]",
+            results_dir / f"{split_tag}_fairness.png")
+        summary[mod_name] = {
+            "accuracy":   res["acc"],
+            "auroc":      res["auroc"],
+            "macro_f1":   res["macro_f1"],
+            "EOM":        fair["EOM"],
+            "PQD":        fair["PQD"],
+            "DPM":        fair["DPM"],
+        }
+    return summary
+
 # ----------------------------- Main ------------------------------------------
 def main():
-    print(f"CSV dir: {CFG['csv_dir']}")
-    print(f"Checkpoints: {CFG['ckpt_dir']}")
-    print(f"Results: {CFG['results_dir']}")
+    print(f"CSV dir      : {CFG['csv_dir']}")
+    print(f"Checkpoints  : {CFG['ckpt_dir']}")
+    print(f"Results      : {CFG['results_dir']}")
 
     # Load text embeddings
     if FULL_EMBEDDINGS_PATH.exists():
@@ -368,16 +480,18 @@ def main():
         print("[WARN] Text embeddings not found; GOT loss will be zero.")
         text_emb = None
 
-    train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
-    print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
-    if test_loader:
-        print(f"Test batches: {len(test_loader)}")
-    print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
+    train_loader, val_loader, test_loaders, eval_loaders = build_loaders(CFG, seed=SEED)
+    print(f"Train batches: {len(train_loader)}")
+    if val_loader:
+        print(f"Val batches  : {len(val_loader)}")
+    print(f"Test loaders : {list(test_loaders.keys())}")
+    print(f"Cross-eval   : {list(eval_loaders.keys())}")
 
     model = PatchAlignResNet18(
         embed_dim=CFG["embed_dim"], num_classes=CFG["num_classes"],
         num_skin_types=CFG["num_skin_types"], num_text_labels=CFG["num_text_labels"],
         text_embed_dim=CFG["text_embed_dim"], pretrained=True, use_projection=False,
+        train_modality=TRAIN_MODALITY,
     ).to(DEVICE)
 
     param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
@@ -393,8 +507,6 @@ def main():
 
     best_auroc = 0.0
     best_f1 = 0.0
-    patience = 20
-    patience_counter = 0
     history = defaultdict(list)
 
     for epoch in range(CFG["num_epochs"]):
@@ -402,19 +514,6 @@ def main():
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
-
-        # ----- EARLY STOPPING (patience=20) -----
-        # current_f1 = val_metrics["macro_f1"]
-        # if current_f1 > best_f1:
-        #     best_f1 = current_f1
-        #     patience_counter = 0
-        # else:
-        #     patience_counter += 1
-
-        # if patience_counter >= patience:
-        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
-        #     break
-        # -----------------------------------------
 
         for k,v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -443,7 +542,6 @@ def main():
 
     print(f"Training complete. Best AUROC: {best_auroc:.4f}, Best F1: {best_f1:.4f}")
 
-    # Load best model and evaluate
     best_ckpt = CFG["ckpt_dir"]/"best_f1_model.pt"
     if not best_ckpt.exists():
         best_ckpt = CFG["ckpt_dir"]/"best_auroc_model.pt"
@@ -462,15 +560,15 @@ def main():
                            "Per-Class Metrics - Validation", CFG["results_dir"]/"val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"]/"val_fairness.png")
 
-    if test_loader:
-        test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
-        test_fair = fairness(test_res)
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES)
-        plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
-                              "Confusion Matrix - Test", CFG["results_dir"]/"test_confusion.png")
-        plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
-                               "Per-Class Metrics - Test", CFG["results_dir"]/"test_per_class.png")
-        plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"]/"test_fairness.png")
+    test_summary = evaluate_test_loaders(
+        model, test_loaders, DEVICE, CFG, CFG["results_dir"], LABEL_NAMES)
+    print("\nTest summary:")
+    for mod_name, metrics in test_summary.items():
+        print(f"  [{mod_name}]  acc={metrics['accuracy']:.4f}  "
+              f"auroc={metrics['auroc']:.4f}  f1={metrics['macro_f1']:.4f}  "
+              f"EOM={metrics['EOM']:.4f}  PQD={metrics['PQD']:.4f}")
+    if test_summary:
+        pd.DataFrame(test_summary).T.to_csv(CFG["results_dir"] / "test_modality_summary.csv")
 
     cross_results = {}
     for ds_name, loader in eval_loaders.items():
@@ -484,28 +582,23 @@ def main():
                                f"Per-Class Metrics - {ds_name}", CFG["results_dir"]/f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"]/f"cross_{ds_name}_fairness.png")
         cross_results[ds_name] = {
-            "accuracy": res["acc"],
-            "precision": res["macro_prec"],
-            "recall": res["macro_rec"],
-            "auroc": res["auroc"],
-            "macro_f1": res["macro_f1"],
-            "micro_f1": res["micro_f1"],
+            "accuracy": res["acc"], "precision": res["macro_prec"], "recall": res["macro_rec"],
+            "auroc": res["auroc"], "macro_f1": res["macro_f1"], "micro_f1": res["micro_f1"],
             "weighted_f1": res["weighted_f1"],
-            "EOM": fair["EOM"],
-            "PQD": fair["PQD"],
-            "DPM": fair["DPM"],
+            "EOM": fair["EOM"], "PQD": fair["PQD"], "DPM": fair["DPM"],
         }
     if cross_results:
         pd.DataFrame(cross_results).T.to_csv(CFG["results_dir"]/"cross_dataset_summary.csv")
         print("\nCross-dataset summary:\n", pd.DataFrame(cross_results).T)
 
-    plot_training_curves(history, "Training History (PatchAlign ResNet-18)", CFG["results_dir"]/"training_curves.png")
+    plot_training_curves(history, f"Training History (PatchAlign ResNet-18 [{TRAIN_MODALITY}])",
+                         CFG["results_dir"]/"training_curves.png")
 
-    if test_loader:
+    if 'clin' in test_loaders:
         model.eval()
         all_embs, all_labels_tsne = [], []
         with torch.no_grad():
-            for batch in test_loader:
+            for batch in test_loaders['clin']:
                 for k,v in batch.items():
                     if isinstance(v, torch.Tensor):
                         batch[k] = v.to(DEVICE)
@@ -514,7 +607,9 @@ def main():
                 all_labels_tsne.append(batch["label"].cpu().numpy())
         embs = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
-        plot_tsne(embs, labels_tsne, "t-SNE - Test Set (PatchAlign ResNet-18)", CFG["results_dir"]/"tsne_test.png")
+        plot_tsne(embs, labels_tsne,
+                  f"t-SNE — Test [clin] (PatchAlign ResNet-18, {TRAIN_MODALITY} trained)",
+                  CFG["results_dir"]/"tsne_test_clin.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")
