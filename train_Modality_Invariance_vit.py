@@ -261,9 +261,10 @@ def evaluate_test_loaders(model, test_loaders, device, cfg, results_dir, label_n
         summary[mod_name] = {
             "accuracy":   res["acc"],
             "auroc":      res["auroc"],
-            "f1_score":   res["macro_f1"],
+            "macro_f1":   res["macro_f1"],
             "EOM":        fair["EOM"],
             "PQD":        fair["PQD"],
+            "DPM":        fair["DPM"],
         }
     return summary
 
