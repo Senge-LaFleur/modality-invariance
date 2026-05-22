@@ -118,11 +118,11 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 10,           # adjust as needed
+    'num_epochs': 3,           # adjust as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 3,         # adjust as needed
+    'warmup_epochs': 1,         # adjust as needed
     'aug_probability': 0.85,
 
     'lambda_cls': 1.0,
@@ -246,8 +246,8 @@ def evaluate_test_loaders(model, test_loaders, device, cfg, results_dir, label_n
             results_dir / f"{split_tag}_fairness.png")
         summary[mod_name] = {
             "accuracy":   res["acc"],
-            "f1_score":   res["macro_f1"],
             "auroc":      res["auroc"],
+            "f1_score":   res["macro_f1"],
             "EOM":        fair["EOM"],
             "PQD":        fair["PQD"],
         }
