@@ -263,16 +263,16 @@ def main():
         lr = optimizer.param_groups[0]["lr"]
 
         # ----- EARLY STOPPING (patience=20) -----
-        current_f1 = val_metrics["macro_f1"]
-        if current_f1 > best_f1:
-            best_f1 = current_f1
-            patience_counter = 0
-        else:
-            patience_counter += 1
+        # current_f1 = val_metrics["macro_f1"]
+        # if current_f1 > best_f1:
+        #     best_f1 = current_f1
+        #     patience_counter = 0
+        # else:
+        #     patience_counter += 1
 
-        if patience_counter >= patience:
-            print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
-            break
+        # if patience_counter >= patience:
+        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
+        #     break
         # -----------------------------------------
 
         for k, v in train_metrics.items():

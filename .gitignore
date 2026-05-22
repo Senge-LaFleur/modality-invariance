@@ -1,0 +1,10 @@
+kaggle.json
+.venv
+logs
+outputs
+backbone_cache
+venv
+openai_key.txt
+checkpoints_*/
+checkpoint
+checkpoint*.pt
