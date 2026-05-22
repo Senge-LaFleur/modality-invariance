@@ -1,0 +1,650 @@
+=========================================
+Job:       modality_invariance_v2  (410265)
+Node:      bigpu04
+Started:   Tue May 19 01:54:51 PM CEST 2026
+=========================================
+[INFO] No HF token found at /users/jlacmou/.hf_token — downloads may be slow.
+[INFO] No kaggle.json found in process_v2. Relying on ~/.kaggle/ or env vars.
+[SETUP] Installing / verifying Python dependencies...
+
+── GPU info ──────────────────────────────
+Tesla V100-PCIE-32GB, 32768 MiB, 575.57.08
+PyTorch : 2.12.0+cu130
+CUDA    : 13.0
+Devices : 1
+──────────────────────────────────────────
+
+[CHECK] Validating dataset roots...
+  [OK]      process_v2/data/datasets/asosenge/hibaskinlesionsdataset-main
+  [OK]      process_v2/data/datasets/asosenge/fitzpatrick17k
+  [OK]      process_v2/data/datasets/asosenge/ham10000
+  [OK]      process_v2/data/datasets/shubhamgoel27/dermnet
+
+[CONVERT] Converting notebook to Python script...
+[PATCH] Redirecting Kaggle paths → cluster paths...
+  DATA_ROOT  → process_v2/data/datasets
+  WORK_ROOT  → process_v2/outputs
+  BB_CACHE   → process_v2/backbone_cache
+  Patch applied successfully.
+
+[RUN] Starting training — Tue May 19 01:54:59 PM CEST 2026
+=========================================
+Device : cpu
+[INFO] No HF_TOKEN found — downloads may be slow. Add it via Kaggle Secrets → HF_TOKEN.
+Backbone cache dir: process_v2/backbone_cache
+Config ready. Checking dataset roots:
+  [OK]  hiba_root
+  [OK]  fitz_root
+  [OK]  ham_root
+  [MISSING — update path]  derm7pt_root
+  Backbone : vit_small_patch16_224  embed_dim=512
+  Epochs   : 200  lr=3e-05  warmup=40
+Label taxonomy ready — 5 classes (seborrheic keratosis and other EXCLUDED).
+  FITZ: reads "label" column (fine-grained diagnoses)
+  HIBA: reads "diagnosis" column + "fitzpatrick_skin_type" (roman numerals)
+  HAM:  reads "dx" column + ITA-estimated FST
+  Derm7pt: melanoma / nevus / BCC only (3-class cross-eval)
+Split helpers ready.
+HIBA parser ready.
+HIBA parser ready (5-class filtered).
+Unpaired parsers ready (5-class filtered).
+Derm7pt parser + ITA-FST estimator ready.
+NOTE: Derm7pt FST will be computed via ITA (no ground-truth annotations).
+============================================================ 
+Parsing datasets ...
+[HIBA] 1616 rows | columns: ['isic_id', 'attribution', 'copyright_license', 'age_approx', 'anatom_site_general', 'anatom_site_special', 'benign_malignant', 'concomitant_biopsy', 'dermoscopic_type', 'diagnosis', 'diagnosis_1', 'diagnosis_2', 'diagnosis_3', 'diagnosis_confirm_type', 'family_hx_mm', 'fitzpatrick_skin_type', 'image_type', 'lesion_id', 'patient_id', 'personal_hx_mm', 'sex']
+[HIBA] FST column: fitzpatrick_skin_type
+[HIBA] image map: 3232 entries
+[HIBA] paired    : 168 train | 36 val | 36 test
+[HIBA] unpaired clin: 32 train | 8 val | 8 test
+[HIBA] unpaired derm: 620 train | 134 val | 134 test
+[HIBA paired] classes: melanoma=43  nevus=44  basal cell carcinoma=99  actinic keratosis=15  squamous cell carcinoma=39
+[DEBUG FITZ] Building image path map for process_v2/data/datasets/asosenge/fitzpatrick17k...
+[DEBUG FITZ] Image map built with 33154 entries.
+Fitzpatrick17k —   1866 train    400 val    400 test  | FST known: 2555  | skipped (not in 5 classes): 13911
+  classes: melanoma=573  nevus=558  basal cell carcinoma=596  actinic keratosis=358  squamous cell carcinoma=581
+[DEBUG HAM] Found metadata at: process_v2/data/datasets/asosenge/ham10000/HAM10000/HAM10000_metadata.csv
+[DEBUG HAM] Building image path map...
+[DEBUG HAM] Image map built with 40060 entries.
+HAM10000       —   6061 train   1299 val   1299 test  | skipped (not in 5 classes): 1356
+  classes: melanoma=1113  nevus=6705  basal cell carcinoma=514  actinic keratosis=327
+
+Label verification ...
+  HIBA paired (all): 240 rows | melanoma=43  nevus=44  basal cell carcinoma=99  actinic keratosis=15  squamous cell carcinoma=39
+  Clinical unpaired (all): 2714 rows | melanoma=589  nevus=567  basal cell carcinoma=609  actinic keratosis=360  squamous cell carcinoma=589
+  Derm unpaired (all): 9547 rows | melanoma=1264  nevus=7210  basal cell carcinoma=643  actinic keratosis=358  squamous cell carcinoma=72
+
+Splitting combined pools (70/15/15 stratified) ...
+  Paired  : 168 tr | 36 va | 36 te
+  Clinical: 1899 tr | 407 va | 408 te
+  Derm    : 6682 tr | 1432 va | 1433 te
+
+Building Derm7pt evaluation set ...
+[WARN] Derm7pt: meta.csv not found under process_v2/data/datasets/asosenge/derm7pt
+  Saved paired_train.csv          (   168 rows)
+  Saved paired_val.csv            (    36 rows)
+  Saved paired_test.csv           (    36 rows)
+  Saved clin_train.csv            (  1899 rows)
+  Saved clin_val.csv              (   407 rows)
+  Saved clin_test.csv             (   408 rows)
+  Saved derm_train.csv            (  6682 rows)
+  Saved derm_val.csv              (  1432 rows)
+  Saved derm_test.csv             (  1433 rows)
+
+Total train : 8,749
+Total val   : 1,875
+Total test  : 1,877
+Cross-eval  : 0  (Derm7pt — melanoma/nevus/BCC only)
+
+── Coverage Summary ─────────────────────────────────────
+                Total rows  FST known  FST %  Class=Other Other %
+Dataset                                                          
+HIBA                   168        164  97.6%            0    0.0%
+Fitzpatrick17k        1899       1823  96.0%            0    0.0%
+HAM10000              6682        563   8.4%            0    0.0%
+
+EDA visualizations saved.
+Online augmentation + Dataset classes defined.
+  aug_probability = 0.85 (applied per-sample per-batch during training)
+  Building WeightedRandomSampler ...
+  val: added 36 HIBA paired val cases (clinical+derm)
+  val_ds: 4 part(s)  total=1911 samples
+  internal test set: 1877 samples
+  [WARN] CSV not found, skipping: eval_derm7pt.csv
+
+Train batches : 273  |  Val batches: 30
+Eval sets      : []
+NOTE: online augmentation is applied during training (aug_probability=0.85), not during val/eval.
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=45.4M
+Paired  forward OK  — logits: torch.Size([2, 5])
+Unpaired forward OK — logits: torch.Size([2, 5])
+  Class weights (effective-num, 5 classes): [0.645 0.19  0.887 1.601 1.678]
+Loss functions ready (faithful to FairDisCo paper + models_losses.py):
+
+  Lcls  — Label-smoothed weighted cross-entropy
+  Lconf — Confusion loss
+  Ls    — Standard CE on skin classification
+          Prevents degenerate collapse of skin_clf; z detached so backbone unaffected
+  Lcon  — Supervised Contrastive Loss
+  LMI   — 0.7*cosine + 0.3*MSE modality alignment
+  MixUp — Manifold mixup on embeddings (alpha = 0.4 )
+Optimizer: AdamW  13 param groups  base_lr=3e-05  wd=0.05
+Scheduler: cosine warmup  warmup_epochs=40  min_lr=1e-06
+train_epoch() and validate() ready.
+  robust_macro_auroc: per-class OvR binary AUC — never NaN when ≥2 classes present.
+  Mixed-precision (AMP): False
+  Gradient clipping: max_norm=1.0
+Starting training from scratch — 200 epochs on cpu
+Ep   1/200  loss=9.7284  L_MI=0.3356  tr_acc=0.1927  tr_f1=0.1407  val_acc=0.1690  val_auroc=0.5282  val_f1=0.0952  lr=1.50e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.5282)
+  ✓  Best F1   checkpoint  (macro_F1=0.0952)
+Ep   2/200  loss=9.2673  L_MI=0.3140  tr_acc=0.2081  tr_f1=0.1517  val_acc=0.1151  val_auroc=0.5577  val_f1=0.0773  lr=2.25e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.5577)
+Ep   3/200  loss=8.8878  L_MI=0.2664  tr_acc=0.2126  tr_f1=0.1385  val_acc=0.0743  val_auroc=0.5991  val_f1=0.0542  lr=3.00e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.5991)
+Ep   4/200  loss=8.6328  L_MI=0.2258  tr_acc=0.2223  tr_f1=0.1336  val_acc=0.0727  val_auroc=0.6609  val_f1=0.0589  lr=3.75e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.6609)
+Ep   5/200  loss=8.4000  L_MI=0.1928  tr_acc=0.2571  tr_f1=0.1475  val_acc=0.0822  val_auroc=0.7080  val_f1=0.0705  lr=4.50e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.7080)
+  ↓  Periodic checkpoint saved → checkpoint_ep005.pt
+Ep   6/200  loss=8.2089  L_MI=0.1710  tr_acc=0.2816  tr_f1=0.1613  val_acc=0.0931  val_auroc=0.7435  val_f1=0.0833  lr=5.25e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.7435)
+Ep   7/200  loss=8.0812  L_MI=0.1599  tr_acc=0.3138  tr_f1=0.1792  val_acc=0.0973  val_auroc=0.7686  val_f1=0.0810  lr=6.00e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.7686)
+Ep   8/200  loss=7.9325  L_MI=0.1377  tr_acc=0.3118  tr_f1=0.1786  val_acc=0.0994  val_auroc=0.8257  val_f1=0.0906  lr=6.75e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.8257)
+Ep   9/200  loss=7.7519  L_MI=0.1194  tr_acc=0.3291  tr_f1=0.1886  val_acc=0.0968  val_auroc=0.8349  val_f1=0.0818  lr=7.50e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.8349)
+Ep  10/200  loss=7.5838  L_MI=0.1130  tr_acc=0.3442  tr_f1=0.1971  val_acc=0.0999  val_auroc=0.8574  val_f1=0.0852  lr=8.25e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.8574)
+  ↓  Periodic checkpoint saved → checkpoint_ep010.pt
+Ep  11/200  loss=7.4956  L_MI=0.1010  tr_acc=0.3429  tr_f1=0.1980  val_acc=0.1026  val_auroc=0.8708  val_f1=0.0991  lr=9.00e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.8708)
+  ✓  Best F1   checkpoint  (macro_F1=0.0991)
+Ep  12/200  loss=7.4008  L_MI=0.1008  tr_acc=0.3617  tr_f1=0.2070  val_acc=0.1031  val_auroc=0.8785  val_f1=0.0828  lr=9.75e-06
+  ✓  Best AUROC checkpoint  (AUROC=0.8785)
+Ep  13/200  loss=7.2597  L_MI=0.0969  tr_acc=0.3541  tr_f1=0.2052  val_acc=0.1026  val_auroc=0.8862  val_f1=0.0882  lr=1.05e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.8862)
+Ep  14/200  loss=7.1288  L_MI=0.0845  tr_acc=0.3595  tr_f1=0.2078  val_acc=0.1041  val_auroc=0.8932  val_f1=0.1013  lr=1.13e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.8932)
+  ✓  Best F1   checkpoint  (macro_F1=0.1013)
+Ep  15/200  loss=7.0366  L_MI=0.0875  tr_acc=0.3617  tr_f1=0.2097  val_acc=0.1057  val_auroc=0.8902  val_f1=0.0831  lr=1.20e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep015.pt
+     Removed old checkpoint: checkpoint_ep005.pt
+Ep  16/200  loss=6.9164  L_MI=0.0822  tr_acc=0.3704  tr_f1=0.2146  val_acc=0.1068  val_auroc=0.9010  val_f1=0.1069  lr=1.27e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9010)
+  ✓  Best F1   checkpoint  (macro_F1=0.1069)
+Ep  17/200  loss=6.7832  L_MI=0.0723  tr_acc=0.3673  tr_f1=0.2174  val_acc=0.1104  val_auroc=0.9113  val_f1=0.1028  lr=1.35e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9113)
+Ep  18/200  loss=6.7305  L_MI=0.0827  tr_acc=0.3784  tr_f1=0.2300  val_acc=0.1277  val_auroc=0.9005  val_f1=0.1436  lr=1.42e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.1436)
+Ep  19/200  loss=6.5647  L_MI=0.0826  tr_acc=0.4156  tr_f1=0.2818  val_acc=0.1575  val_auroc=0.9160  val_f1=0.2252  lr=1.50e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9160)
+  ✓  Best F1   checkpoint  (macro_F1=0.2252)
+Ep  20/200  loss=6.4956  L_MI=0.0751  tr_acc=0.4375  tr_f1=0.3262  val_acc=0.1664  val_auroc=0.9199  val_f1=0.2742  lr=1.57e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9199)
+  ✓  Best F1   checkpoint  (macro_F1=0.2742)
+  ↓  Periodic checkpoint saved → checkpoint_ep020.pt
+     Removed old checkpoint: checkpoint_ep010.pt
+Ep  21/200  loss=6.3259  L_MI=0.0814  tr_acc=0.4818  tr_f1=0.3971  val_acc=0.2271  val_auroc=0.9180  val_f1=0.3002  lr=1.65e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.3002)
+Ep  22/200  loss=6.3089  L_MI=0.0816  tr_acc=0.5285  tr_f1=0.4579  val_acc=0.2407  val_auroc=0.9188  val_f1=0.3104  lr=1.72e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.3104)
+Ep  23/200  loss=6.1379  L_MI=0.0820  tr_acc=0.5770  tr_f1=0.5088  val_acc=0.2449  val_auroc=0.9194  val_f1=0.3555  lr=1.80e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.3555)
+Ep  24/200  loss=6.0308  L_MI=0.0841  tr_acc=0.6176  tr_f1=0.5448  val_acc=0.2700  val_auroc=0.9199  val_f1=0.3321  lr=1.88e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9199)
+Ep  25/200  loss=6.0128  L_MI=0.0754  tr_acc=0.6196  tr_f1=0.5519  val_acc=0.2648  val_auroc=0.9222  val_f1=0.3649  lr=1.95e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9222)
+  ✓  Best F1   checkpoint  (macro_F1=0.3649)
+  ↓  Periodic checkpoint saved → checkpoint_ep025.pt
+     Removed old checkpoint: checkpoint_ep015.pt
+Ep  26/200  loss=5.8999  L_MI=0.0803  tr_acc=0.6620  tr_f1=0.5906  val_acc=0.2726  val_auroc=0.9139  val_f1=0.3917  lr=2.03e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.3917)
+Ep  27/200  loss=5.8084  L_MI=0.0758  tr_acc=0.6848  tr_f1=0.6112  val_acc=0.3004  val_auroc=0.9219  val_f1=0.3857  lr=2.10e-05
+Ep  28/200  loss=5.7770  L_MI=0.0821  tr_acc=0.6947  tr_f1=0.6302  val_acc=0.2946  val_auroc=0.9207  val_f1=0.3597  lr=2.18e-05
+Ep  29/200  loss=5.5942  L_MI=0.0746  tr_acc=0.7323  tr_f1=0.6830  val_acc=0.4291  val_auroc=0.9183  val_f1=0.4877  lr=2.25e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.4877)
+Ep  30/200  loss=5.5756  L_MI=0.0735  tr_acc=0.7687  tr_f1=0.7459  val_acc=0.5610  val_auroc=0.9220  val_f1=0.5706  lr=2.33e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.5706)
+  ↓  Periodic checkpoint saved → checkpoint_ep030.pt
+     Removed old checkpoint: checkpoint_ep020.pt
+Ep  31/200  loss=5.5217  L_MI=0.0780  tr_acc=0.8069  tr_f1=0.7931  val_acc=0.5442  val_auroc=0.9256  val_f1=0.6050  lr=2.40e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9256)
+  ✓  Best F1   checkpoint  (macro_F1=0.6050)
+Ep  32/200  loss=5.4512  L_MI=0.0723  tr_acc=0.8245  tr_f1=0.8166  val_acc=0.6253  val_auroc=0.9314  val_f1=0.6314  lr=2.47e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9314)
+  ✓  Best F1   checkpoint  (macro_F1=0.6314)
+Ep  33/200  loss=5.3884  L_MI=0.0793  tr_acc=0.8428  tr_f1=0.8389  val_acc=0.6797  val_auroc=0.9252  val_f1=0.6697  lr=2.55e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.6697)
+Ep  34/200  loss=5.3219  L_MI=0.0697  tr_acc=0.8644  tr_f1=0.8614  val_acc=0.7305  val_auroc=0.9283  val_f1=0.6946  lr=2.63e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.6946)
+Ep  35/200  loss=5.2750  L_MI=0.0688  tr_acc=0.8784  tr_f1=0.8758  val_acc=0.7237  val_auroc=0.9228  val_f1=0.7111  lr=2.70e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.7111)
+  ↓  Periodic checkpoint saved → checkpoint_ep035.pt
+     Removed old checkpoint: checkpoint_ep025.pt
+Ep  36/200  loss=5.2089  L_MI=0.0757  tr_acc=0.8867  tr_f1=0.8841  val_acc=0.8388  val_auroc=0.9297  val_f1=0.7874  lr=2.78e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.7874)
+Ep  37/200  loss=5.1598  L_MI=0.0650  tr_acc=0.8988  tr_f1=0.8968  val_acc=0.7991  val_auroc=0.9250  val_f1=0.7409  lr=2.85e-05
+Ep  38/200  loss=5.1254  L_MI=0.0682  tr_acc=0.9038  tr_f1=0.9027  val_acc=0.7478  val_auroc=0.9253  val_f1=0.7261  lr=2.92e-05
+Ep  39/200  loss=5.1109  L_MI=0.0609  tr_acc=0.9051  tr_f1=0.9045  val_acc=0.8310  val_auroc=0.9243  val_f1=0.7490  lr=3.00e-05
+Ep  40/200  loss=5.0881  L_MI=0.0566  tr_acc=0.9065  tr_f1=0.9054  val_acc=0.7724  val_auroc=0.9162  val_f1=0.7062  lr=3.00e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep040.pt
+     Removed old checkpoint: checkpoint_ep030.pt
+Ep  41/200  loss=5.0456  L_MI=0.0656  tr_acc=0.9114  tr_f1=0.9106  val_acc=0.8482  val_auroc=0.9262  val_f1=0.7703  lr=3.00e-05
+Ep  42/200  loss=4.9833  L_MI=0.0637  tr_acc=0.9163  tr_f1=0.9161  val_acc=0.8441  val_auroc=0.9324  val_f1=0.7663  lr=3.00e-05
+  ✓  Best AUROC checkpoint  (AUROC=0.9324)
+Ep  43/200  loss=4.8505  L_MI=0.0625  tr_acc=0.9211  tr_f1=0.9203  val_acc=0.8352  val_auroc=0.9197  val_f1=0.7483  lr=3.00e-05
+Ep  44/200  loss=4.9074  L_MI=0.0668  tr_acc=0.9235  tr_f1=0.9232  val_acc=0.8289  val_auroc=0.9093  val_f1=0.7561  lr=3.00e-05
+Ep  45/200  loss=4.8876  L_MI=0.0625  tr_acc=0.9269  tr_f1=0.9265  val_acc=0.8257  val_auroc=0.9214  val_f1=0.7710  lr=2.99e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep045.pt
+     Removed old checkpoint: checkpoint_ep035.pt
+Ep  46/200  loss=4.8801  L_MI=0.0727  tr_acc=0.9256  tr_f1=0.9251  val_acc=0.8587  val_auroc=0.9290  val_f1=0.7743  lr=2.99e-05
+Ep  47/200  loss=4.7480  L_MI=0.0549  tr_acc=0.9341  tr_f1=0.9333  val_acc=0.8268  val_auroc=0.9200  val_f1=0.7556  lr=2.99e-05
+Ep  48/200  loss=4.7621  L_MI=0.0503  tr_acc=0.9297  tr_f1=0.9295  val_acc=0.8273  val_auroc=0.9182  val_f1=0.7726  lr=2.98e-05
+Ep  49/200  loss=4.7019  L_MI=0.0502  tr_acc=0.9333  tr_f1=0.9326  val_acc=0.8624  val_auroc=0.9199  val_f1=0.7862  lr=2.98e-05
+Ep  50/200  loss=4.6890  L_MI=0.0458  tr_acc=0.9313  tr_f1=0.9308  val_acc=0.8456  val_auroc=0.9068  val_f1=0.7659  lr=2.97e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep050.pt
+     Removed old checkpoint: checkpoint_ep040.pt
+Ep  51/200  loss=4.7197  L_MI=0.0480  tr_acc=0.9296  tr_f1=0.9296  val_acc=0.8561  val_auroc=0.9186  val_f1=0.7845  lr=2.97e-05
+Ep  52/200  loss=4.6090  L_MI=0.0442  tr_acc=0.9374  tr_f1=0.9372  val_acc=0.8195  val_auroc=0.9113  val_f1=0.7545  lr=2.96e-05
+Ep  53/200  loss=4.5477  L_MI=0.0448  tr_acc=0.9383  tr_f1=0.9377  val_acc=0.8367  val_auroc=0.9133  val_f1=0.7598  lr=2.95e-05
+Ep  54/200  loss=4.5733  L_MI=0.0419  tr_acc=0.9370  tr_f1=0.9371  val_acc=0.8294  val_auroc=0.9099  val_f1=0.7664  lr=2.94e-05
+Ep  55/200  loss=4.4903  L_MI=0.0355  tr_acc=0.9440  tr_f1=0.9438  val_acc=0.8430  val_auroc=0.9148  val_f1=0.7690  lr=2.94e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep055.pt
+     Removed old checkpoint: checkpoint_ep045.pt
+Ep  56/200  loss=4.4780  L_MI=0.0346  tr_acc=0.9421  tr_f1=0.9420  val_acc=0.8477  val_auroc=0.9105  val_f1=0.7852  lr=2.93e-05
+Ep  57/200  loss=4.5204  L_MI=0.0419  tr_acc=0.9402  tr_f1=0.9400  val_acc=0.8357  val_auroc=0.9160  val_f1=0.7847  lr=2.92e-05
+Ep  58/200  loss=4.4216  L_MI=0.0356  tr_acc=0.9468  tr_f1=0.9464  val_acc=0.8545  val_auroc=0.9109  val_f1=0.7786  lr=2.91e-05
+Ep  59/200  loss=4.4290  L_MI=0.0369  tr_acc=0.9476  tr_f1=0.9469  val_acc=0.8404  val_auroc=0.9061  val_f1=0.7675  lr=2.90e-05
+Ep  60/200  loss=4.3878  L_MI=0.0344  tr_acc=0.9472  tr_f1=0.9468  val_acc=0.8566  val_auroc=0.9093  val_f1=0.7844  lr=2.89e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep060.pt
+     Removed old checkpoint: checkpoint_ep050.pt
+Ep  61/200  loss=4.3904  L_MI=0.0289  tr_acc=0.9487  tr_f1=0.9485  val_acc=0.8660  val_auroc=0.9232  val_f1=0.8031  lr=2.87e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.8031)
+Ep  62/200  loss=4.3127  L_MI=0.0322  tr_acc=0.9531  tr_f1=0.9529  val_acc=0.8488  val_auroc=0.9067  val_f1=0.7759  lr=2.86e-05
+Ep  63/200  loss=4.3606  L_MI=0.0351  tr_acc=0.9501  tr_f1=0.9501  val_acc=0.8221  val_auroc=0.9158  val_f1=0.7757  lr=2.85e-05
+Ep  64/200  loss=4.3890  L_MI=0.0311  tr_acc=0.9507  tr_f1=0.9503  val_acc=0.8352  val_auroc=0.9009  val_f1=0.7578  lr=2.84e-05
+Ep  65/200  loss=4.3398  L_MI=0.0298  tr_acc=0.9504  tr_f1=0.9503  val_acc=0.8420  val_auroc=0.9156  val_f1=0.7727  lr=2.82e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep065.pt
+     Removed old checkpoint: checkpoint_ep055.pt
+Ep  66/200  loss=4.3045  L_MI=0.0307  tr_acc=0.9565  tr_f1=0.9565  val_acc=0.8456  val_auroc=0.9095  val_f1=0.7806  lr=2.81e-05
+Ep  67/200  loss=4.3498  L_MI=0.0252  tr_acc=0.9539  tr_f1=0.9534  val_acc=0.8331  val_auroc=0.9058  val_f1=0.7679  lr=2.79e-05
+Ep  68/200  loss=4.2922  L_MI=0.0327  tr_acc=0.9554  tr_f1=0.9550  val_acc=0.8462  val_auroc=0.9049  val_f1=0.7837  lr=2.78e-05
+Ep  69/200  loss=4.3320  L_MI=0.0346  tr_acc=0.9541  tr_f1=0.9539  val_acc=0.8137  val_auroc=0.9126  val_f1=0.7729  lr=2.76e-05
+Ep  70/200  loss=4.2664  L_MI=0.0381  tr_acc=0.9605  tr_f1=0.9601  val_acc=0.8624  val_auroc=0.9095  val_f1=0.7862  lr=2.75e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep070.pt
+     Removed old checkpoint: checkpoint_ep060.pt
+Ep  71/200  loss=4.3039  L_MI=0.0255  tr_acc=0.9557  tr_f1=0.9555  val_acc=0.8435  val_auroc=0.9081  val_f1=0.7855  lr=2.73e-05
+Ep  72/200  loss=4.2313  L_MI=0.0292  tr_acc=0.9612  tr_f1=0.9609  val_acc=0.8587  val_auroc=0.9004  val_f1=0.7906  lr=2.71e-05
+Ep  73/200  loss=4.2530  L_MI=0.0282  tr_acc=0.9601  tr_f1=0.9601  val_acc=0.8655  val_auroc=0.9084  val_f1=0.8083  lr=2.70e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.8083)
+Ep  74/200  loss=4.1651  L_MI=0.0247  tr_acc=0.9639  tr_f1=0.9637  val_acc=0.8503  val_auroc=0.9113  val_f1=0.7915  lr=2.68e-05
+Ep  75/200  loss=4.2141  L_MI=0.0207  tr_acc=0.9625  tr_f1=0.9625  val_acc=0.8446  val_auroc=0.9071  val_f1=0.7721  lr=2.66e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep075.pt
+     Removed old checkpoint: checkpoint_ep065.pt
+Ep  76/200  loss=4.2172  L_MI=0.0261  tr_acc=0.9628  tr_f1=0.9627  val_acc=0.8718  val_auroc=0.9068  val_f1=0.8003  lr=2.64e-05
+Ep  77/200  loss=4.2328  L_MI=0.0235  tr_acc=0.9597  tr_f1=0.9596  val_acc=0.8545  val_auroc=0.8970  val_f1=0.7725  lr=2.62e-05
+Ep  78/200  loss=4.1548  L_MI=0.0224  tr_acc=0.9651  tr_f1=0.9652  val_acc=0.8671  val_auroc=0.9045  val_f1=0.7932  lr=2.60e-05
+Ep  79/200  loss=4.1951  L_MI=0.0189  tr_acc=0.9665  tr_f1=0.9662  val_acc=0.8629  val_auroc=0.8990  val_f1=0.7816  lr=2.58e-05
+Ep  80/200  loss=4.1494  L_MI=0.0185  tr_acc=0.9657  tr_f1=0.9655  val_acc=0.8702  val_auroc=0.9049  val_f1=0.8021  lr=2.56e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep080.pt
+     Removed old checkpoint: checkpoint_ep070.pt
+Ep  81/200  loss=4.1922  L_MI=0.0209  tr_acc=0.9666  tr_f1=0.9663  val_acc=0.8765  val_auroc=0.9082  val_f1=0.8070  lr=2.54e-05
+Ep  82/200  loss=4.1421  L_MI=0.0184  tr_acc=0.9685  tr_f1=0.9683  val_acc=0.8707  val_auroc=0.9068  val_f1=0.8021  lr=2.52e-05
+Ep  83/200  loss=4.1879  L_MI=0.0250  tr_acc=0.9657  tr_f1=0.9656  val_acc=0.8660  val_auroc=0.9103  val_f1=0.7953  lr=2.50e-05
+Ep  84/200  loss=4.1637  L_MI=0.0215  tr_acc=0.9706  tr_f1=0.9706  val_acc=0.8734  val_auroc=0.9134  val_f1=0.8037  lr=2.47e-05
+Ep  85/200  loss=4.1475  L_MI=0.0182  tr_acc=0.9682  tr_f1=0.9682  val_acc=0.8660  val_auroc=0.9101  val_f1=0.8055  lr=2.45e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep085.pt
+     Removed old checkpoint: checkpoint_ep075.pt
+Ep  86/200  loss=4.1625  L_MI=0.0305  tr_acc=0.9693  tr_f1=0.9692  val_acc=0.8749  val_auroc=0.9027  val_f1=0.8027  lr=2.43e-05
+Ep  87/200  loss=4.0992  L_MI=0.0144  tr_acc=0.9731  tr_f1=0.9730  val_acc=0.8577  val_auroc=0.8954  val_f1=0.7930  lr=2.41e-05
+Ep  88/200  loss=4.0760  L_MI=0.0163  tr_acc=0.9730  tr_f1=0.9729  val_acc=0.8723  val_auroc=0.9070  val_f1=0.7917  lr=2.38e-05
+Ep  89/200  loss=4.1301  L_MI=0.0185  tr_acc=0.9688  tr_f1=0.9684  val_acc=0.8734  val_auroc=0.9000  val_f1=0.8040  lr=2.36e-05
+Ep  90/200  loss=4.0726  L_MI=0.0184  tr_acc=0.9744  tr_f1=0.9742  val_acc=0.8655  val_auroc=0.9011  val_f1=0.7972  lr=2.33e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep090.pt
+     Removed old checkpoint: checkpoint_ep080.pt
+Ep  91/200  loss=4.0750  L_MI=0.0141  tr_acc=0.9755  tr_f1=0.9755  val_acc=0.8734  val_auroc=0.9044  val_f1=0.8059  lr=2.31e-05
+Ep  92/200  loss=4.0945  L_MI=0.0181  tr_acc=0.9730  tr_f1=0.9729  val_acc=0.8718  val_auroc=0.9028  val_f1=0.7981  lr=2.28e-05
+Ep  93/200  loss=4.0568  L_MI=0.0184  tr_acc=0.9758  tr_f1=0.9758  val_acc=0.8692  val_auroc=0.9069  val_f1=0.7984  lr=2.26e-05
+Ep  94/200  loss=4.1236  L_MI=0.0170  tr_acc=0.9733  tr_f1=0.9732  val_acc=0.8718  val_auroc=0.9129  val_f1=0.8047  lr=2.23e-05
+Ep  95/200  loss=4.0837  L_MI=0.0154  tr_acc=0.9762  tr_f1=0.9761  val_acc=0.8755  val_auroc=0.8941  val_f1=0.8017  lr=2.21e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep095.pt
+     Removed old checkpoint: checkpoint_ep085.pt
+Ep  96/200  loss=4.0888  L_MI=0.0162  tr_acc=0.9752  tr_f1=0.9752  val_acc=0.8765  val_auroc=0.9062  val_f1=0.8038  lr=2.18e-05
+Ep  97/200  loss=4.0837  L_MI=0.0180  tr_acc=0.9741  tr_f1=0.9740  val_acc=0.8760  val_auroc=0.9052  val_f1=0.8036  lr=2.15e-05
+Ep  98/200  loss=4.0668  L_MI=0.0136  tr_acc=0.9747  tr_f1=0.9747  val_acc=0.8791  val_auroc=0.9069  val_f1=0.8084  lr=2.13e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.8084)
+Ep  99/200  loss=4.0264  L_MI=0.0141  tr_acc=0.9784  tr_f1=0.9783  val_acc=0.8823  val_auroc=0.9052  val_f1=0.8121  lr=2.10e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.8121)
+Ep 100/200  loss=4.0657  L_MI=0.0137  tr_acc=0.9740  tr_f1=0.9740  val_acc=0.8723  val_auroc=0.9014  val_f1=0.8097  lr=2.07e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep100.pt
+     Removed old checkpoint: checkpoint_ep090.pt
+Ep 101/200  loss=4.0345  L_MI=0.0182  tr_acc=0.9787  tr_f1=0.9786  val_acc=0.8833  val_auroc=0.9058  val_f1=0.8105  lr=2.05e-05
+Ep 102/200  loss=4.0420  L_MI=0.0181  tr_acc=0.9796  tr_f1=0.9796  val_acc=0.8786  val_auroc=0.9097  val_f1=0.8171  lr=2.02e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.8171)
+Ep 103/200  loss=4.0332  L_MI=0.0144  tr_acc=0.9809  tr_f1=0.9809  val_acc=0.8755  val_auroc=0.8977  val_f1=0.8001  lr=1.99e-05
+Ep 104/200  loss=4.0321  L_MI=0.0148  tr_acc=0.9791  tr_f1=0.9790  val_acc=0.8859  val_auroc=0.9061  val_f1=0.8194  lr=1.96e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.8194)
+Ep 105/200  loss=4.0244  L_MI=0.0106  tr_acc=0.9813  tr_f1=0.9812  val_acc=0.8823  val_auroc=0.9058  val_f1=0.8162  lr=1.94e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep105.pt
+     Removed old checkpoint: checkpoint_ep095.pt
+Ep 106/200  loss=3.9983  L_MI=0.0075  tr_acc=0.9813  tr_f1=0.9811  val_acc=0.8713  val_auroc=0.8880  val_f1=0.7980  lr=1.91e-05
+Ep 107/200  loss=4.0118  L_MI=0.0146  tr_acc=0.9818  tr_f1=0.9819  val_acc=0.8634  val_auroc=0.8852  val_f1=0.7910  lr=1.88e-05
+Ep 108/200  loss=4.0314  L_MI=0.0171  tr_acc=0.9800  tr_f1=0.9800  val_acc=0.8870  val_auroc=0.8901  val_f1=0.8134  lr=1.85e-05
+Ep 109/200  loss=3.9931  L_MI=0.0107  tr_acc=0.9829  tr_f1=0.9829  val_acc=0.8838  val_auroc=0.9014  val_f1=0.8156  lr=1.82e-05
+Ep 110/200  loss=4.0310  L_MI=0.0115  tr_acc=0.9824  tr_f1=0.9824  val_acc=0.8833  val_auroc=0.8963  val_f1=0.8109  lr=1.79e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep110.pt
+     Removed old checkpoint: checkpoint_ep100.pt
+Ep 111/200  loss=3.9990  L_MI=0.0114  tr_acc=0.9839  tr_f1=0.9838  val_acc=0.8807  val_auroc=0.8862  val_f1=0.8046  lr=1.76e-05
+Ep 112/200  loss=4.0286  L_MI=0.0109  tr_acc=0.9820  tr_f1=0.9821  val_acc=0.8770  val_auroc=0.8761  val_f1=0.7960  lr=1.73e-05
+Ep 113/200  loss=4.0047  L_MI=0.0160  tr_acc=0.9827  tr_f1=0.9827  val_acc=0.8749  val_auroc=0.8858  val_f1=0.7976  lr=1.71e-05
+Ep 114/200  loss=3.9722  L_MI=0.0087  tr_acc=0.9840  tr_f1=0.9840  val_acc=0.8760  val_auroc=0.8872  val_f1=0.8013  lr=1.68e-05
+Ep 115/200  loss=3.9609  L_MI=0.0129  tr_acc=0.9839  tr_f1=0.9839  val_acc=0.8776  val_auroc=0.8851  val_f1=0.8004  lr=1.65e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep115.pt
+     Removed old checkpoint: checkpoint_ep105.pt
+Ep 116/200  loss=3.9526  L_MI=0.0096  tr_acc=0.9853  tr_f1=0.9853  val_acc=0.8770  val_auroc=0.8907  val_f1=0.7988  lr=1.62e-05
+Ep 117/200  loss=3.9889  L_MI=0.0099  tr_acc=0.9836  tr_f1=0.9836  val_acc=0.8849  val_auroc=0.8899  val_f1=0.8184  lr=1.59e-05
+Ep 118/200  loss=3.9550  L_MI=0.0089  tr_acc=0.9872  tr_f1=0.9872  val_acc=0.8707  val_auroc=0.8890  val_f1=0.7908  lr=1.56e-05
+Ep 119/200  loss=3.9546  L_MI=0.0101  tr_acc=0.9863  tr_f1=0.9863  val_acc=0.8849  val_auroc=0.8881  val_f1=0.8115  lr=1.53e-05
+Ep 120/200  loss=3.9780  L_MI=0.0112  tr_acc=0.9863  tr_f1=0.9862  val_acc=0.8849  val_auroc=0.8940  val_f1=0.8145  lr=1.50e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep120.pt
+     Removed old checkpoint: checkpoint_ep110.pt
+Ep 121/200  loss=3.9479  L_MI=0.0100  tr_acc=0.9876  tr_f1=0.9876  val_acc=0.8828  val_auroc=0.8922  val_f1=0.8180  lr=1.47e-05
+Ep 122/200  loss=3.9795  L_MI=0.0100  tr_acc=0.9849  tr_f1=0.9849  val_acc=0.8880  val_auroc=0.9020  val_f1=0.8178  lr=1.44e-05
+Ep 123/200  loss=3.9750  L_MI=0.0092  tr_acc=0.9861  tr_f1=0.9861  val_acc=0.8849  val_auroc=0.8958  val_f1=0.8184  lr=1.41e-05
+Ep 124/200  loss=3.9505  L_MI=0.0072  tr_acc=0.9865  tr_f1=0.9864  val_acc=0.8927  val_auroc=0.8978  val_f1=0.8253  lr=1.38e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.8253)
+Ep 125/200  loss=3.9712  L_MI=0.0096  tr_acc=0.9857  tr_f1=0.9857  val_acc=0.8849  val_auroc=0.9002  val_f1=0.8128  lr=1.35e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep125.pt
+     Removed old checkpoint: checkpoint_ep115.pt
+Ep 126/200  loss=3.9827  L_MI=0.0069  tr_acc=0.9872  tr_f1=0.9872  val_acc=0.8922  val_auroc=0.8959  val_f1=0.8222  lr=1.32e-05
+Ep 127/200  loss=3.9762  L_MI=0.0120  tr_acc=0.9856  tr_f1=0.9856  val_acc=0.8823  val_auroc=0.8986  val_f1=0.8184  lr=1.29e-05
+Ep 128/200  loss=3.9612  L_MI=0.0082  tr_acc=0.9857  tr_f1=0.9856  val_acc=0.8906  val_auroc=0.9010  val_f1=0.8190  lr=1.27e-05
+Ep 129/200  loss=3.8992  L_MI=0.0070  tr_acc=0.9902  tr_f1=0.9901  val_acc=0.8974  val_auroc=0.8980  val_f1=0.8315  lr=1.24e-05
+  ✓  Best F1   checkpoint  (macro_F1=0.8315)
+Ep 130/200  loss=3.9561  L_MI=0.0066  tr_acc=0.9849  tr_f1=0.9849  val_acc=0.8906  val_auroc=0.8852  val_f1=0.8172  lr=1.21e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep130.pt
+     Removed old checkpoint: checkpoint_ep120.pt
+Ep 131/200  loss=3.9301  L_MI=0.0088  tr_acc=0.9897  tr_f1=0.9897  val_acc=0.8844  val_auroc=0.8964  val_f1=0.8144  lr=1.18e-05
+Ep 132/200  loss=3.9483  L_MI=0.0078  tr_acc=0.9886  tr_f1=0.9885  val_acc=0.8875  val_auroc=0.8949  val_f1=0.8176  lr=1.15e-05
+Ep 133/200  loss=3.9147  L_MI=0.0090  tr_acc=0.9875  tr_f1=0.9876  val_acc=0.8823  val_auroc=0.8913  val_f1=0.8116  lr=1.12e-05
+Ep 134/200  loss=3.9421  L_MI=0.0093  tr_acc=0.9879  tr_f1=0.9879  val_acc=0.8760  val_auroc=0.8930  val_f1=0.8059  lr=1.09e-05
+Ep 135/200  loss=3.9022  L_MI=0.0110  tr_acc=0.9887  tr_f1=0.9886  val_acc=0.8875  val_auroc=0.8963  val_f1=0.8154  lr=1.06e-05
+  ↓  Periodic checkpoint saved → checkpoint_ep135.pt
+     Removed old checkpoint: checkpoint_ep125.pt
+Ep 136/200  loss=3.9602  L_MI=0.0087  tr_acc=0.9873  tr_f1=0.9873  val_acc=0.8849  val_auroc=0.8920  val_f1=0.8145  lr=1.04e-05
+Ep 137/200  loss=3.9068  L_MI=0.0063  tr_acc=0.9899  tr_f1=0.9900  val_acc=0.8786  val_auroc=0.8878  val_f1=0.8033  lr=1.01e-05
+Ep 138/200  loss=3.8756  L_MI=0.0078  tr_acc=0.9915  tr_f1=0.9916  val_acc=0.8802  val_auroc=0.8961  val_f1=0.8081  lr=9.81e-06
+Ep 139/200  loss=3.8997  L_MI=0.0066  tr_acc=0.9912  tr_f1=0.9912  val_acc=0.8833  val_auroc=0.8967  val_f1=0.8109  lr=9.53e-06
+Ep 140/200  loss=3.9209  L_MI=0.0087  tr_acc=0.9881  tr_f1=0.9881  val_acc=0.8854  val_auroc=0.8982  val_f1=0.8180  lr=9.26e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep140.pt
+     Removed old checkpoint: checkpoint_ep130.pt
+Ep 141/200  loss=3.8961  L_MI=0.0086  tr_acc=0.9923  tr_f1=0.9923  val_acc=0.8812  val_auroc=0.8888  val_f1=0.8090  lr=8.99e-06
+Ep 142/200  loss=3.9021  L_MI=0.0061  tr_acc=0.9902  tr_f1=0.9902  val_acc=0.8891  val_auroc=0.8971  val_f1=0.8218  lr=8.72e-06
+Ep 143/200  loss=3.8988  L_MI=0.0089  tr_acc=0.9896  tr_f1=0.9895  val_acc=0.8838  val_auroc=0.8952  val_f1=0.8122  lr=8.45e-06
+Ep 144/200  loss=3.9257  L_MI=0.0067  tr_acc=0.9907  tr_f1=0.9907  val_acc=0.8849  val_auroc=0.8948  val_f1=0.8118  lr=8.19e-06
+Ep 145/200  loss=3.9460  L_MI=0.0115  tr_acc=0.9896  tr_f1=0.9896  val_acc=0.8796  val_auroc=0.8933  val_f1=0.8113  lr=7.93e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep145.pt
+     Removed old checkpoint: checkpoint_ep135.pt
+Ep 146/200  loss=3.9219  L_MI=0.0080  tr_acc=0.9892  tr_f1=0.9892  val_acc=0.8849  val_auroc=0.8930  val_f1=0.8129  lr=7.67e-06
+Ep 147/200  loss=3.8755  L_MI=0.0062  tr_acc=0.9908  tr_f1=0.9909  val_acc=0.8875  val_auroc=0.8907  val_f1=0.8183  lr=7.42e-06
+Ep 148/200  loss=3.8981  L_MI=0.0063  tr_acc=0.9919  tr_f1=0.9918  val_acc=0.8844  val_auroc=0.8911  val_f1=0.8153  lr=7.16e-06
+Ep 149/200  loss=3.8849  L_MI=0.0111  tr_acc=0.9907  tr_f1=0.9907  val_acc=0.8812  val_auroc=0.8906  val_f1=0.8074  lr=6.91e-06
+Ep 150/200  loss=3.8961  L_MI=0.0078  tr_acc=0.9919  tr_f1=0.9919  val_acc=0.8817  val_auroc=0.8872  val_f1=0.8121  lr=6.67e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep150.pt
+     Removed old checkpoint: checkpoint_ep140.pt
+Ep 151/200  loss=3.9301  L_MI=0.0115  tr_acc=0.9891  tr_f1=0.9891  val_acc=0.8817  val_auroc=0.8936  val_f1=0.8072  lr=6.42e-06
+Ep 152/200  loss=3.9487  L_MI=0.0099  tr_acc=0.9883  tr_f1=0.9884  val_acc=0.8833  val_auroc=0.8861  val_f1=0.8086  lr=6.18e-06
+Ep 153/200  loss=3.8978  L_MI=0.0074  tr_acc=0.9914  tr_f1=0.9914  val_acc=0.8791  val_auroc=0.8944  val_f1=0.8108  lr=5.95e-06
+Ep 154/200  loss=3.9167  L_MI=0.0073  tr_acc=0.9911  tr_f1=0.9910  val_acc=0.8859  val_auroc=0.8886  val_f1=0.8157  lr=5.71e-06
+Ep 155/200  loss=3.8889  L_MI=0.0058  tr_acc=0.9913  tr_f1=0.9913  val_acc=0.8833  val_auroc=0.8941  val_f1=0.8116  lr=5.48e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep155.pt
+     Removed old checkpoint: checkpoint_ep145.pt
+Ep 156/200  loss=3.9178  L_MI=0.0070  tr_acc=0.9910  tr_f1=0.9910  val_acc=0.8864  val_auroc=0.8952  val_f1=0.8129  lr=5.26e-06
+Ep 157/200  loss=3.8799  L_MI=0.0053  tr_acc=0.9935  tr_f1=0.9935  val_acc=0.8833  val_auroc=0.8910  val_f1=0.8131  lr=5.04e-06
+Ep 158/200  loss=3.9108  L_MI=0.0077  tr_acc=0.9914  tr_f1=0.9914  val_acc=0.8901  val_auroc=0.8922  val_f1=0.8164  lr=4.82e-06
+Ep 159/200  loss=3.8949  L_MI=0.0064  tr_acc=0.9911  tr_f1=0.9911  val_acc=0.8880  val_auroc=0.8927  val_f1=0.8143  lr=4.60e-06
+Ep 160/200  loss=3.8912  L_MI=0.0108  tr_acc=0.9928  tr_f1=0.9928  val_acc=0.8901  val_auroc=0.8961  val_f1=0.8241  lr=4.39e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep160.pt
+     Removed old checkpoint: checkpoint_ep150.pt
+Ep 161/200  loss=3.8862  L_MI=0.0070  tr_acc=0.9928  tr_f1=0.9928  val_acc=0.8875  val_auroc=0.8902  val_f1=0.8165  lr=4.19e-06
+Ep 162/200  loss=3.8888  L_MI=0.0088  tr_acc=0.9929  tr_f1=0.9929  val_acc=0.8922  val_auroc=0.8912  val_f1=0.8212  lr=3.99e-06
+Ep 163/200  loss=3.8879  L_MI=0.0053  tr_acc=0.9922  tr_f1=0.9922  val_acc=0.8880  val_auroc=0.8900  val_f1=0.8185  lr=3.79e-06
+Ep 164/200  loss=3.8652  L_MI=0.0062  tr_acc=0.9922  tr_f1=0.9922  val_acc=0.8859  val_auroc=0.8976  val_f1=0.8153  lr=3.59e-06
+Ep 165/200  loss=3.9333  L_MI=0.0099  tr_acc=0.9908  tr_f1=0.9908  val_acc=0.8885  val_auroc=0.8927  val_f1=0.8205  lr=3.40e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep165.pt
+     Removed old checkpoint: checkpoint_ep155.pt
+Ep 166/200  loss=3.9098  L_MI=0.0083  tr_acc=0.9905  tr_f1=0.9905  val_acc=0.8864  val_auroc=0.8917  val_f1=0.8154  lr=3.22e-06
+Ep 167/200  loss=3.8902  L_MI=0.0078  tr_acc=0.9911  tr_f1=0.9911  val_acc=0.8838  val_auroc=0.8881  val_f1=0.8121  lr=3.04e-06
+Ep 168/200  loss=3.8892  L_MI=0.0078  tr_acc=0.9918  tr_f1=0.9918  val_acc=0.8854  val_auroc=0.8801  val_f1=0.8123  lr=2.86e-06
+Ep 169/200  loss=3.8640  L_MI=0.0056  tr_acc=0.9934  tr_f1=0.9933  val_acc=0.8901  val_auroc=0.8909  val_f1=0.8183  lr=2.69e-06
+Ep 170/200  loss=3.8739  L_MI=0.0064  tr_acc=0.9930  tr_f1=0.9930  val_acc=0.8812  val_auroc=0.8820  val_f1=0.8035  lr=2.53e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep170.pt
+     Removed old checkpoint: checkpoint_ep160.pt
+Ep 171/200  loss=3.8657  L_MI=0.0051  tr_acc=0.9928  tr_f1=0.9928  val_acc=0.8896  val_auroc=0.8952  val_f1=0.8210  lr=2.37e-06
+Ep 172/200  loss=3.8604  L_MI=0.0053  tr_acc=0.9938  tr_f1=0.9938  val_acc=0.8896  val_auroc=0.8880  val_f1=0.8195  lr=2.21e-06
+Ep 173/200  loss=3.8833  L_MI=0.0060  tr_acc=0.9934  tr_f1=0.9933  val_acc=0.8906  val_auroc=0.8933  val_f1=0.8212  lr=2.06e-06
+Ep 174/200  loss=3.8726  L_MI=0.0075  tr_acc=0.9924  tr_f1=0.9925  val_acc=0.8891  val_auroc=0.8927  val_f1=0.8213  lr=1.91e-06
+Ep 175/200  loss=3.8546  L_MI=0.0070  tr_acc=0.9935  tr_f1=0.9935  val_acc=0.8870  val_auroc=0.8867  val_f1=0.8145  lr=1.77e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep175.pt
+     Removed old checkpoint: checkpoint_ep165.pt
+Ep 176/200  loss=3.8828  L_MI=0.0061  tr_acc=0.9928  tr_f1=0.9928  val_acc=0.8864  val_auroc=0.8923  val_f1=0.8161  lr=1.63e-06
+Ep 177/200  loss=3.8670  L_MI=0.0066  tr_acc=0.9931  tr_f1=0.9931  val_acc=0.8854  val_auroc=0.8875  val_f1=0.8110  lr=1.50e-06
+Ep 178/200  loss=3.8481  L_MI=0.0028  tr_acc=0.9946  tr_f1=0.9946  val_acc=0.8896  val_auroc=0.8942  val_f1=0.8210  lr=1.38e-06
+Ep 179/200  loss=3.8960  L_MI=0.0055  tr_acc=0.9916  tr_f1=0.9917  val_acc=0.8885  val_auroc=0.8962  val_f1=0.8202  lr=1.26e-06
+Ep 180/200  loss=3.8797  L_MI=0.0080  tr_acc=0.9929  tr_f1=0.9929  val_acc=0.8917  val_auroc=0.8921  val_f1=0.8206  lr=1.14e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep180.pt
+     Removed old checkpoint: checkpoint_ep170.pt
+Ep 181/200  loss=3.8713  L_MI=0.0047  tr_acc=0.9936  tr_f1=0.9936  val_acc=0.8896  val_auroc=0.8863  val_f1=0.8164  lr=1.03e-06
+Ep 182/200  loss=3.8644  L_MI=0.0058  tr_acc=0.9927  tr_f1=0.9927  val_acc=0.8901  val_auroc=0.8892  val_f1=0.8181  lr=1.00e-06
+Ep 183/200  loss=3.8619  L_MI=0.0061  tr_acc=0.9931  tr_f1=0.9932  val_acc=0.8932  val_auroc=0.8896  val_f1=0.8236  lr=1.00e-06
+Ep 184/200  loss=3.8586  L_MI=0.0044  tr_acc=0.9959  tr_f1=0.9959  val_acc=0.8932  val_auroc=0.8933  val_f1=0.8258  lr=1.00e-06
+Ep 185/200  loss=3.8773  L_MI=0.0071  tr_acc=0.9929  tr_f1=0.9929  val_acc=0.8864  val_auroc=0.8863  val_f1=0.8112  lr=1.00e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep185.pt
+     Removed old checkpoint: checkpoint_ep175.pt
+Ep 186/200  loss=3.8687  L_MI=0.0060  tr_acc=0.9929  tr_f1=0.9929  val_acc=0.8927  val_auroc=0.8886  val_f1=0.8237  lr=1.00e-06
+Ep 187/200  loss=3.8793  L_MI=0.0052  tr_acc=0.9945  tr_f1=0.9945  val_acc=0.8885  val_auroc=0.8915  val_f1=0.8193  lr=1.00e-06
+Ep 188/200  loss=3.8770  L_MI=0.0058  tr_acc=0.9932  tr_f1=0.9932  val_acc=0.8932  val_auroc=0.8913  val_f1=0.8285  lr=1.00e-06
+Ep 189/200  loss=3.8692  L_MI=0.0068  tr_acc=0.9939  tr_f1=0.9939  val_acc=0.8901  val_auroc=0.8882  val_f1=0.8192  lr=1.00e-06
+Ep 190/200  loss=3.8512  L_MI=0.0067  tr_acc=0.9931  tr_f1=0.9931  val_acc=0.8917  val_auroc=0.8888  val_f1=0.8232  lr=1.00e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep190.pt
+     Removed old checkpoint: checkpoint_ep180.pt
+Ep 191/200  loss=3.8666  L_MI=0.0059  tr_acc=0.9940  tr_f1=0.9941  val_acc=0.8906  val_auroc=0.8941  val_f1=0.8219  lr=1.00e-06
+Ep 192/200  loss=3.9089  L_MI=0.0074  tr_acc=0.9910  tr_f1=0.9909  val_acc=0.8917  val_auroc=0.8951  val_f1=0.8238  lr=1.00e-06
+Ep 193/200  loss=3.8654  L_MI=0.0053  tr_acc=0.9929  tr_f1=0.9929  val_acc=0.8765  val_auroc=0.8756  val_f1=0.8002  lr=1.00e-06
+Ep 194/200  loss=3.8707  L_MI=0.0036  tr_acc=0.9942  tr_f1=0.9942  val_acc=0.8922  val_auroc=0.8895  val_f1=0.8219  lr=1.00e-06
+Ep 195/200  loss=3.8891  L_MI=0.0066  tr_acc=0.9919  tr_f1=0.9919  val_acc=0.8922  val_auroc=0.8916  val_f1=0.8226  lr=1.00e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep195.pt
+     Removed old checkpoint: checkpoint_ep185.pt
+Ep 196/200  loss=3.9173  L_MI=0.0073  tr_acc=0.9932  tr_f1=0.9933  val_acc=0.8901  val_auroc=0.8941  val_f1=0.8203  lr=1.00e-06
+Ep 197/200  loss=3.8717  L_MI=0.0047  tr_acc=0.9936  tr_f1=0.9936  val_acc=0.8938  val_auroc=0.8908  val_f1=0.8251  lr=1.00e-06
+Ep 198/200  loss=3.8679  L_MI=0.0055  tr_acc=0.9928  tr_f1=0.9928  val_acc=0.8901  val_auroc=0.8805  val_f1=0.8217  lr=1.00e-06
+Ep 199/200  loss=3.8430  L_MI=0.0050  tr_acc=0.9939  tr_f1=0.9940  val_acc=0.8906  val_auroc=0.8929  val_f1=0.8238  lr=1.00e-06
+Ep 200/200  loss=3.8540  L_MI=0.0034  tr_acc=0.9939  tr_f1=0.9939  val_acc=0.8896  val_auroc=0.8899  val_f1=0.8174  lr=1.00e-06
+  ↓  Periodic checkpoint saved → checkpoint_ep200.pt
+     Removed old checkpoint: checkpoint_ep190.pt
+
+Training complete.
+  Best AUROC   : 0.9324
+  Best macro-F1: 0.8315
+  History saved → process_v2/outputs/results/history.json
+  [WARN] CSV not found, skipping: eval_derm7pt.csv
+Eval loaders rebuilt with num_workers=0 — ready for post-training evaluation.
+  val_loader  : 30 batches
+  test_loader : 30 batches
+  eval_loaders: []
+  NOTE: Derm7pt covers melanoma / nevus / BCC only (3 classes).
+        Per-class metrics are reported for those 3 classes.
+        Total metrics (acc, auroc, macro-F1) cover all available data.
+Fairness metrics ready.
+Loaded checkpoint: best macro-F1  (epoch 129)
+  Temperature scaling: T = 0.8625
+  Threshold-optimised macro-F1 on val: 0.8340
+  Per-class thresholds: [0.472 0.381 0.05  0.05  0.05 ]
+Post-training helpers ready.
+  validate_with_thresholds(), collect_probs(), optimise_thresholds() defined.
+  best_thresholds set — ablation and eval cells can now run.
+Computing baseline (Lcls only) for FATE reference ...
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=45.4M
+  Baseline: acc=0.8985  auroc=0.8980  F1=0.8340  EOM=0.6145
+
+════════════════════════════════════════════════════════════
+  Val (T-scaled + threshold-opt) — Full Evaluation Report
+════════════════════════════════════════════════════════════
+
+────────────────────────────────────────
+  Overall Metrics
+────────────────────────────────────────
+  Accuracy          : 0.8985
+  AUC-ROC (macro)   : 0.8978
+  Precision (macro) : 0.8375
+  Recall    (macro) : 0.8316
+  F1        (macro) : 0.8340
+  F1        (micro) : 0.8985
+  F1     (weighted) : 0.8978
+
+────────────────────────────────────────
+  Per-Class Metrics
+────────────────────────────────────────
+  Class                        Prec     Rec      F1
+  ────────────────────────────────────────────────
+  Melanoma                   0.8400  0.7911  0.8148
+  Nevus                      0.9450  0.9626  0.9537
+  Basal Cell Carcinoma       0.8382  0.7880  0.8124
+  Actinic Keratosis          0.8288  0.8214  0.8251
+  Squamous Cell Carcinoma    0.7355  0.7946  0.7639
+
+────────────────────────────────────────
+  Confusion Matrix  (rows=True, cols=Pred)
+────────────────────────────────────────
+       melan  nevus  basal  actin  squam
+  melan    231     44      7      3      7
+  nevus     31   1134      7      5      1
+  basal      7     14    171      6     19
+  actin      5      6      4     92      5
+  squam      1      2     15      5     89
+
+────────────────────────────────────────
+  Fairness Metrics
+────────────────────────────────────────
+  Equity of Opportunity           EOM (↑): 0.6145
+  Predictive Quality Disparity    PQD (↑): 0.8907
+  Demographic Parity Metric       DPM (↑): 0.1818
+  Fairness-Accuracy Trade-off     FATE (↑): -0.0002
+
+────────────────────────────────────────
+  Per-Fitzpatrick-Skin-Type Accuracy
+────────────────────────────────────────
+  FST 1  n=  96  0.8333  ████████████████
+  FST 2  n= 264  0.7879  ███████████████
+  FST 3  n= 125  0.8800  █████████████████
+  FST 4  n=  74  0.7838  ███████████████
+  FST 5  n=  25  0.8800  █████████████████
+  FST 6  n=   5  0.8000  ████████████████
+
+════════════════════════════════════════════════════════════
+
+
+Running internal test evaluation ...
+
+════════════════════════════════════════════════════════════
+  Internal Test — Full Evaluation Report
+════════════════════════════════════════════════════════════
+
+────────────────────────────────────────
+  Overall Metrics
+────────────────────────────────────────
+  Accuracy          : 0.8833
+  AUC-ROC (macro)   : 0.8898
+  Precision (macro) : 0.8152
+  Recall    (macro) : 0.8050
+  F1        (macro) : 0.8095
+  F1        (micro) : 0.8833
+  F1     (weighted) : 0.8819
+
+────────────────────────────────────────
+  Per-Class Metrics
+────────────────────────────────────────
+  Class                        Prec     Rec      F1
+  ────────────────────────────────────────────────
+  Melanoma                   0.7969  0.7298  0.7619
+  Nevus                      0.9360  0.9591  0.9474
+  Basal Cell Carcinoma       0.7990  0.7635  0.7809
+  Actinic Keratosis          0.7963  0.7818  0.7890
+  Squamous Cell Carcinoma    0.7477  0.7905  0.7685
+
+────────────────────────────────────────
+  Confusion Matrix  (rows=True, cols=Pred)
+────────────────────────────────────────
+       melan  nevus  basal  actin  squam
+  melan    208     55     11      6      5
+  nevus     31   1126     10      3      4
+  basal     12     13    155     10     13
+  actin      6      5      7     86      6
+  squam      4      4     11      3     83
+
+────────────────────────────────────────
+  Fairness Metrics
+────────────────────────────────────────
+  Equity of Opportunity           EOM (↑): 0.6232
+  Predictive Quality Disparity    PQD (↑): 0.7380
+  Demographic Parity Metric       DPM (↑): 0.1568
+  Fairness-Accuracy Trade-off     FATE (↑): 0.0049
+
+────────────────────────────────────────
+  Per-Fitzpatrick-Skin-Type Accuracy
+────────────────────────────────────────
+  FST 1  n= 104  0.7788  ███████████████
+  FST 2  n= 229  0.7380  ██████████████
+  FST 3  n= 113  0.8142  ████████████████
+  FST 4  n=  63  0.7937  ███████████████
+  FST 5  n=  17  0.8235  ████████████████
+  FST 6  n=  10  1.0000  ████████████████████
+
+════════════════════════════════════════════════════════════
+
+
+=======================================================  Full Model
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=45.4M
+  Acc=0.8624  AUROC=0.8951  Prec=0.7750  Rec=0.7777  F1=0.7692  EOM=0.5749  FATE=-0.0677
+
+=======================================================  w/o L_MI
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=45.4M
+  Acc=0.8723  AUROC=0.8792  Prec=0.7976  Rec=0.7784  F1=0.7872  EOM=0.5692  FATE=-0.0946
+
+=======================================================  w/o L_conf
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=45.4M
+  Acc=0.8697  AUROC=0.9009  Prec=0.7731  Rec=0.8210  F1=0.7905  EOM=0.6510  FATE=0.0625
+
+=======================================================  w/o L_con
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=45.4M
+  Acc=0.8671  AUROC=0.8992  Prec=0.7846  Rec=0.8092  F1=0.7959  EOM=0.5824  FATE=-0.0510
+
+=======================================================  L_cls + L_MI
+DualEncoderModel  backbone=vit_small_patch16_224  feat=384  embed=512  params=45.4M
+  Acc=0.8676  AUROC=0.8876  Prec=0.7989  Rec=0.7995  F1=0.7981  EOM=0.6199  FATE=-0.0028
+
+=======================================================  L_cls only (baseline)
+  Acc=0.8985  AUROC=0.8980  Prec=0.8375  Rec=0.8316  F1=0.8340  EOM=0.6145  FATE=nan
+
+                        Accuracy  AUC-ROC  Precision (M)  Recall    (M)  F1        (M)     EOM     PQD     DPM    FATE
+Full Model               0.8624   0.8951         0.7750         0.7777         0.7692  0.5749  0.8970  0.2091 -0.0677
+w/o L_MI                 0.8723   0.8792         0.7976         0.7784         0.7872  0.5692  0.7870  0.2021 -0.0946
+w/o L_conf               0.8697   0.9009         0.7731         0.8210         0.7905  0.6510  0.7576  0.2337  0.0625
+w/o L_con                0.8671   0.8992         0.7846         0.8092         0.7959  0.5824  0.7386  0.1349 -0.0510
+L_cls + L_MI             0.8676   0.8876         0.7989         0.7995         0.7981  0.6199  0.7200  0.2372 -0.0028
+L_cls only (baseline)    0.8985   0.8980         0.8375         0.8316         0.8340  0.6145  0.8907  0.1818     NaN
+
+── Cross-Dataset Summary Table ──────────────────────────────────────
+Empty DataFrame
+Columns: []
+Index: []
+
+[NOTE] macro-AUROC computed via robust_macro_auroc() (handles 3-class Derm7pt subset correctly).
+[NOTE] FST estimated via ITA; per-FST Accuracy reported (no per-FST AUROC).
+[NOTE] AK (class 3) and SCC (class 4) rows are 0 — not present in Derm7pt.
+
+── t-SNE: Internal Test ──────────────────────────────────
+  [Internal Test] 1500 samples  classes=[0, 1, 2, 3, 4]  modalities=[0, 1]
+  t-SNE: n=1500, perplexity=40 ...
