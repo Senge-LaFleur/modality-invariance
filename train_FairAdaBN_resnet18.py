@@ -484,11 +484,11 @@ CFG = {
     'num_groups': 2,
     
     'batch_size': 32,
-    'num_epochs': 150,       # Update as needed
+    'num_epochs': 50,       # Update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 30,     # Update as needed
+    'warmup_epochs': 10,     # Update as needed
     'aug_probability': 0.85,
     'alpha': 1.0,          # weight for L_SD loss
 }
