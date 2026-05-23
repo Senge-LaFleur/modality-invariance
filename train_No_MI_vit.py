@@ -2,16 +2,16 @@
 # -*- coding: utf-8 -*-
 
 """
-FairDisCo (Disentanglement with Contrastive Learning) using Dual ViT backbone.
+Ablation study: Full model without MI
 Uses:
-- Standard cross‑entropy loss for disease classification (L_c)
+- Weighted label‑smoothed cross‑entropy loss for disease classification (L_c)
 - Confusion loss (L_conf) to remove skin‑type information from representations
 - Skin‑type predictive loss (L_s) that only updates the skin classifier (f_s)
 - Supervised contrastive loss (L_contr) to preserve discriminative features
 
 All outputs saved in:
-    - checkpoints_DisCo_vit/
-    - results_DisCo_vit/
+    - checkpoints_No_MI_vit/
+    - results_No_MI_vit/
 """
 
 import os
@@ -45,6 +45,8 @@ from models.models_losses import (
     confusion_loss,
     skin_type_loss,
     get_layer_wise_lr_params,
+    cls_loss_fn,
+    compute_class_weights,
 )
 from models.evaluation import (
     validate,
@@ -88,8 +90,8 @@ IMAGE_ROOTS = {
 CFG = {
     'csv_dir':      CSV_DIR,
     'image_roots':  IMAGE_ROOTS,
-    'ckpt_dir':     WORK_ROOT / 'checkpoints_DisCo_vit',
-    'results_dir':  WORK_ROOT / 'results_DisCo_vit',
+    'ckpt_dir':     WORK_ROOT / 'checkpoints_No_MI_vit',
+    'results_dir':  WORK_ROOT / 'results_No_MI_vit',
 
     'backbone': 'vit_small',
     'embed_dim': 512,
@@ -98,17 +100,20 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 50,       # Update as needed
+    'num_epochs': 50,           # adjust as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 10,    #Update as needed
+    'warmup_epochs': 10,
     'aug_probability': 0.85,
 
     # FairDisCo hyperparameters
     'alpha': 1.0,
     'beta': 0.8,
     'temperature': 0.1,
+
+    # Label smoothing for weighted CE
+    'label_smoothing': 0.1,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -116,9 +121,10 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------------
-# Training function for FairDisCo
+# Training function for FairDisCo (with weighted CE)
 # ------------------------------------------------------------
-def train_epoch(model, loader, optimizer, epoch, scaler, device, alpha, beta, temperature):
+def train_epoch(model, loader, optimizer, epoch, scaler, device,
+                alpha, beta, temperature, weight_tensor, label_smoothing):
     model.train()
     total_loss = 0.0
     total_loss_c = 0.0
@@ -141,7 +147,11 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, alpha, beta, te
         with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
             out = model(batch)
 
-            loss_c = F.cross_entropy(out["logits"], batch["label"])
+            # Weighted label‑smoothed CE
+            loss_c = cls_loss_fn(out["logits"], batch["label"],
+                                 weight_tensor=weight_tensor,
+                                 smoothing=label_smoothing)
+
             loss_conf = confusion_loss(out["skin_logits"])
             loss_s = skin_type_loss(out["skin_logits"].detach(), batch["skin_type"])
             loss_contr = contrast_criterion(out["z"], batch["label"])
@@ -202,6 +212,15 @@ def main():
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
+    # Compute class weights from training CSVs
+    class_weights = compute_class_weights(CFG["csv_dir"], CFG["num_classes"])
+    if class_weights:
+        weight_tensor = torch.tensor(class_weights, dtype=torch.float32, device=DEVICE)
+        print(f"Class weights: {np.round(class_weights, 3)}")
+    else:
+        weight_tensor = None
+        print("Class weights not computed; using uniform weights.")
+
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     if test_loader:
@@ -217,7 +236,8 @@ def main():
     ).to(DEVICE)
 
     param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
-    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
+    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"],
+                                  betas=(0.9, 0.999), eps=1e-8)
 
     def lr_lambda(epoch):
         if epoch < CFG["warmup_epochs"]:
@@ -240,7 +260,8 @@ def main():
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
             model, train_loader, optimizer, epoch, scaler, DEVICE,
-            alpha=CFG["alpha"], beta=CFG["beta"], temperature=CFG["temperature"]
+            alpha=CFG["alpha"], beta=CFG["beta"], temperature=CFG["temperature"],
+            weight_tensor=weight_tensor, label_smoothing=CFG["label_smoothing"]
         )
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")

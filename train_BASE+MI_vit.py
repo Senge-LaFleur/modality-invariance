@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
-Baseline + Modality Invariance (MI) with Dual ViT backbone.
+Ablation study: Baseline + Modality Invariance (MI) with Dual ViT backbone.
 Uses:
-- Standard cross‑entropy loss for disease classification (L_c)
+- Weighted label‑smoothed cross‑entropy loss for disease classification (L_c)
 - Modality invariance loss (mi_loss) on paired clinical/derm embeddings
 
 All outputs saved in:
@@ -41,6 +41,8 @@ from models.models_losses import (
     DualViT,
     mi_loss,
     get_layer_wise_lr_params,
+    cls_loss_fn,
+    compute_class_weights,
 )
 from models.evaluation import (
     validate,
@@ -94,15 +96,18 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 50,           # Update as needed
+    'num_epochs': 50,          # adjust as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 10,         # Update as needed
+    'warmup_epochs': 10,
     'aug_probability': 0.85,
 
     # MI loss weight
     'mi_weight': 0.5,
+
+    # Label smoothing for weighted CE
+    'label_smoothing': 0.1,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -110,9 +115,10 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------------
-# Training function with MI loss
+# Training function with weighted CE and MI loss
 # ------------------------------------------------------------
-def train_epoch(model, loader, optimizer, epoch, scaler, device, mi_weight):
+def train_epoch(model, loader, optimizer, epoch, scaler, device,
+                mi_weight, weight_tensor, label_smoothing):
     model.train()
     total_loss = 0.0
     total_loss_c = 0.0
@@ -122,7 +128,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, mi_weight):
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", unit="batch", dynamic_ncols=True, leave=False)
     for batch in pbar:
-        # Move data to device
         for k, v in batch.items():
             if isinstance(v, torch.Tensor):
                 batch[k] = v.to(device, non_blocking=True)
@@ -130,12 +135,14 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, mi_weight):
         optimizer.zero_grad(set_to_none=True)
 
         with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
-            out = model(batch)   # out contains: logits, z, z_c, z_d (if paired)
+            out = model(batch)
 
-            # L_c: disease classification loss
-            loss_c = F.cross_entropy(out["logits"], batch["label"])
+            # Weighted label‑smoothed CE
+            loss_c = cls_loss_fn(out["logits"], batch["label"],
+                                 weight_tensor=weight_tensor,
+                                 smoothing=label_smoothing)
 
-            # MI loss only for paired samples (where z_c and z_d exist)
+            # MI loss only for paired samples
             loss_mi = 0.0
             if "z_c" in out and "z_d" in out:
                 loss_mi = mi_loss(out["z_c"], out["z_d"])
@@ -190,13 +197,21 @@ def main():
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
+    # Compute class weights from training CSVs
+    class_weights = compute_class_weights(CFG["csv_dir"], CFG["num_classes"])
+    if class_weights:
+        weight_tensor = torch.tensor(class_weights, dtype=torch.float32, device=DEVICE)
+        print(f"Class weights: {np.round(class_weights, 3)}")
+    else:
+        weight_tensor = None
+        print("Class weights not computed; using uniform weights.")
+
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     if test_loader:
         print(f"Test batches: {len(test_loader)}")
     print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
 
-    # Instantiate DualViT with projection head (needed for MI loss)
     model = DualViT(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
@@ -206,7 +221,8 @@ def main():
     ).to(DEVICE)
 
     param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
-    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
+    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"],
+                                  betas=(0.9, 0.999), eps=1e-8)
 
     def lr_lambda(epoch):
         if epoch < CFG["warmup_epochs"]:
@@ -229,7 +245,9 @@ def main():
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
             model, train_loader, optimizer, epoch, scaler, DEVICE,
-            mi_weight=CFG["mi_weight"]
+            mi_weight=CFG["mi_weight"],
+            weight_tensor=weight_tensor,
+            label_smoothing=CFG["label_smoothing"]
         )
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
@@ -291,7 +309,7 @@ def main():
     model.load_state_dict(ckpt["model"])
     print(f"Loaded best model from {best_ckpt.name} (epoch {ckpt['epoch']+1})")
 
-    # Evaluation (same as baseline)
+    # Evaluation
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
     save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
