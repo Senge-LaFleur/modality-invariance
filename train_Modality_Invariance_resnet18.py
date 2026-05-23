@@ -115,11 +115,11 @@ CFG = {
     'aug_probability': 0.85,
 
     'lambda_cls': 1.0,
-    'lambda_conf': 1.0,
-    'lambda_con': 1.0,
-    'lambda_mi': 1.5,
+    'lambda_conf': 0.5,
+    'lambda_con': 0.5,
+    'lambda_mi': 0.8,
     'temperature': 0.07,
-    'label_smoothing': 0.1,
+    'label_smoothing': 0.05,
     'mixup_alpha': 0.4,
 
     'use_conf': True,

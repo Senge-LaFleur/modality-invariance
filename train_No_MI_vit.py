@@ -107,13 +107,13 @@ CFG = {
     'warmup_epochs': 10,
     'aug_probability': 0.85,
 
-    # FairDisCo hyperparameters
-    'alpha': 1.0,
-    'beta': 0.8,
-    'temperature': 0.1,
+    # hyperparameters
+    'alpha': 1.0,      #lambda confusion
+    'beta': 0.8,       #lambda contrastive
+    'temperature': 0.07,
 
     # Label smoothing for weighted CE
-    'label_smoothing': 0.1,
+    'label_smoothing': 0.05,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)

@@ -107,7 +107,7 @@ CFG = {
     'mi_weight': 0.5,
 
     # Label smoothing for weighted CE
-    'label_smoothing': 0.1,
+    'label_smoothing': 0.05,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
