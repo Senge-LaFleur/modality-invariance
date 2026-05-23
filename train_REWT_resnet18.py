@@ -218,27 +218,27 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, group_weight_ma
 # ============================================================
 # Evaluation helper — runs on a dict of test loaders
 # ============================================================
-def evaluate_test_loaders(model, test_loaders, device, cfg, results_dir, label_names):
+def evaluate_test_loaders(model, test_loaders, device, cfg, results_dir, label_names, prefix="test"):
     summary = {}
     for mod_name, loader in test_loaders.items():
-        split_tag = f"test_{mod_name}"
-        print(f"\n── Test on {mod_name} images ──")
-        res  = validate(model, loader, device, cfg["num_classes"], desc=f"Test [{mod_name}]")
+        split_tag = f"{prefix}_{mod_name}"
+        print(f"\n── Evaluating {prefix} on {mod_name} images ──")
+        res  = validate(model, loader, device, cfg["num_classes"], desc=f"{prefix.capitalize()} [{mod_name}]")
         fair = fairness(res)
         save_results_csv(res, fair, split_tag, results_dir, label_names)
         plot_confusion_matrix(
             res["conf_mat"],
             [label_names[i] for i in range(cfg["num_classes"])],
-            f"Confusion Matrix — Test [{mod_name.upper()}]",
+            f"Confusion Matrix — {prefix.capitalize()} [{mod_name.upper()}]",
             results_dir / f"{split_tag}_confusion.png")
         plot_per_class_metrics(
             res,
             [label_names[i] for i in range(cfg["num_classes"])],
-            f"Per-Class Metrics — Test [{mod_name.upper()}]",
+            f"Per-Class Metrics — {prefix.capitalize()} [{mod_name.upper()}]",
             results_dir / f"{split_tag}_per_class.png")
         plot_fairness_metrics(
             fair,
-            f"Fairness — Test [{mod_name.upper()}]",
+            f"Fairness — {prefix.capitalize()} [{mod_name.upper()}]",
             results_dir / f"{split_tag}_fairness.png")
         summary[mod_name] = {
             "accuracy":   res["acc"],
@@ -258,13 +258,15 @@ def main():
     print(f"Checkpoints  : {CFG['ckpt_dir']}")
     print(f"Results      : {CFG['results_dir']}")
 
-    # Build standard loaders (no resampling, just standard train loader)
-    train_loader, val_loader, test_loaders, eval_loaders = build_loaders(CFG, seed=SEED)
+    # Load all data
+    train_loader, val_loader, test_loaders, paired_test_loaders, eval_loaders = build_loaders(CFG, seed=SEED)
+
     print(f"Train batches: {len(train_loader)}")
     if val_loader:
         print(f"Val batches  : {len(val_loader)}")
-    print(f"Test loaders : {list(test_loaders.keys())}")
-    print(f"Cross-eval   : {list(eval_loaders.keys())}")
+    print(f"Test loaders (unpaired) : {list(test_loaders.keys())}")
+    print(f"Paired test loaders     : {list(paired_test_loaders.keys())}")
+    print(f"Cross-eval loaders      : {list(eval_loaders.keys())}")
 
     # Precompute group weights from the training dataset
     group_weight_map = compute_group_weights(train_loader.dataset)
@@ -365,48 +367,41 @@ def main():
     plot_fairness_metrics(val_fair, "Fairness - Validation",
                           CFG["results_dir"] / "val_fairness.png")
 
-    # ── Test on clin_test and derm_test separately ──
+    # ── Unpaired test (clin_test, derm_test) ───────────────────────────
     test_summary = evaluate_test_loaders(
-        model, test_loaders, DEVICE, CFG, CFG["results_dir"], LABEL_NAMES)
-
-    print("\nTest summary:")
+        model, test_loaders, DEVICE, CFG, CFG["results_dir"], LABEL_NAMES, prefix="test")
+    print("\nTest summary (unpaired):")
     for mod_name, metrics in test_summary.items():
         print(f"  [{mod_name}]  acc={metrics['accuracy']:.4f}  "
               f"auroc={metrics['auroc']:.4f}  f1={metrics['macro_f1']:.4f}  "
               f"EOM={metrics['EOM']:.4f}  PQD={metrics['PQD']:.4f}")
-
     if test_summary:
         pd.DataFrame(test_summary).T.to_csv(
             CFG["results_dir"] / "test_modality_summary.csv")
 
-    # ── Cross-dataset evaluation ──
-    cross_results = {}
-    for ds_name, loader in eval_loaders.items():
-        print(f"\nEvaluating on {ds_name}")
-        res  = validate(model, loader, DEVICE, CFG["num_classes"], desc=f"Cross-eval: {ds_name}")
-        fair = fairness(res)
-        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
-        plot_confusion_matrix(res["conf_mat"],
-                              [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
-                              f"Confusion Matrix - {ds_name}",
-                              CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
-        plot_per_class_metrics(res,
-                               [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
-                               f"Per-Class Metrics - {ds_name}",
-                               CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
-        plot_fairness_metrics(fair, f"Fairness - {ds_name}",
-                              CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
-        cross_results[ds_name] = {
-            "accuracy":   res["acc"],  "precision": res["macro_prec"],
-            "recall":     res["macro_rec"], "auroc": res["auroc"],
-            "macro_f1":   res["macro_f1"],  "micro_f1": res["micro_f1"],
-            "weighted_f1": res["weighted_f1"],
-            "EOM": fair["EOM"], "PQD": fair["PQD"], "DPM": fair["DPM"],
-        }
-    if cross_results:
-        cross_df = pd.DataFrame(cross_results).T
-        cross_df.to_csv(CFG["results_dir"] / "cross_dataset_summary.csv")
-        print("\nCross-dataset summary:\n", cross_df)
+    # ── Paired test set (HIBASkinLesions) ───────────────────────────────
+    paired_summary = evaluate_test_loaders(
+        model, paired_test_loaders, DEVICE, CFG, CFG["results_dir"], LABEL_NAMES, prefix="paired_test")
+    print("\nPaired test set (HIBASkinLesions) summary:")
+    for mod_name, metrics in paired_summary.items():
+        print(f"  [paired_{mod_name}]  acc={metrics['accuracy']:.4f}  "
+              f"auroc={metrics['auroc']:.4f}  f1={metrics['macro_f1']:.4f}  "
+              f"EOM={metrics['EOM']:.4f}  PQD={metrics['PQD']:.4f}")
+    if paired_summary:
+        pd.DataFrame(paired_summary).T.to_csv(
+            CFG["results_dir"] / "paired_test_modality_summary.csv")
+
+    # ── Cross‑dataset evaluation (derm7pt) ────────────────────────────────
+    cross_summary = evaluate_test_loaders(
+        model, eval_loaders, DEVICE, CFG, CFG["results_dir"], LABEL_NAMES, prefix="cross")
+    print("\nCross‑dataset (Derm7pt) summary:")
+    for mod_name, metrics in cross_summary.items():
+        print(f"  {mod_name}  acc={metrics['accuracy']:.4f}  "
+              f"auroc={metrics['auroc']:.4f}  f1={metrics['macro_f1']:.4f}  "
+              f"EOM={metrics['EOM']:.4f}  PQD={metrics['PQD']:.4f}")
+    if cross_summary:
+        pd.DataFrame(cross_summary).T.to_csv(
+            CFG["results_dir"] / "cross_dataset_summary.csv")
 
     # ── Training curves ──
     plot_training_curves(

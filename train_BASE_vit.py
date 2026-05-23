@@ -371,7 +371,7 @@ def main():
     # ── Training curves ──────────────────────────────────────────────────
     plot_training_curves(
         history,
-        f"Training History — Baseline ViT [{TRAIN_MODALITY}]",
+        f"Training History (Baseline ViT [{TRAIN_MODALITY}])",
         CFG["results_dir"] / "training_curves.png")
 
     # ── t-SNE on clin_test (if available) ───────────────────────────────
