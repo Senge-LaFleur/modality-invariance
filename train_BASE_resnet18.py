@@ -120,11 +120,11 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size':     32,
-    'num_epochs':     1,       # Update as needed (e.g. 100)
+    'num_epochs':     10,       # Update as needed (e.g. 100)
     'lr':             1e-4,
     'min_lr':         1e-6,
     'weight_decay':   1e-4,
-    'warmup_epochs':  1,       # Update as needed
+    'warmup_epochs':  3,       # Update as needed
     'aug_probability': 0.85,
 }
 

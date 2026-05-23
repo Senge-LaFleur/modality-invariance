@@ -132,7 +132,7 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 5,           # adjust as needed
+    'num_epochs': 10,           # adjust as needed
     'lr': 3e-5,
     'min_lr': 1e-6,
     'weight_decay': 0.05,
