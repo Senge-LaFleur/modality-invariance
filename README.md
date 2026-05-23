@@ -64,22 +64,12 @@ pip install -r requirements.txt
 ## Training Scripts
 ```bash
 # Training Baselines
-python train_BASE_resnet18.py --train_modality clin
-python train_BASE_resnet18.py --train_modality derm
-python train_BASE_resnet18.py --train_modality both
-
-python train_BASE_vit.py --train_modality clin
-python train_BASE_vit.py --train_modality derm
-python train_BASE_vit.py --train_modality both
+python train_BASE_resnet18.py
+python train_BASE_vit.py
 
 # Training Modality-Invariant Models
-python train_modality_invariance_resnet18.py --train_modality clin
-python train_modality_invariance_resnet18.py --train_modality derm
-python train_modality_invariance_resnet18.py --train_modality both
-
-python train_modality_invariance_vit.py --train_modality clin
-python train_modality_invariance_vit.py --train_modality derm
-python train_modality_invariance_vit.py --train_modality both
+python train_modality_invariance_resnet18.py
+python train_modality_invariance_vit.py
 
 # Train the other scripts the same way
 ```
