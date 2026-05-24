@@ -810,40 +810,40 @@ def plot_tsne_modality(embeddings, skins, modalities, title, save_path, perplexi
     plt.close()
 
 
-def plot_tsne(embeddings, labels, title, save_path, perplexity=30):
-    if embeddings.shape[0] < 5:
-        print(f"[SKIP] t-SNE: too few samples ({embeddings.shape[0]})")
-        return
-    perp = min(perplexity, max(5, embeddings.shape[0] // 10))
-    tsne = TSNE(n_components=2, random_state=42, perplexity=perp, max_iter=1000, init="pca")
-    emb_2d = tsne.fit_transform(embeddings)
-    plt.figure(figsize=(10, 8))
-    scatter = plt.scatter(emb_2d[:, 0], emb_2d[:, 1], c=labels, cmap="tab10", s=20, alpha=0.7)
-    plt.colorbar(scatter, ticks=range(labels.max()+1), label="Class")
-    plt.title(title)
-    plt.xlabel("t-SNE-1")
-    plt.ylabel("t-SNE-2")
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
-    plt.close()
-
-
-# def plot_tsne(embeddings, labels, title, save_path, perplexity=40, seed=42):
-#     """
-#     Legacy single-panel t-SNE coloured by class label.
-#     Prefer plot_tsne_class_fst / plot_tsne_modality for richer diagnostics.
-#     """
-#     e2d = _run_tsne(embeddings, perplexity=perplexity, seed=seed)
-#     if e2d is None:
-#         print(f"[SKIP] plot_tsne: too few samples ({embeddings.shape[0]})")
+# def plot_tsne(embeddings, labels, title, save_path, perplexity=30):
+#     if embeddings.shape[0] < 5:
+#         print(f"[SKIP] t-SNE: too few samples ({embeddings.shape[0]})")
 #         return
-#     fig, ax = plt.subplots(figsize=(10, 8))
-#     _tsne_scatter_labeled(ax, e2d, labels, _CLS_COLORS, _CLS_NAMES, title)
+#     perp = min(perplexity, max(5, embeddings.shape[0] // 10))
+#     tsne = TSNE(n_components=2, random_state=42, perplexity=perp, max_iter=1000, init="pca")
+#     emb_2d = tsne.fit_transform(embeddings)
+#     plt.figure(figsize=(10, 8))
+#     scatter = plt.scatter(emb_2d[:, 0], emb_2d[:, 1], c=labels, cmap="tab10", s=20, alpha=0.7)
+#     plt.colorbar(scatter, ticks=range(labels.max()+1), label="Class")
+#     plt.title(title)
+#     plt.xlabel("t-SNE-1")
+#     plt.ylabel("t-SNE-2")
 #     plt.tight_layout()
 #     if save_path:
 #         plt.savefig(save_path, dpi=150, bbox_inches="tight")
 #     plt.close()
+
+
+def plot_tsne(embeddings, labels, title, save_path, perplexity=40, seed=42):
+    """
+    Legacy single-panel t-SNE coloured by class label.
+    Prefer plot_tsne_class_fst / plot_tsne_modality for richer diagnostics.
+    """
+    e2d = _run_tsne(embeddings, perplexity=perplexity, seed=seed)
+    if e2d is None:
+        print(f"[SKIP] plot_tsne: too few samples ({embeddings.shape[0]})")
+        return
+    fig, ax = plt.subplots(figsize=(10, 8))
+    _tsne_scatter_labeled(ax, e2d, labels, _CLS_COLORS, _CLS_NAMES, title)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close()
 
 def print_full_report(res, fair, split_name, label_names):
     print(f"\n{'='*60}")
