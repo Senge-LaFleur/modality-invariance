@@ -104,7 +104,7 @@ CFG = {
     'aug_probability': 0.85,
 
     # MI loss weight
-    'mi_weight': 0.5,
+    'mi_weight': 0.8,
 
     # Label smoothing for weighted CE
     'label_smoothing': 0.05,
