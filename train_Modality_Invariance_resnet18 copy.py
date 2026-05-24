@@ -54,8 +54,6 @@ from models.evaluation import (
     plot_fairness_metrics,
     plot_training_curves,
     plot_tsne,
-    plot_tsne_class_fst,
-    plot_tsne_modality,
     build_loaders,
     LABEL_NAMES,
 )
@@ -271,6 +269,7 @@ def main():
         #     patience_counter = 0
         # else:
         #     patience_counter += 1
+
         # if patience_counter >= patience:
         #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
         #     break
@@ -373,42 +372,18 @@ def main():
 
     if test_loader:
         model.eval()
-        all_embs, all_labels_tsne, all_skins_tsne, all_mods_tsne = [], [], [], []
+        all_embs, all_labels_tsne = [], []
         with torch.no_grad():
             for batch in test_loader:
                 for k, v in batch.items():
                     if isinstance(v, torch.Tensor):
                         batch[k] = v.to(DEVICE)
                 out = model(batch)
-                b = out["z"].size(0)
                 all_embs.append(out["z"].cpu().numpy())
                 all_labels_tsne.append(batch["label"].cpu().numpy())
-                all_skins_tsne.append(batch["skin_type"].cpu().numpy())
-                # modality: 1 = derm, 0 = clinical/unknown
-                mod_int = np.array(
-                    [1 if m == "derm" else 0
-                     for m in batch.get("modality", ["clinical"] * b)],
-                    dtype=np.int64,
-                )
-                all_mods_tsne.append(mod_int)
-
-        embs        = np.concatenate(all_embs)
+        embs = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
-        skins_tsne  = np.concatenate(all_skins_tsne)
-        mods_tsne   = np.concatenate(all_mods_tsne)
-
-        # Figure A — by disease class and by FST
-        plot_tsne_class_fst(
-            embs, labels_tsne, skins_tsne,
-            title="t-SNE — Shared Embedding Space  [Internal Test]",
-            save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
-        )
-        # Figure B — modality-invariance diagnostics
-        plot_tsne_modality(
-            embs, skins_tsne, mods_tsne,
-            title="t-SNE — Modality-Invariance  [Internal Test]",
-            save_path=CFG["results_dir"] / "tsne_test_modality_invariance.png",
-        )
+        plot_tsne(embs, labels_tsne, "t-SNE - Test Set", CFG["results_dir"] / "tsne_test.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")

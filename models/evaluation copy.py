@@ -562,218 +562,52 @@ def plot_fairness_metrics(fair, title, save_path):
     plt.close()
 
 def plot_training_curves(history, title, save_path):
-    """
-    2x4 grid:
-      Row 0 - loss components: Total Loss | L_MI | L_conf | L_con
-      Row 1 - classification metrics: Accuracy | AUROC | Macro-F1 | Learning Rate
-    Any panel whose key is absent in history is rendered as an empty labelled axes
-    so the layout is always consistent regardless of which losses are active.
-    """
     epochs = list(range(1, len(history.get("train_total", [])) + 1))
-    fig, axes = plt.subplots(2, 4, figsize=(22, 9))
+    fig, axes = plt.subplots(1, 2, figsize=(16, 5))
     fig.suptitle(title, fontsize=14, fontweight="bold")
 
-    # Row 0 - loss curves (train only; val losses not tracked)
-    for ax, key, panel_title, color in [
-        (axes[0, 0], "train_total", "Total Loss", "#1950A0"),
-        (axes[0, 1], "train_mi",    "L_MI",       "#0096B4"),
-        (axes[0, 2], "train_conf",  "L_conf",     "#D1333B"),
-        (axes[0, 3], "train_con",   "L_con",      "#9B59B6"),
-    ]:
-        if history.get(key):
-            ax.plot(epochs, history[key], color=color, lw=2, marker="o", ms=4)
-        ax.set_title(panel_title, fontweight="bold")
-        ax.set_xlabel("Epoch")
-        ax.grid(True, alpha=0.3)
-        ax.spines[["top", "right"]].set_visible(False)
-
-    # Row 1 - classification metrics: train (solid) vs val (dashed)
-    for ax, t_key, v_key, panel_title, color in [
-        (axes[1, 0], "train_acc",      "val_acc",      "Accuracy",     "#1950A0"),
-        (axes[1, 1], "train_auroc",    "val_auroc",    "AUROC",        "#0096B4"),
-        (axes[1, 2], "train_macro_f1", "val_macro_f1", "Macro-F1",     "#D1333B"),
-        (axes[1, 3], "lr",             None,            "Learning Rate", "#9AAABB"),
-    ]:
-        if history.get(t_key):
-            ax.plot(epochs, history[t_key], color=color, lw=2, marker="o", ms=4,
-                    label="Train", linestyle="-")
-        if v_key and history.get(v_key):
-            ax.plot(epochs, history[v_key], color=color, lw=2, marker="s", ms=4,
-                    label="Val", linestyle="--", alpha=0.7)
-        ax.set_title(panel_title, fontweight="bold")
-        ax.set_xlabel("Epoch")
-        if t_key != "lr":
-            ax.set_ylim(0, 1.05)
-        if v_key:
-            ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
-        ax.spines[["top", "right"]].set_visible(False)
-
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
-    plt.close()
-
-# ── Palettes shared by tsne functions ───────────────────────────────────
-_CLS_COLORS = ["#1950A0", "#0096B4", "#DC641E", "#2ECC71", "#9B59B6"]
-_CLS_NAMES  = {0: "melanoma", 1: "nevus", 2: "basal cell ca.", 3: "actinic ker.", 4: "squamous cc."}
-_FST_COLORS = ["#FFEDE0", "#F4C18C", "#D49060", "#A0522D", "#5C3317", "#2B1500"]
-_FST_MAP    = {i: f"FST {i+1}" for i in range(6)}
-_MOD_COLORS = {0: "#1950A0", 1: "#DC641E"}
-_MOD_NAMES  = {0: "Clinical",  1: "Dermoscopic"}
-_MOD_MARKERS = {0: "o", 1: "s"}
-_MOD_SIZES   = {0: 20,  1: 16}
-
-
-def _tsne_scatter_labeled(ax, xy, color_ids, palette, labels_map, title,
-                          xlabel="t-SNE-1", ylabel="t-SNE-2", s=18, alpha=0.7):
-    """Scatter helper: one colour per unique id, legend from labels_map."""
-    for cid in sorted(set(color_ids.tolist())):
-        mask = color_ids == cid
-        ax.scatter(xy[mask, 0], xy[mask, 1], c=palette[cid % len(palette)],
-                   s=s, alpha=alpha, label=labels_map.get(cid, str(cid)),
-                   edgecolors="none")
-    ax.set_title(title, fontweight="bold", fontsize=11)
-    ax.set_xlabel(xlabel); ax.set_ylabel(ylabel)
-    ax.legend(fontsize=7, markerscale=1.4, framealpha=0.6, loc="best", ncol=2)
+    ax = axes[0]
+    if "train_total" in history:
+        ax.plot(epochs, history["train_total"], color="#1950A0", lw=2, marker="o", ms=4, label="Train Loss")
+    ax.set_title("Training Loss")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
     ax.spines[["top", "right"]].set_visible(False)
 
-
-def _run_tsne(embeddings, perplexity=40, seed=42):
-    n = embeddings.shape[0]
-    if n < 5:
-        return None
-    perp = min(perplexity, max(5, n // 10))
-    return TSNE(n_components=2, random_state=seed, perplexity=perp,
-                n_iter=1000, learning_rate="auto", init="pca").fit_transform(embeddings)
-
-
-def plot_tsne_class_fst(embeddings, labels, skins, title, save_path, perplexity=40, seed=42):
-    """
-    Figure A — two-panel t-SNE:
-      Left  : coloured by disease class (5 classes)
-      Right : coloured by Fitzpatrick Skin Type (FST 1-6), unknown samples in grey
-    Args:
-        embeddings : np.ndarray (N, D)
-        labels     : np.ndarray (N,) int  — disease class index
-        skins      : np.ndarray (N,) int  — FST index 0-5; negative = unknown
-        title      : suptitle string (e.g. "t-SNE — Shared Embedding Space  [Internal Test]")
-        save_path  : Path or str
-    """
-    from matplotlib.colors import ListedColormap as _LC
-    e2d = _run_tsne(embeddings, perplexity=perplexity, seed=seed)
-    if e2d is None:
-        print(f"[SKIP] plot_tsne_class_fst: too few samples ({embeddings.shape[0]})")
-        return
-
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-    fig.suptitle(title, fontsize=13, fontweight="bold")
-
-    # Left — by disease class
-    _tsne_scatter_labeled(axes[0], e2d, labels, _CLS_COLORS, _CLS_NAMES,
-                          "By Disease Class (5 classes)")
-
-    # Right — by FST (known only; unknown = grey)
-    mk_known = skins >= 0
-    if mk_known.any():
-        _tsne_scatter_labeled(axes[1], e2d[mk_known], skins[mk_known],
-                              _FST_COLORS, _FST_MAP, "By Fitzpatrick Skin Type")
-    if (~mk_known).any():
-        axes[1].scatter(e2d[~mk_known, 0], e2d[~mk_known, 1],
-                        c="#CCCCCC", s=8, alpha=0.25, label="FST unknown", edgecolors="none")
-        axes[1].legend(fontsize=7, markerscale=1.4, framealpha=0.6, ncol=2)
+    ax = axes[1]
+    if "train_acc" in history:
+        ax.plot(epochs, history["train_acc"], color="#1950A0", lw=2, marker="o", ms=4, label="Train Acc")
+    if "val_acc" in history:
+        ax.plot(epochs, history["val_acc"], color="#0096B4", lw=2, marker="s", ms=4, label="Val Acc", linestyle="--")
+    if "val_auroc" in history:
+        ax.plot(epochs, history["val_auroc"], color="#DC641E", lw=2, marker="^", ms=4, label="Val AUROC", linestyle=":")
+    ax.set_title("Accuracy & AUROC")
+    ax.set_xlabel("Epoch")
+    ax.set_ylim(0, 1.05)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.spines[["top", "right"]].set_visible(False)
 
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close()
 
-
-def plot_tsne_modality(embeddings, skins, modalities, title, save_path, perplexity=40, seed=42):
-    """
-    Figure B — two-panel t-SNE for modality-invariance diagnostics:
-      Left  : coloured by modality (Clinical=blue, Dermoscopic=orange)
-      Right : FST gradient × modality marker (circle=clinical, square=derm)
-    Args:
-        embeddings : np.ndarray (N, D)
-        skins      : np.ndarray (N,) int  — FST index 0-5; negative = unknown
-        modalities : np.ndarray (N,) int  — 0 = clinical, 1 = dermoscopic
-        title      : suptitle string
-        save_path  : Path or str
-    """
-    from matplotlib.colors import ListedColormap as _LC
-    from matplotlib.lines import Line2D
-    e2d = _run_tsne(embeddings, perplexity=perplexity, seed=seed)
-    if e2d is None:
-        print(f"[SKIP] plot_tsne_modality: too few samples ({embeddings.shape[0]})")
+def plot_tsne(embeddings, labels, title, save_path, perplexity=30):
+    if embeddings.shape[0] < 5:
+        print(f"[SKIP] t-SNE: too few samples ({embeddings.shape[0]})")
         return
-
-    fst_cmap = _LC(_FST_COLORS)
-    has_multi_mod = len(set(modalities.tolist())) > 1
-
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-    fig.suptitle(title, fontsize=12, fontweight="bold")
-
-    # Left — by modality
-    for mid in [0, 1]:
-        mask = modalities == mid
-        if mask.any():
-            axes[0].scatter(e2d[mask, 0], e2d[mask, 1],
-                            c=_MOD_COLORS[mid], s=18, alpha=0.65,
-                            label=_MOD_NAMES[mid], edgecolors="none")
-    axes[0].set_title(
-        "By Modality\n(mixed clusters → modality-invariant)" if has_multi_mod
-        else f"By Modality\n(single: {_MOD_NAMES[int(modalities[0])]})",
-        fontweight="bold", fontsize=10)
-    axes[0].set_xlabel("t-SNE-1"); axes[0].set_ylabel("t-SNE-2")
-    axes[0].legend(fontsize=9, markerscale=1.5, framealpha=0.7)
-    axes[0].spines[["top", "right"]].set_visible(False)
-
-    # Right — FST gradient × modality marker
-    sc = None
-    for mid in [0, 1]:
-        m_mask  = modalities == mid
-        fst_sub = skins[m_mask]
-        xy_sub  = e2d[m_mask]
-        known   = fst_sub >= 0
-        if known.any():
-            sc = axes[1].scatter(xy_sub[known, 0], xy_sub[known, 1],
-                                 c=fst_sub[known], cmap=fst_cmap, vmin=0, vmax=5,
-                                 marker=_MOD_MARKERS[mid], s=_MOD_SIZES[mid],
-                                 alpha=0.7, edgecolors="none")
-        if (~known).any():
-            axes[1].scatter(xy_sub[~known, 0], xy_sub[~known, 1],
-                            c="#CCCCCC", marker=_MOD_MARKERS[mid],
-                            s=_MOD_SIZES[mid], alpha=0.25, edgecolors="none")
-    if sc is not None:
-        plt.colorbar(sc, ax=axes[1], label="FST (0=I ... 5=VI)", shrink=0.85)
-    legend_h = [
-        Line2D([0], [0], marker="o", color="grey", ms=7, ls="none", label="Clinical"),
-        Line2D([0], [0], marker="s", color="grey", ms=7, ls="none", label="Dermoscopic"),
-    ]
-    axes[1].legend(handles=legend_h, fontsize=8, title="Modality", title_fontsize=8, framealpha=0.7)
-    axes[1].set_title("By FST x Modality\n(interleaved -> no skin-colour confounding)",
-                      fontweight="bold", fontsize=10)
-    axes[1].set_xlabel("t-SNE-1"); axes[1].set_ylabel("t-SNE-2")
-    axes[1].spines[["top", "right"]].set_visible(False)
-
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
-    plt.close()
-
-
-def plot_tsne(embeddings, labels, title, save_path, perplexity=40, seed=42):
-    """
-    Legacy single-panel t-SNE coloured by class label.
-    Prefer plot_tsne_class_fst / plot_tsne_modality for richer diagnostics.
-    """
-    e2d = _run_tsne(embeddings, perplexity=perplexity, seed=seed)
-    if e2d is None:
-        print(f"[SKIP] plot_tsne: too few samples ({embeddings.shape[0]})")
-        return
-    fig, ax = plt.subplots(figsize=(10, 8))
-    _tsne_scatter_labeled(ax, e2d, labels, _CLS_COLORS, _CLS_NAMES, title)
+    perp = min(perplexity, max(5, embeddings.shape[0] // 10))
+    tsne = TSNE(n_components=2, random_state=42, perplexity=perp, max_iter=1000, init="pca")
+    emb_2d = tsne.fit_transform(embeddings)
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(emb_2d[:, 0], emb_2d[:, 1], c=labels, cmap="tab10", s=20, alpha=0.7)
+    plt.colorbar(scatter, ticks=range(labels.max()+1), label="Class")
+    plt.title(title)
+    plt.xlabel("t-SNE-1")
+    plt.ylabel("t-SNE-2")
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")

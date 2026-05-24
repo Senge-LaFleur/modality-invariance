@@ -318,13 +318,8 @@ def skin_type_loss(skin_logits_detached, skin_labels):
 def mi_loss(z_c, z_d):
     """Modality invariance loss: cosine + MSE."""
     cos_part = (1.0 - F.cosine_similarity(z_c, z_d, dim=-1)).mean()
-    return cos_part
-
-# def mi_loss(z_c, z_d):
-#     """Modality invariance loss: cosine + MSE."""
-#     cos_part = (1.0 - F.cosine_similarity(z_c, z_d, dim=-1)).mean()
-#     mse_part = F.mse_loss(z_c, z_d)
-#     return 0.7 * cos_part + 0.3 * mse_part
+    mse_part = F.mse_loss(z_c, z_d)
+    return 0.7 * cos_part + 0.3 * mse_part
 
 
 def mixup_embeddings(z, labels, alpha=0.4):

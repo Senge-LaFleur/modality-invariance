@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-Modality-Invariant CNN (ResNet-18) for Skin Disease Classification
+Modality-Invariant ViT (vit_small_patch16_224) for Skin Disease Classification
 Uses multi-objective losses: Lcls, Lconf, Lcon, LMI.
 
 All outputs (checkpoints, results, logs) are saved in:
-    - checkpoints_modality_resnet18/
-    - results_modality_resnet18/
+    - checkpoints_modality_vit/
+    - results_modality_vit/
 """
 
 import os
@@ -35,7 +35,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from sklearn.metrics import f1_score
 from models.models_losses import (
-    DualResNet18,
+    DualViT,
     SupConLoss,
     confusion_loss,
     skin_type_loss,
@@ -43,8 +43,22 @@ from models.models_losses import (
     mixup_embeddings,
     cls_loss_fn,
     compute_class_weights,
-    get_layer_wise_lr_params,
 )
+
+# Local definition of ViT layer-wise LR decay (since it's missing in models_losses.py)
+def get_layer_wise_lr_params_vit(model, base_lr=3e-5, lr_decay=0.85):
+    backbone_params = []
+    head_params = []
+    for name, param in model.named_parameters():
+        if 'classifier' in name or 'skin_clf' in name or 'proj_head' in name:
+            head_params.append(param)
+        else:
+            backbone_params.append(param)
+    return [
+        {'params': backbone_params, 'lr': base_lr * lr_decay},
+        {'params': head_params, 'lr': base_lr}
+    ]
+
 from models.evaluation import (
     validate,
     fairness,
@@ -54,8 +68,6 @@ from models.evaluation import (
     plot_fairness_metrics,
     plot_training_curves,
     plot_tsne,
-    plot_tsne_class_fst,
-    plot_tsne_modality,
     build_loaders,
     LABEL_NAMES,
 )
@@ -99,20 +111,20 @@ for name, root in DATASET_ROOTS.items():
 CFG = {
     'csv_dir':       CSV_DIR,
     'dataset_roots': DATASET_ROOTS,
-    'ckpt_dir': WORK_ROOT / 'checkpoints_Modality_Invariance_resnet18',
-    'results_dir': WORK_ROOT / 'results_Modality_Invariance_resnet18',
+    'ckpt_dir':      WORK_ROOT / 'checkpoints_Modality_Invariance_vit',
+    'results_dir':   WORK_ROOT / 'results_Modality_Invariance_vit',
 
-    'backbone': 'resnet18',
+    'backbone': 'vit_small_patch16_224',
     'embed_dim': 512,
     'img_size': 224,
     'num_classes': 5,
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 50,       # Update as needed
-    'lr': 1e-4,
+    'num_epochs': 50,      # Update as needed
+    'lr': 3e-5,
     'min_lr': 1e-6,
-    'weight_decay': 1e-4,
+    'weight_decay': 0.05,
     'warmup_epochs': 10,    #Update as needed
     'aug_probability': 0.85,
 
@@ -212,10 +224,16 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     return totals
 
 
+# ------------------------------------------------------------
+# Main training and evaluation pipeline
+# ------------------------------------------------------------
 def main():
-    print(f"CSV dir: {CFG['csv_dir']}")
-    print(f"Checkpoints dir: {CFG['ckpt_dir']}")
-    print(f"Results dir: {CFG['results_dir']}")
+    print(f"CSV dir      : {CFG['csv_dir']}")
+    print(f"Checkpoints  : {CFG['ckpt_dir']}")
+    print(f"Results      : {CFG['results_dir']}")
+    print("Dataset roots:")
+    for name, root in CFG['dataset_roots'].items():
+        print(f"  {name:<15}: {root}")
 
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
@@ -229,15 +247,16 @@ def main():
     else:
         class_weights = None
 
-    model = DualResNet18(
+    model = DualViT(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
         num_skin_types=CFG["num_skin_types"],
         pretrained=True,
         use_projection=True,
     ).to(DEVICE)
+    
 
-    param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
+    param_groups = get_layer_wise_lr_params_vit(model, base_lr=CFG["lr"], lr_decay=0.85)
     optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
 
     def lr_lambda(epoch):
@@ -271,6 +290,7 @@ def main():
         #     patience_counter = 0
         # else:
         #     patience_counter += 1
+
         # if patience_counter >= patience:
         #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
         #     break
@@ -318,6 +338,7 @@ def main():
     ckpt = torch.load(best_ckpt, map_location=DEVICE, weights_only=False)
     model.load_state_dict(ckpt["model"])
     print(f"Loaded best model from {best_ckpt.name} (epoch {ckpt['epoch']+1})")
+    
 
     # Evaluation
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
@@ -368,47 +389,23 @@ def main():
         cross_df.to_csv(CFG["results_dir"] / "cross_dataset_summary.csv")
         print("\nCross-dataset summary:\n", cross_df)
 
-    plot_training_curves(history, "Training History (Modality-Invariant ResNet-18)",
+    plot_training_curves(history, "Training History (Modality-Invariant ViT)",
                          CFG["results_dir"] / "training_curves.png")
 
     if test_loader:
         model.eval()
-        all_embs, all_labels_tsne, all_skins_tsne, all_mods_tsne = [], [], [], []
+        all_embs, all_labels_tsne = [], []
         with torch.no_grad():
             for batch in test_loader:
                 for k, v in batch.items():
                     if isinstance(v, torch.Tensor):
                         batch[k] = v.to(DEVICE)
                 out = model(batch)
-                b = out["z"].size(0)
                 all_embs.append(out["z"].cpu().numpy())
                 all_labels_tsne.append(batch["label"].cpu().numpy())
-                all_skins_tsne.append(batch["skin_type"].cpu().numpy())
-                # modality: 1 = derm, 0 = clinical/unknown
-                mod_int = np.array(
-                    [1 if m == "derm" else 0
-                     for m in batch.get("modality", ["clinical"] * b)],
-                    dtype=np.int64,
-                )
-                all_mods_tsne.append(mod_int)
-
-        embs        = np.concatenate(all_embs)
+        embs = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
-        skins_tsne  = np.concatenate(all_skins_tsne)
-        mods_tsne   = np.concatenate(all_mods_tsne)
-
-        # Figure A — by disease class and by FST
-        plot_tsne_class_fst(
-            embs, labels_tsne, skins_tsne,
-            title="t-SNE — Shared Embedding Space  [Internal Test]",
-            save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
-        )
-        # Figure B — modality-invariance diagnostics
-        plot_tsne_modality(
-            embs, skins_tsne, mods_tsne,
-            title="t-SNE — Modality-Invariance  [Internal Test]",
-            save_path=CFG["results_dir"] / "tsne_test_modality_invariance.png",
-        )
+        plot_tsne(embs, labels_tsne, "t-SNE - Test Set", CFG["results_dir"] / "tsne_test.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")
