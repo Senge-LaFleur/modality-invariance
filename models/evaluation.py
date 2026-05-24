@@ -5,7 +5,7 @@ Provides functions for:
 - Loading data (paired/unpaired) with fast ID‑based image resolution (prebuilt maps)
 - Running validation (collecting predictions, computing metrics)
 - Fairness metrics (EOM, PQD, DPM, per-FST accuracy)
-- Plotting: confusion matrix, per-class metrics, fairness summary, training curves, t‑SNE
+- Plotting: confusion matrix, per-class metrics, fairness summary, training curves, t‑SNE, ROC curves
 - Saving results as CSV files (overall, per-class, per-FST)
 - Building train/val/test/cross‑eval data loaders
 """
@@ -23,6 +23,8 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     confusion_matrix as sk_confusion_matrix,
+    roc_curve,
+    auc,
 )
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
@@ -474,7 +476,7 @@ def save_results_csv(res, fair, split_name, results_dir, label_names):
 
 
 # ------------------------------------------------------------
-# Plotting functions (unchanged)
+# Plotting functions
 # ------------------------------------------------------------
 def plot_confusion_matrix(conf_mat, class_names, title, save_path):
     fig, axes = plt.subplots(1, 2, figsize=(18, 7))
@@ -559,6 +561,51 @@ def plot_fairness_metrics(fair, title, save_path):
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
+def plot_roc_curve(y_true, y_probs, class_names, title, save_path):
+    """
+    Plot ROC curves for each class and macro-average.
+    y_true: 1D array of true labels
+    y_probs: 2D array of predicted probabilities (N x C)
+    class_names: list of class names
+    title: plot title
+    save_path: path to save the figure
+    """
+    n_classes = len(class_names)
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+
+    for i in range(n_classes):
+        fpr[i], tpr[i], _ = roc_curve((y_true == i).astype(int), y_probs[:, i])
+        roc_auc[i] = auc(fpr[i], tpr[i])
+
+    # Compute macro-average ROC
+    all_fpr = np.unique(np.concatenate([fpr[i] for i in range(n_classes)]))
+    mean_tpr = np.zeros_like(all_fpr)
+    for i in range(n_classes):
+        mean_tpr += np.interp(all_fpr, fpr[i], tpr[i])
+    mean_tpr /= n_classes
+    macro_auc = auc(all_fpr, mean_tpr)
+
+    plt.figure(figsize=(10, 8))
+    colors = plt.cm.get_cmap('tab10', n_classes)
+    for i in range(n_classes):
+        plt.plot(fpr[i], tpr[i], color=colors(i), lw=2,
+                 label=f'{class_names[i]} (AUC = {roc_auc[i]:.3f})')
+    plt.plot(all_fpr, mean_tpr, color='black', lw=2, linestyle='--',
+             label=f'Macro-average (AUC = {macro_auc:.3f})')
+    plt.plot([0, 1], [0, 1], 'k--', lw=1, label='Random')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(title)
+    plt.legend(loc='lower right', fontsize=9)
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
 
 def plot_training_curves(history, title, save_path):

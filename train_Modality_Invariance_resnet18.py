@@ -56,6 +56,7 @@ from models.evaluation import (
     plot_tsne,
     plot_tsne_class_fst,
     plot_tsne_modality,
+    plot_roc_curve,
     build_loaders,
     LABEL_NAMES,
 )
@@ -320,24 +321,30 @@ def main():
     print(f"Loaded best model from {best_ckpt.name} (epoch {ckpt['epoch']+1})")
 
     # Evaluation
+    class_names = [LABEL_NAMES[i] for i in range(CFG["num_classes"])]
+
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
     save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
-    plot_confusion_matrix(val_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
+    plot_confusion_matrix(val_res["conf_mat"], class_names,
                           "Confusion Matrix - Validation", CFG["results_dir"] / "val_confusion.png")
-    plot_per_class_metrics(val_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
+    plot_per_class_metrics(val_res, class_names,
                            "Per-Class Metrics - Validation", CFG["results_dir"] / "val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"] / "val_fairness.png")
+    plot_roc_curve(val_res["labels"], val_res["probs"], class_names,
+                   "ROC Curves - Validation", CFG["results_dir"] / "val_roc.png")
 
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
         save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES)
-        plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
+        plot_confusion_matrix(test_res["conf_mat"], class_names,
                               "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
-        plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
+        plot_per_class_metrics(test_res, class_names,
                                "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
+        plot_roc_curve(test_res["labels"], test_res["probs"], class_names,
+                       "ROC Curves - Test", CFG["results_dir"] / "test_roc.png")
 
     # Cross-dataset evaluation
     cross_results = {}
@@ -346,11 +353,13 @@ def main():
         res = validate(model, loader, DEVICE, CFG["num_classes"], desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
         save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
-        plot_confusion_matrix(res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
+        plot_confusion_matrix(res["conf_mat"], class_names,
                               f"Confusion Matrix - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
-        plot_per_class_metrics(res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
+        plot_per_class_metrics(res, class_names,
                                f"Per-Class Metrics - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
+        plot_roc_curve(res["labels"], res["probs"], class_names,
+                       f"ROC Curves - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_roc.png")
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "precision": res["macro_prec"],
