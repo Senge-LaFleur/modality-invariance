@@ -25,8 +25,8 @@ module load cuda/12.6
 #module load cudnn/8.9
 module load python/3.11.7
 
-WORK_DIR="process"          
-#NOTEBOOK=""
+WORK_DIR="process_ATRB_resnet18"
+
 SCRIPT_NAME="train_ATRB_resnet18.py"       
 
 export DATA_ROOT="$WORK_DIR/data/datasets"
@@ -57,11 +57,18 @@ else
     echo "[INFO] No kaggle.json found in $WORK_DIR. Relying on ~/.kaggle/ or env vars."
 fi
 
-# ── Create required directories ───────────────────────────────────────────────
+# ── Create required directories and copy preprocessed data ────────────────────
 mkdir -p "$WORK_DIR/logs"
-mkdir -p "$WORK_ROOT/csvs"
+mkdir -p "$WORK_ROOT"
+
+# Copy preprocessed CSVs and numpy embeddings from the repository to the job's outputs directory
+cp -r "process/process/outputs/csvs" "$WORK_ROOT/csvs"
+if [ -f "process/process/outputs/text_embeddings_3_large_consecutive_averaged.npy" ]; then
+    cp "process/process/outputs/text_embeddings_3_large_consecutive_averaged.npy" "$WORK_ROOT/"
+fi
+
 mkdir -p "$WORK_ROOT/checkpoints"
-mkdir -p "$WORK_ROOT/results/shap"
+mkdir -p "$WORK_ROOT/results"
 mkdir -p "$BACKBONE_CACHE"
 
 cd "$WORK_DIR"
@@ -87,8 +94,6 @@ pip install --quiet \
     pandas \
     tqdm \
     Pillow \
-    shap \
-    captum \
     nbconvert \
     scikit-image \
     kaggle
@@ -207,7 +212,6 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "  Checkpoints → $WORK_ROOT/checkpoints/"
     echo "  Results     → $WORK_ROOT/results/"
     echo "  CSVs        → $WORK_ROOT/csvs/"
-    echo "  SHAP plots  → $WORK_ROOT/results/shap/"
 else
     echo ""
     echo "[ERROR] Training failed with exit code $EXIT_CODE."
