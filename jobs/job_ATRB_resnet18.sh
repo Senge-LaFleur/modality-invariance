@@ -132,7 +132,7 @@ echo ""
 # - https://www.kaggle.com/datasets/asosenge/hibaskinlesionsdataset-main
 # - https://www.kaggle.com/datasets/asosenge/fitzpatrick17k
 # - https://www.kaggle.com/datasets/asosenge/ham10000
-# - https://www.kaggle.com/datasets/shubhamgoel27/dermnet
+# - https://www.kaggle.com/datasets/asosenge/derm7pt
 # - https://www.kaggle.com/datasets/mahdavi1202/skin-cancer'  
 # - https://www.kaggle.com/datasets/sengenjih/isic2019'  
 

@@ -75,15 +75,18 @@ torch.cuda.manual_seed_all(SEED); torch.backends.cudnn.deterministic = True
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
+# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
+#WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
+WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
+
 IMAGE_ROOTS = {
-    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'ham10000':       Path('/kaggle/input/datasets/asosenge/ham10000/HAM10000'),
-    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),                 # update path as needed
+    'hiba':           Path('process_patchalign_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('process_patchalign_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'ham10000':       Path('process_patchalign_resnet18/data/datasets/asosenge/ham10000/HAM10000'),
+    'derm7pt':        Path('process_patchalign_resnet18/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('process_patchalign_resnet18/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+    'isic2019':       Path('process_patchalign_resnet18/data/datasets/sengenjih/isic2019'),                 # update path as needed
 }
 
 FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_PatchAlign_resnet18
+#SBATCH --job-name=train_patchalign_resnet18
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=120:00:00
@@ -25,9 +25,9 @@ module load cuda/12.6
 #module load cudnn/8.9
 module load python/3.11.7
 
-WORK_DIR="process_PatchAlign_resnet18"
+WORK_DIR="process_patchalign_resnet18"
 
-SCRIPT_NAME="train_PatchAlign_resnet18.py"       
+SCRIPT_NAME="../train_patchalign_resnet18.py"       
 
 export DATA_ROOT="$WORK_DIR/data/datasets"
 
@@ -89,8 +89,14 @@ source "$VENV_DIR/bin/activate"
 
 echo "[SETUP] Installing / verifying Python dependencies..."
 pip install --upgrade pip --quiet
+#pip uninstall -y torch torchvision
+
 pip install --quiet \
-    torch torchvision \
+    torch \
+    torchvision \
+    --index-url https://download.pytorch.org/whl/cu126
+
+pip install --quiet \
     timm \
     einops \
     scikit-learn \
@@ -100,8 +106,6 @@ pip install --quiet \
     pandas \
     tqdm \
     Pillow \
-    shap \
-    captum \
     nbconvert \
     scikit-image \
     kaggle
@@ -128,7 +132,7 @@ echo ""
 # - https://www.kaggle.com/datasets/asosenge/hibaskinlesionsdataset-main
 # - https://www.kaggle.com/datasets/asosenge/fitzpatrick17k
 # - https://www.kaggle.com/datasets/asosenge/ham10000
-# - https://www.kaggle.com/datasets/shubhamgoel27/dermnet
+# - https://www.kaggle.com/datasets/asosenge/derm7pt
 # - https://www.kaggle.com/datasets/mahdavi1202/skin-cancer'  
 # - https://www.kaggle.com/datasets/sengenjih/isic2019'  
 
@@ -137,7 +141,7 @@ for DSET in \
     "asosenge/hibaskinlesionsdataset-main" \
     "asosenge/fitzpatrick17k" \
     "asosenge/ham10000" \
-    "shubhamgoel27/dermnet" \
+    "asosenge/derm7pt" \
     "mahdavi1202/skin-cancer" \
     "sengenjih/isic2019"; do
     FULL_PATH="$DATA_ROOT/$DSET"
@@ -220,7 +224,6 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "  Checkpoints → $WORK_ROOT/checkpoints/"
     echo "  Results     → $WORK_ROOT/results/"
     echo "  CSVs        → $WORK_ROOT/csvs/"
-    echo "  SHAP plots  → $WORK_ROOT/results/shap/"
 else
     echo ""
     echo "[ERROR] Training failed with exit code $EXIT_CODE."
