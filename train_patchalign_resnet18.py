@@ -91,8 +91,8 @@ FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged
 CFG = {
     'csv_dir': CSV_DIR, 
     'image_roots': IMAGE_ROOTS,
-    'ckpt_dir': WORK_ROOT / 'checkpoints_patchalign_resnet18',
-    'results_dir': WORK_ROOT / 'results_patchalign_resnet18',
+    'ckpt_dir': WORK_ROOT / 'checkpoints_PatchAlign_resnet18',
+    'results_dir': WORK_ROOT / 'results_PatchAlign_resnet18',
     'backbone': 'resnet18', 
     'embed_dim': 512, 
     'img_size': 224,

@@ -336,8 +336,8 @@ FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged
 CFG = {
     'csv_dir':       CSV_DIR,
     'dataset_roots': DATASET_ROOTS,
-    'ckpt_dir':      WORK_ROOT / 'checkpoints_patchalign_vit',
-    'results_dir':   WORK_ROOT / 'results_patchalign_vit',
+    'ckpt_dir':      WORK_ROOT / 'checkpoints_PatchAlign_vit',
+    'results_dir':   WORK_ROOT / 'results_PatchAlign_vit',
 
     'vit_model':        'vit_small_patch16_224',
     'embed_dim':        384,

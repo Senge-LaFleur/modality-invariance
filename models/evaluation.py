@@ -281,8 +281,9 @@ def build_loaders(cfg, seed=42):
                   "or ('image_id','label','skin_type','dataset') for unpaired mode. Skipping.")
 
     # PAD-UFES-20 (clinical unpaired cross-eval)
-    if (csv_dir / 'eval_padufes20.csv').exists():
-        padufes_df = pd.read_csv(csv_dir / 'eval_padufes20.csv')
+    _padufes_csv = csv_dir / 'eval_padufes20.csv'
+    if _padufes_csv.exists():
+        padufes_df = pd.read_csv(_padufes_csv)
         has_clinical = {'clinical', 'label', 'skin_type', 'dataset'}.issubset(padufes_df.columns)
         if has_clinical:
             padufes_df = padufes_df[['clinical', 'label', 'skin_type', 'dataset']]
@@ -294,10 +295,14 @@ def build_loaders(cfg, seed=42):
         else:
             print("[WARN] eval_padufes20.csv must contain "
                   "('clinical','label','skin_type','dataset'). Skipping.")
+    else:
+        print(f"[WARN] eval_padufes20.csv not found at {_padufes_csv} — "
+              "run the preprocessing notebook to generate it, then re-run training.")
 
     # ISIC2019 (dermoscopic unpaired cross-eval)
-    if (csv_dir / 'eval_isic2019.csv').exists():
-        isic_df = pd.read_csv(csv_dir / 'eval_isic2019.csv')
+    _isic_csv = csv_dir / 'eval_isic2019.csv'
+    if _isic_csv.exists():
+        isic_df = pd.read_csv(_isic_csv)
         has_derm = {'derm', 'label', 'skin_type', 'dataset'}.issubset(isic_df.columns)
         if has_derm:
             isic_df = isic_df[['derm', 'label', 'skin_type', 'dataset']]
@@ -309,6 +314,9 @@ def build_loaders(cfg, seed=42):
         else:
             print("[WARN] eval_isic2019.csv must contain "
                   "('derm','label','skin_type','dataset'). Skipping.")
+    else:
+        print(f"[WARN] eval_isic2019.csv not found at {_isic_csv} — "
+              "run the preprocessing notebook to generate it, then re-run training.")
 
     return train_loader, val_loader, test_loader, eval_loaders
 

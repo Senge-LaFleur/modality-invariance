@@ -98,11 +98,11 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 1,          # adjust as needed
+    'num_epochs': 1,          # update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 1,
+    'warmup_epochs': 1,       # update as needed
     'aug_probability': 0.85,
 
     # MI loss weight

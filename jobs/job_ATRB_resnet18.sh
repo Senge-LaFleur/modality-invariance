@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=modality_invariance_v2
+#SBATCH --job-name=train_ATRB_resnet18
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=120:00:00
@@ -25,10 +25,9 @@ module load cuda/12.6
 #module load cudnn/8.9
 module load python/3.11.7
 
-WORK_DIR="process_v2"          
-#NOTEBOOK="modality_invariance_v1_1.ipynb"
-NOTEBOOK=$(realpath "modality_invariance_v2.ipynb")
-SCRIPT_NAME="modality_invariance_v2.py"       
+WORK_DIR="process"          
+#NOTEBOOK=""
+SCRIPT_NAME="train_ATRB_resnet18.py"       
 
 export DATA_ROOT="$WORK_DIR/data/datasets"
 
