@@ -57,14 +57,20 @@ else
     echo "[INFO] No kaggle.json found in $WORK_DIR. Relying on ~/.kaggle/ or env vars."
 fi
 
-# ── Create required directories and copy preprocessed data ────────────────────
+# ── Create required directories and copy preprocessed data and helper scripts ──
 mkdir -p "$WORK_DIR/logs"
 mkdir -p "$WORK_ROOT"
 
 # Copy preprocessed CSVs and numpy embeddings from the repository to the job's outputs directory
-cp -r "process/process/outputs/csvs" "$WORK_ROOT/csvs"
-if [ -f "process/process/outputs/text_embeddings_3_large_consecutive_averaged.npy" ]; then
-    cp "process/process/outputs/text_embeddings_3_large_consecutive_averaged.npy" "$WORK_ROOT/"
+cp -r "../csvs" "$WORK_ROOT/csvs"
+if [ -f "../process/process/outputs/text_embeddings_3_large_consecutive_averaged.npy" ]; then
+    cp "../process/process/outputs/text_embeddings_3_large_consecutive_averaged.npy" "$WORK_ROOT/"
+fi
+
+# Copy helper python models and scripts from the repository to the job's working directory
+cp -r "../models" "$WORK_DIR/models"
+if [ -f "../GOT.py" ]; then
+    cp "../GOT.py" "$WORK_DIR/GOT.py"
 fi
 
 mkdir -p "$WORK_ROOT/checkpoints"
