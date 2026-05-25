@@ -27,7 +27,7 @@ module load python/3.11.7
 
 WORK_DIR="process_ATRB_resnet18"
 
-SCRIPT_NAME="train_ATRB_resnet18.py"       
+SCRIPT_NAME="../train_ATRB_resnet18.py"       
 
 export DATA_ROOT="$WORK_DIR/data/datasets"
 
@@ -89,8 +89,14 @@ source "$VENV_DIR/bin/activate"
 
 echo "[SETUP] Installing / verifying Python dependencies..."
 pip install --upgrade pip --quiet
+#pip uninstall -y torch torchvision
+
 pip install --quiet \
-    torch torchvision \
+    torch \
+    torchvision \
+    --index-url https://download.pytorch.org/whl/cu126
+
+pip install --quiet \
     timm \
     einops \
     scikit-learn \
@@ -135,7 +141,7 @@ for DSET in \
     "asosenge/hibaskinlesionsdataset-main" \
     "asosenge/fitzpatrick17k" \
     "asosenge/ham10000" \
-    "shubhamgoel27/dermnet" \
+    "asosenge/derm7pt" \
     "mahdavi1202/skin-cancer" \
     "sengenjih/isic2019"; do
     FULL_PATH="$DATA_ROOT/$DSET"
