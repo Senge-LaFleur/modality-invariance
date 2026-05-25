@@ -1,4 +1,4 @@
-label,skin_type,dataset,lesion_id,clinical_id,derm_id,_resolve_path
+label,skin_type,dataset,lesion_id,clinical,derm,_resolve_path
 2,1,derm7pt,derm7pt_1,NEL025,Nel026,C:\Users\asose\OneDrive\Desktop\SengeResearch\datasets\Derm7pt\release_v0\images\NEL\NEL025.JPG
 2,3,derm7pt,derm7pt_2,NEL027,Nel028,C:\Users\asose\OneDrive\Desktop\SengeResearch\datasets\Derm7pt\release_v0\images\NEL\NEL027.JPG
 2,1,derm7pt,derm7pt_3,Nel032,Nel033,C:\Users\asose\OneDrive\Desktop\SengeResearch\datasets\Derm7pt\release_v0\images\NEL\Nel032.jpg

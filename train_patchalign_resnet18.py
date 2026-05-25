@@ -82,20 +82,29 @@ IMAGE_ROOTS = {
     'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
     'ham10000':       Path('/kaggle/input/datasets/asosenge/ham10000/HAM10000'),
     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),                 # update path as needed
 }
 
 FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
 
 CFG = {
-    'csv_dir': CSV_DIR, 'image_roots': IMAGE_ROOTS,
+    'csv_dir': CSV_DIR, 
+    'image_roots': IMAGE_ROOTS,
     'ckpt_dir': WORK_ROOT / 'checkpoints_patchalign_resnet18',
     'results_dir': WORK_ROOT / 'results_patchalign_resnet18',
-    'backbone': 'resnet18', 'embed_dim': 512, 'img_size': 224,
-    'num_classes': 5, 'num_skin_types': 6, 'num_text_labels': 6,
+    'backbone': 'resnet18', 
+    'embed_dim': 512, 
+    'img_size': 224,
+    'num_classes': 5, 
+    'num_skin_types': 6, 
+    'num_text_labels': 6,
     'text_embed_dim': 768,
     'batch_size': 32, 
     'num_epochs': 50,        # Update as needed
-    'lr': 1e-4, 'min_lr': 1e-6, 'weight_decay': 1e-4, 
+    'lr': 1e-4, 
+    'min_lr': 1e-6, 
+    'weight_decay': 1e-4, 
     'warmup_epochs': 10,      # Update as needed
     'aug_probability': 0.85,
     'alpha_conf': 0.5, 'beta_got': 1.0, 'lamb_got': 0.9,

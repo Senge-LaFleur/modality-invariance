@@ -1,5 +1,7 @@
-Dataset,Total rows,FST known,FST %
-HIBA,168,164,97.6%
-Fitzpatrick17k,1899,1823,96.0%
-HAM10000,6682,563,8.4%
-Derm7pt,869,811,93.3%
+Dataset,Modality,Total rows,FST known,FST %,FST source
+HIBA,clinical,168,164,97.6%,ground-truth
+Fitzpatrick17k,clinical,1899,1823,96.0%,ground-truth
+HAM10000,dermoscopic,6682,563,8.4%,N/A
+Derm7pt,clinical,869,811,93.3%,ITA-estimated
+PAD-UFES-20,clinical,2063,1447,70.1%,ground-truth
+ISIC2019,dermoscopic,27551,0,0.0%,N/A

@@ -280,6 +280,36 @@ def build_loaders(cfg, seed=42):
                   "('clinical','derm','label','skin_type','dataset') for paired mode "
                   "or ('image_id','label','skin_type','dataset') for unpaired mode. Skipping.")
 
+    # PAD-UFES-20 (clinical unpaired cross-eval)
+    if (csv_dir / 'eval_padufes20.csv').exists():
+        padufes_df = pd.read_csv(csv_dir / 'eval_padufes20.csv')
+        has_clinical = {'clinical', 'label', 'skin_type', 'dataset'}.issubset(padufes_df.columns)
+        if has_clinical:
+            padufes_df = padufes_df[['clinical', 'label', 'skin_type', 'dataset']]
+            padufes_dataset = UnpairedDataset(padufes_df, image_maps, transform=val_transform,
+                                              id_col='clinical')
+            eval_loaders['padufes20'] = DataLoader(padufes_dataset, batch_size=batch_size,
+                                                   shuffle=False, num_workers=4, pin_memory=True)
+            print(f"[INFO] Loaded padufes20 unpaired eval set: {len(padufes_df)} samples")
+        else:
+            print("[WARN] eval_padufes20.csv must contain "
+                  "('clinical','label','skin_type','dataset'). Skipping.")
+
+    # ISIC2019 (dermoscopic unpaired cross-eval)
+    if (csv_dir / 'eval_isic2019.csv').exists():
+        isic_df = pd.read_csv(csv_dir / 'eval_isic2019.csv')
+        has_derm = {'derm', 'label', 'skin_type', 'dataset'}.issubset(isic_df.columns)
+        if has_derm:
+            isic_df = isic_df[['derm', 'label', 'skin_type', 'dataset']]
+            isic_dataset = UnpairedDataset(isic_df, image_maps, transform=val_transform,
+                                           id_col='derm')
+            eval_loaders['isic2019'] = DataLoader(isic_dataset, batch_size=batch_size,
+                                                  shuffle=False, num_workers=4, pin_memory=True)
+            print(f"[INFO] Loaded isic2019 unpaired eval set: {len(isic_df)} samples")
+        else:
+            print("[WARN] eval_isic2019.csv must contain "
+                  "('derm','label','skin_type','dataset'). Skipping.")
+
     return train_loader, val_loader, test_loader, eval_loaders
 
 

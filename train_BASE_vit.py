@@ -72,22 +72,24 @@ print(f"Device: {DEVICE}")
 WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
-DATASET_ROOTS = {
-    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main'),
-    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k'),
-    'ham10000':       Path('/kaggle/input/datasets/asosenge/ham10000'),
-    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt'),
+IMAGE_ROOTS = {
+    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'ham10000':       Path('/kaggle/input/datasets/asosenge/ham10000/HAM10000'),
+    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),                 # update path as needed
 }
 
 print("Checking configured paths:")
 print(f"  WORK_ROOT : {WORK_ROOT}  {'[OK]' if WORK_ROOT.exists() else '[MISSING]'}")
 print(f"  CSV_DIR   : {CSV_DIR}  {'[OK]' if CSV_DIR.exists() else '[MISSING]'}")
-for name, root in DATASET_ROOTS.items():
-    print(f"  {name:<15}: {root}  {'[OK]' if root.exists() else '[MISSING — update DATASET_ROOTS]'}")
+for name, root in IMAGE_ROOTS.items():
+    print(f"  {name:<15}: {root}  {'[OK]' if root.exists() else '[MISSING — update IMAGE_ROOTS]'}")
 
 CFG = {
     'csv_dir':       CSV_DIR,
-    'dataset_roots': DATASET_ROOTS,
+    'image_roots':  IMAGE_ROOTS,
     'ckpt_dir':      WORK_ROOT / 'checkpoints_BASE_vit',
     'results_dir':   WORK_ROOT / 'results_BASE_vit',
 
