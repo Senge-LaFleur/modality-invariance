@@ -691,8 +691,16 @@ def _run_tsne(embeddings, perplexity=40, seed=42):
     if n < 5:
         return None
     perp = min(perplexity, max(5, n // 10))
-    return TSNE(n_components=2, random_state=seed, perplexity=perp,
-                n_iter=1000, learning_rate="auto", init="pca").fit_transform(embeddings)
+    # Try to use max_iter (newer sklearn) first, fall back to n_iter (older)
+    try:
+        tsne = TSNE(n_components=2, random_state=seed, perplexity=perp,
+                    max_iter=1000, learning_rate='auto', init='pca')
+        return tsne.fit_transform(embeddings)
+    except TypeError:
+        # Older version: use n_iter instead of max_iter and without learning_rate='auto'
+        tsne = TSNE(n_components=2, random_state=seed, perplexity=perp,
+                    n_iter=1000, learning_rate=200.0, init='pca')
+        return tsne.fit_transform(embeddings)
 
 
 def plot_tsne_class_fst(embeddings, labels, skins, title, save_path, perplexity=40, seed=42):
@@ -808,25 +816,6 @@ def plot_tsne_modality(embeddings, skins, modalities, title, save_path, perplexi
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close()
-
-
-# def plot_tsne(embeddings, labels, title, save_path, perplexity=30):
-#     if embeddings.shape[0] < 5:
-#         print(f"[SKIP] t-SNE: too few samples ({embeddings.shape[0]})")
-#         return
-#     perp = min(perplexity, max(5, embeddings.shape[0] // 10))
-#     tsne = TSNE(n_components=2, random_state=42, perplexity=perp, max_iter=1000, init="pca")
-#     emb_2d = tsne.fit_transform(embeddings)
-#     plt.figure(figsize=(10, 8))
-#     scatter = plt.scatter(emb_2d[:, 0], emb_2d[:, 1], c=labels, cmap="tab10", s=20, alpha=0.7)
-#     plt.colorbar(scatter, ticks=range(labels.max()+1), label="Class")
-#     plt.title(title)
-#     plt.xlabel("t-SNE-1")
-#     plt.ylabel("t-SNE-2")
-#     plt.tight_layout()
-#     if save_path:
-#         plt.savefig(save_path, dpi=150, bbox_inches="tight")
-#     plt.close()
 
 
 def plot_tsne(embeddings, labels, title, save_path, perplexity=40, seed=42):
