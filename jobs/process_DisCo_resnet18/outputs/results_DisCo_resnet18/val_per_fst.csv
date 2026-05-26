@@ -1,0 +1,7 @@
+split,fitzpatrick_type,accuracy
+val,FST 1,0.723404255319149
+val,FST 2,0.7391304347826086
+val,FST 3,0.848
+val,FST 4,0.7837837837837838
+val,FST 5,0.84
+val,FST 6,1.0

@@ -1,0 +1,617 @@
+=========================================
+Job:       train_FairAdaBN_resnet18  (412721)
+Node:      bigpu02
+Started:   Mon May 25 11:48:42 PM CEST 2026
+=========================================
+[INFO] No HF token found at /users/jlacmou/.hf_token — downloads may be slow.
+[INFO] No kaggle.json found in process_FairAdaBN_resnet18. Relying on ~/.kaggle/ or env vars.
+[SETUP] Creating virtual environment...
+[SETUP] Installing / verifying Python dependencies...
+
+── GPU info ──────────────────────────────
+Tesla V100-PCIE-32GB, 32768 MiB, 575.57.08
+PyTorch : 2.12.0+cu126
+CUDA    : 12.6
+Devices : 1
+GPU 0   : Tesla V100-PCIE-32GB
+VRAM    : 34.1 GB
+──────────────────────────────────────────
+
+[CHECK] Validating dataset roots...
+  [MISSING] process_FairAdaBN_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/hibaskinlesionsdataset-main
+License(s): other
+Downloading hibaskinlesionsdataset-main.zip to process_FairAdaBN_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main
+
+  [DOWNLOADED] process_FairAdaBN_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main
+  [MISSING] process_FairAdaBN_resnet18/data/datasets/asosenge/fitzpatrick17k  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/fitzpatrick17k
+License(s): other
+Downloading fitzpatrick17k.zip to process_FairAdaBN_resnet18/data/datasets/asosenge/fitzpatrick17k
+
+  [DOWNLOADED] process_FairAdaBN_resnet18/data/datasets/asosenge/fitzpatrick17k
+  [MISSING] process_FairAdaBN_resnet18/data/datasets/asosenge/ham10000  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/ham10000
+License(s): Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+Downloading ham10000.zip to process_FairAdaBN_resnet18/data/datasets/asosenge/ham10000
+
+  [DOWNLOADED] process_FairAdaBN_resnet18/data/datasets/asosenge/ham10000
+  [MISSING] process_FairAdaBN_resnet18/data/datasets/asosenge/derm7pt  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/derm7pt
+License(s): other
+Downloading derm7pt.zip to process_FairAdaBN_resnet18/data/datasets/asosenge/derm7pt
+
+  [DOWNLOADED] process_FairAdaBN_resnet18/data/datasets/asosenge/derm7pt
+  [MISSING] process_FairAdaBN_resnet18/data/datasets/mahdavi1202/skin-cancer  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/mahdavi1202/skin-cancer
+License(s): Attribution 4.0 International (CC BY 4.0)
+Downloading skin-cancer.zip to process_FairAdaBN_resnet18/data/datasets/mahdavi1202/skin-cancer
+
+  [DOWNLOADED] process_FairAdaBN_resnet18/data/datasets/mahdavi1202/skin-cancer
+  [MISSING] process_FairAdaBN_resnet18/data/datasets/sengenjih/isic2019  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/sengenjih/isic2019
+License(s): Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+Downloading isic2019.zip to process_FairAdaBN_resnet18/data/datasets/sengenjih/isic2019
+
+  [DOWNLOADED] process_FairAdaBN_resnet18/data/datasets/sengenjih/isic2019
+
+[CONVERT] Converting notebook to Python script...
+[PATCH] Redirecting Kaggle paths → cluster paths...
+  DATA_ROOT  → process_FairAdaBN_resnet18/data/datasets
+  WORK_ROOT  → process_FairAdaBN_resnet18/outputs
+  BB_CACHE   → process_FairAdaBN_resnet18/backbone_cache
+  Patch applied successfully.
+
+[RUN] Starting training — Tue May 26 12:10:27 AM CEST 2026
+=========================================
+Device: cuda
+CSV dir      : outputs/csvs
+Checkpoints  : outputs/checkpoints_FairAdaBN_resnet18
+Results      : outputs/results_FairAdaBN_resnet18
+Image roots:
+  hiba           : process_FairAdaBN_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images
+  fitzpatrick17k : process_FairAdaBN_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k
+  ham10000       : process_FairAdaBN_resnet18/data/datasets/asosenge/ham10000/HAM10000
+  derm7pt        : process_FairAdaBN_resnet18/data/datasets/asosenge/derm7pt/release_v0/images
+  padufes20      : process_FairAdaBN_resnet18/data/datasets/mahdavi1202/skin-cancer
+  isic2019       : process_FairAdaBN_resnet18/data/datasets/sengenjih/isic2019
+[INFO] Built image map for hiba: 1616 entries
+[INFO] Built image map for fitzpatrick17k: 16577 entries
+[INFO] Built image map for ham10000: 20030 entries
+[INFO] Built image map for derm7pt: 2013 entries
+[INFO] Built image map for padufes20: 2298 entries
+[INFO] Built image map for isic2019: 33569 entries
+[INFO] Loaded derm7pt paired eval set: 869 samples
+[INFO] Loaded padufes20 unpaired eval set: 2063 samples
+[INFO] Loaded isic2019 unpaired eval set: 27551 samples
+Train batches: 273, Val batches: 59
+Test batches: 59
+Cross-eval loaders: ['derm7pt', 'padufes20', 'isic2019']
+Downloading: "https://download.pytorch.org/models/resnet18-f37072fd.pth" to process_FairAdaBN_resnet18/backbone_cache/hub/checkpoints/resnet18-f37072fd.pth
+Ep   1/500  loss=3.6632  tr_acc=0.2619  val_acc=0.5569  val_f1=0.3400  spd_loss=0.2342  lr=1.70e-06
+Ep   2/500  loss=3.3435  tr_acc=0.3697  val_acc=0.5757  val_f1=0.3781  spd_loss=0.2825  lr=2.55e-06
+Ep   3/500  loss=3.0947  tr_acc=0.4106  val_acc=0.6029  val_f1=0.4099  spd_loss=0.2530  lr=3.40e-06
+Ep   4/500  loss=2.8870  tr_acc=0.4597  val_acc=0.6134  val_f1=0.4380  spd_loss=0.2375  lr=4.25e-06
+Ep   5/500  loss=2.7849  tr_acc=0.5024  val_acc=0.6051  val_f1=0.4400  spd_loss=0.2627  lr=5.10e-06
+Ep   6/500  loss=2.6353  tr_acc=0.5242  val_acc=0.6036  val_f1=0.4750  spd_loss=0.2741  lr=5.95e-06
+Ep   7/500  loss=2.5419  tr_acc=0.5419  val_acc=0.6353  val_f1=0.4892  spd_loss=0.2686  lr=6.80e-06
+Ep   8/500  loss=2.3905  tr_acc=0.5633  val_acc=0.6579  val_f1=0.5055  spd_loss=0.2550  lr=7.65e-06
+Ep   9/500  loss=2.3159  tr_acc=0.5871  val_acc=0.6247  val_f1=0.4955  spd_loss=0.2445  lr=8.50e-06
+Ep  10/500  loss=2.2843  tr_acc=0.6103  val_acc=0.6797  val_f1=0.5590  spd_loss=0.2807  lr=9.35e-06
+Ep  11/500  loss=2.1929  tr_acc=0.6101  val_acc=0.6375  val_f1=0.5355  spd_loss=0.2928  lr=1.02e-05
+Ep  12/500  loss=2.1798  tr_acc=0.6378  val_acc=0.6925  val_f1=0.5796  spd_loss=0.3037  lr=1.11e-05
+Ep  13/500  loss=2.0753  tr_acc=0.6510  val_acc=0.6827  val_f1=0.5755  spd_loss=0.2943  lr=1.19e-05
+Ep  14/500  loss=2.0597  tr_acc=0.6627  val_acc=0.6948  val_f1=0.5737  spd_loss=0.3193  lr=1.27e-05
+Ep  15/500  loss=1.9642  tr_acc=0.6738  val_acc=0.7023  val_f1=0.5963  spd_loss=0.3156  lr=1.36e-05
+Ep  16/500  loss=1.9260  tr_acc=0.6885  val_acc=0.7280  val_f1=0.5880  spd_loss=0.3255  lr=1.45e-05
+Ep  17/500  loss=1.8997  tr_acc=0.6957  val_acc=0.6903  val_f1=0.5921  spd_loss=0.3089  lr=1.53e-05
+Ep  18/500  loss=1.7636  tr_acc=0.7187  val_acc=0.7219  val_f1=0.6231  spd_loss=0.2926  lr=1.62e-05
+Ep  19/500  loss=1.7036  tr_acc=0.7206  val_acc=0.7423  val_f1=0.6254  spd_loss=0.3104  lr=1.70e-05
+Ep  20/500  loss=1.7100  tr_acc=0.7303  val_acc=0.7001  val_f1=0.5907  spd_loss=0.3239  lr=1.79e-05
+Ep  21/500  loss=1.6499  tr_acc=0.7429  val_acc=0.7521  val_f1=0.6418  spd_loss=0.3211  lr=1.87e-05
+Ep  22/500  loss=1.7057  tr_acc=0.7389  val_acc=0.7528  val_f1=0.6360  spd_loss=0.3235  lr=1.96e-05
+Ep  23/500  loss=1.5550  tr_acc=0.7509  val_acc=0.7400  val_f1=0.6329  spd_loss=0.3193  lr=2.04e-05
+Ep  24/500  loss=1.5483  tr_acc=0.7681  val_acc=0.7604  val_f1=0.6637  spd_loss=0.3302  lr=2.13e-05
+Ep  25/500  loss=1.5550  tr_acc=0.7736  val_acc=0.7611  val_f1=0.6498  spd_loss=0.3352  lr=2.21e-05
+Ep  26/500  loss=1.4782  tr_acc=0.7806  val_acc=0.7438  val_f1=0.6296  spd_loss=0.3276  lr=2.30e-05
+Ep  27/500  loss=1.4556  tr_acc=0.7942  val_acc=0.7536  val_f1=0.6433  spd_loss=0.3357  lr=2.38e-05
+Ep  28/500  loss=1.4024  tr_acc=0.7927  val_acc=0.7558  val_f1=0.6447  spd_loss=0.3153  lr=2.46e-05
+Ep  29/500  loss=1.4113  tr_acc=0.8083  val_acc=0.7634  val_f1=0.6463  spd_loss=0.3520  lr=2.55e-05
+Ep  30/500  loss=1.3717  tr_acc=0.8070  val_acc=0.7762  val_f1=0.6555  spd_loss=0.3278  lr=2.64e-05
+Ep  31/500  loss=1.3687  tr_acc=0.8159  val_acc=0.7649  val_f1=0.6662  spd_loss=0.3621  lr=2.72e-05
+Ep  32/500  loss=1.2648  tr_acc=0.8228  val_acc=0.7521  val_f1=0.6362  spd_loss=0.3481  lr=2.81e-05
+Ep  33/500  loss=1.3108  tr_acc=0.8323  val_acc=0.7415  val_f1=0.6430  spd_loss=0.3629  lr=2.89e-05
+Ep  34/500  loss=1.2779  tr_acc=0.8321  val_acc=0.7460  val_f1=0.6248  spd_loss=0.3380  lr=2.98e-05
+Ep  35/500  loss=1.1886  tr_acc=0.8438  val_acc=0.7566  val_f1=0.6517  spd_loss=0.3452  lr=3.06e-05
+Ep  36/500  loss=1.2262  tr_acc=0.8394  val_acc=0.7302  val_f1=0.6210  spd_loss=0.3499  lr=3.14e-05
+Ep  37/500  loss=1.2025  tr_acc=0.8503  val_acc=0.7596  val_f1=0.6324  spd_loss=0.3583  lr=3.23e-05
+Ep  38/500  loss=1.2052  tr_acc=0.8455  val_acc=0.7777  val_f1=0.6813  spd_loss=0.3512  lr=3.32e-05
+Ep  39/500  loss=1.0531  tr_acc=0.8597  val_acc=0.7438  val_f1=0.6401  spd_loss=0.3309  lr=3.40e-05
+Ep  40/500  loss=1.0797  tr_acc=0.8641  val_acc=0.7822  val_f1=0.6781  spd_loss=0.3627  lr=3.49e-05
+Ep  41/500  loss=1.0830  tr_acc=0.8653  val_acc=0.7694  val_f1=0.6548  spd_loss=0.3700  lr=3.57e-05
+Ep  42/500  loss=1.0834  tr_acc=0.8685  val_acc=0.7476  val_f1=0.6561  spd_loss=0.3484  lr=3.66e-05
+Ep  43/500  loss=1.0037  tr_acc=0.8763  val_acc=0.7280  val_f1=0.6429  spd_loss=0.3388  lr=3.74e-05
+Ep  44/500  loss=1.0077  tr_acc=0.8804  val_acc=0.7483  val_f1=0.6545  spd_loss=0.3329  lr=3.83e-05
+Ep  45/500  loss=1.0089  tr_acc=0.8783  val_acc=0.7905  val_f1=0.6911  spd_loss=0.3603  lr=3.91e-05
+Ep  46/500  loss=1.0631  tr_acc=0.8792  val_acc=0.7702  val_f1=0.6634  spd_loss=0.4004  lr=4.00e-05
+Ep  47/500  loss=0.9195  tr_acc=0.8891  val_acc=0.7913  val_f1=0.6917  spd_loss=0.3449  lr=4.08e-05
+Ep  48/500  loss=0.9782  tr_acc=0.8861  val_acc=0.7769  val_f1=0.6663  spd_loss=0.3697  lr=4.17e-05
+Ep  49/500  loss=0.9077  tr_acc=0.8925  val_acc=0.7762  val_f1=0.6799  spd_loss=0.3696  lr=4.25e-05
+Ep  50/500  loss=0.9041  tr_acc=0.8923  val_acc=0.7671  val_f1=0.6764  spd_loss=0.3503  lr=4.34e-05
+Ep  51/500  loss=0.8726  tr_acc=0.9052  val_acc=0.7732  val_f1=0.6556  spd_loss=0.3513  lr=4.42e-05
+Ep  52/500  loss=0.8926  tr_acc=0.8978  val_acc=0.7845  val_f1=0.6710  spd_loss=0.3613  lr=4.51e-05
+Ep  53/500  loss=0.8481  tr_acc=0.9071  val_acc=0.7882  val_f1=0.6969  spd_loss=0.3689  lr=4.59e-05
+Ep  54/500  loss=0.9700  tr_acc=0.9065  val_acc=0.7566  val_f1=0.6434  spd_loss=0.3706  lr=4.68e-05
+Ep  55/500  loss=0.8623  tr_acc=0.9026  val_acc=0.7573  val_f1=0.6484  spd_loss=0.3662  lr=4.76e-05
+Ep  56/500  loss=0.8918  tr_acc=0.9033  val_acc=0.7671  val_f1=0.6409  spd_loss=0.3450  lr=4.84e-05
+Ep  57/500  loss=0.8637  tr_acc=0.9082  val_acc=0.7784  val_f1=0.6976  spd_loss=0.3700  lr=4.93e-05
+Ep  58/500  loss=0.7862  tr_acc=0.9180  val_acc=0.7739  val_f1=0.6898  spd_loss=0.3649  lr=5.01e-05
+Ep  59/500  loss=0.8622  tr_acc=0.9144  val_acc=0.7671  val_f1=0.6790  spd_loss=0.3764  lr=5.10e-05
+Ep  60/500  loss=0.8667  tr_acc=0.9149  val_acc=0.7634  val_f1=0.6540  spd_loss=0.3924  lr=5.18e-05
+Ep  61/500  loss=0.8321  tr_acc=0.9194  val_acc=0.7596  val_f1=0.6676  spd_loss=0.3750  lr=5.27e-05
+Ep  62/500  loss=0.8329  tr_acc=0.9130  val_acc=0.7144  val_f1=0.6567  spd_loss=0.3705  lr=5.36e-05
+Ep  63/500  loss=0.8469  tr_acc=0.9166  val_acc=0.7807  val_f1=0.6701  spd_loss=0.3746  lr=5.44e-05
+Ep  64/500  loss=0.9268  tr_acc=0.9186  val_acc=0.7822  val_f1=0.6649  spd_loss=0.3801  lr=5.53e-05
+Ep  65/500  loss=0.7349  tr_acc=0.9248  val_acc=0.7649  val_f1=0.6417  spd_loss=0.3839  lr=5.61e-05
+Ep  66/500  loss=0.8385  tr_acc=0.9243  val_acc=0.7950  val_f1=0.6985  spd_loss=0.4015  lr=5.70e-05
+Ep  67/500  loss=0.7837  tr_acc=0.9286  val_acc=0.7784  val_f1=0.6730  spd_loss=0.3865  lr=5.78e-05
+Ep  68/500  loss=0.7861  tr_acc=0.9307  val_acc=0.7852  val_f1=0.6850  spd_loss=0.3665  lr=5.87e-05
+Ep  69/500  loss=0.7760  tr_acc=0.9278  val_acc=0.7784  val_f1=0.7044  spd_loss=0.3837  lr=5.95e-05
+Ep  70/500  loss=0.7743  tr_acc=0.9245  val_acc=0.7212  val_f1=0.6595  spd_loss=0.3621  lr=6.04e-05
+Ep  71/500  loss=0.8072  tr_acc=0.9223  val_acc=0.7626  val_f1=0.6637  spd_loss=0.3694  lr=6.12e-05
+Ep  72/500  loss=0.7665  tr_acc=0.9283  val_acc=0.7958  val_f1=0.6901  spd_loss=0.3985  lr=6.21e-05
+Ep  73/500  loss=0.7535  tr_acc=0.9258  val_acc=0.7965  val_f1=0.6975  spd_loss=0.3577  lr=6.29e-05
+Ep  74/500  loss=0.7952  tr_acc=0.9336  val_acc=0.7898  val_f1=0.7095  spd_loss=0.3917  lr=6.38e-05
+Ep  75/500  loss=0.7626  tr_acc=0.9323  val_acc=0.7830  val_f1=0.6891  spd_loss=0.3526  lr=6.46e-05
+Ep  76/500  loss=0.7547  tr_acc=0.9312  val_acc=0.7965  val_f1=0.6881  spd_loss=0.3849  lr=6.55e-05
+Ep  77/500  loss=0.7470  tr_acc=0.9389  val_acc=0.7762  val_f1=0.6875  spd_loss=0.3885  lr=6.63e-05
+Ep  78/500  loss=0.7174  tr_acc=0.9341  val_acc=0.8086  val_f1=0.7184  spd_loss=0.3909  lr=6.72e-05
+Ep  79/500  loss=0.7504  tr_acc=0.9309  val_acc=0.7762  val_f1=0.6715  spd_loss=0.3778  lr=6.80e-05
+Ep  80/500  loss=0.7612  tr_acc=0.9344  val_acc=0.7687  val_f1=0.6674  spd_loss=0.3936  lr=6.89e-05
+Ep  81/500  loss=0.7326  tr_acc=0.9383  val_acc=0.7913  val_f1=0.7144  spd_loss=0.3860  lr=6.97e-05
+Ep  82/500  loss=0.7145  tr_acc=0.9348  val_acc=0.8018  val_f1=0.7109  spd_loss=0.4008  lr=7.06e-05
+Ep  83/500  loss=0.7104  tr_acc=0.9445  val_acc=0.7882  val_f1=0.7000  spd_loss=0.3944  lr=7.14e-05
+Ep  84/500  loss=0.7131  tr_acc=0.9384  val_acc=0.7664  val_f1=0.6881  spd_loss=0.3906  lr=7.23e-05
+Ep  85/500  loss=0.7332  tr_acc=0.9384  val_acc=0.7325  val_f1=0.6718  spd_loss=0.3751  lr=7.31e-05
+Ep  86/500  loss=0.6955  tr_acc=0.9372  val_acc=0.7784  val_f1=0.6990  spd_loss=0.3954  lr=7.40e-05
+Ep  87/500  loss=0.7196  tr_acc=0.9393  val_acc=0.7928  val_f1=0.7055  spd_loss=0.3761  lr=7.48e-05
+Ep  88/500  loss=0.7562  tr_acc=0.9391  val_acc=0.7769  val_f1=0.6771  spd_loss=0.3847  lr=7.57e-05
+Ep  89/500  loss=0.6266  tr_acc=0.9437  val_acc=0.7973  val_f1=0.7007  spd_loss=0.3639  lr=7.65e-05
+Ep  90/500  loss=0.7159  tr_acc=0.9428  val_acc=0.7664  val_f1=0.6993  spd_loss=0.3800  lr=7.74e-05
+Ep  91/500  loss=0.7915  tr_acc=0.9393  val_acc=0.8003  val_f1=0.7081  spd_loss=0.4101  lr=7.82e-05
+Ep  92/500  loss=0.6564  tr_acc=0.9440  val_acc=0.7898  val_f1=0.6819  spd_loss=0.3414  lr=7.91e-05
+Ep  93/500  loss=0.6949  tr_acc=0.9447  val_acc=0.7860  val_f1=0.6691  spd_loss=0.4020  lr=7.99e-05
+Ep  94/500  loss=0.6841  tr_acc=0.9447  val_acc=0.7815  val_f1=0.6681  spd_loss=0.3915  lr=8.07e-05
+Ep  95/500  loss=0.6484  tr_acc=0.9456  val_acc=0.7882  val_f1=0.6896  spd_loss=0.3740  lr=8.16e-05
+Ep  96/500  loss=0.6803  tr_acc=0.9425  val_acc=0.8018  val_f1=0.6982  spd_loss=0.3851  lr=8.24e-05
+Ep  97/500  loss=0.6408  tr_acc=0.9527  val_acc=0.7739  val_f1=0.6775  spd_loss=0.3786  lr=8.33e-05
+Ep  98/500  loss=0.6926  tr_acc=0.9434  val_acc=0.7867  val_f1=0.6772  spd_loss=0.3737  lr=8.41e-05
+Ep  99/500  loss=0.6409  tr_acc=0.9464  val_acc=0.7913  val_f1=0.6901  spd_loss=0.3661  lr=8.50e-05
+Ep 100/500  loss=0.6697  tr_acc=0.9459  val_acc=0.7845  val_f1=0.6793  spd_loss=0.4119  lr=8.50e-05
+Ep 101/500  loss=0.6187  tr_acc=0.9509  val_acc=0.7928  val_f1=0.6993  spd_loss=0.3784  lr=8.50e-05
+Ep 102/500  loss=0.6977  tr_acc=0.9453  val_acc=0.7679  val_f1=0.6555  spd_loss=0.3965  lr=8.50e-05
+Ep 103/500  loss=0.6500  tr_acc=0.9485  val_acc=0.7807  val_f1=0.6877  spd_loss=0.3972  lr=8.50e-05
+Ep 104/500  loss=0.6037  tr_acc=0.9557  val_acc=0.8033  val_f1=0.7114  spd_loss=0.3921  lr=8.50e-05
+Ep 105/500  loss=0.6508  tr_acc=0.9515  val_acc=0.7671  val_f1=0.6755  spd_loss=0.4030  lr=8.50e-05
+Ep 106/500  loss=0.6404  tr_acc=0.9517  val_acc=0.7882  val_f1=0.6785  spd_loss=0.3925  lr=8.50e-05
+Ep 107/500  loss=0.6370  tr_acc=0.9526  val_acc=0.7988  val_f1=0.7247  spd_loss=0.3691  lr=8.49e-05
+Ep 108/500  loss=0.6389  tr_acc=0.9565  val_acc=0.7566  val_f1=0.6944  spd_loss=0.3893  lr=8.49e-05
+Ep 109/500  loss=0.6039  tr_acc=0.9538  val_acc=0.7958  val_f1=0.7044  spd_loss=0.3780  lr=8.49e-05
+Ep 110/500  loss=0.5680  tr_acc=0.9597  val_acc=0.7634  val_f1=0.6851  spd_loss=0.3814  lr=8.49e-05
+Ep 111/500  loss=0.5976  tr_acc=0.9580  val_acc=0.8033  val_f1=0.7126  spd_loss=0.3692  lr=8.48e-05
+Ep 112/500  loss=0.6043  tr_acc=0.9594  val_acc=0.7641  val_f1=0.6928  spd_loss=0.3950  lr=8.48e-05
+Ep 113/500  loss=0.6194  tr_acc=0.9554  val_acc=0.8026  val_f1=0.7077  spd_loss=0.3985  lr=8.48e-05
+Ep 114/500  loss=0.5764  tr_acc=0.9607  val_acc=0.7965  val_f1=0.6957  spd_loss=0.3895  lr=8.47e-05
+Ep 115/500  loss=0.5811  tr_acc=0.9594  val_acc=0.8071  val_f1=0.7210  spd_loss=0.3724  lr=8.47e-05
+Ep 116/500  loss=0.6114  tr_acc=0.9621  val_acc=0.7890  val_f1=0.6942  spd_loss=0.4130  lr=8.47e-05
+Ep 117/500  loss=0.6211  tr_acc=0.9576  val_acc=0.7980  val_f1=0.7130  spd_loss=0.3887  lr=8.46e-05
+Ep 118/500  loss=0.6108  tr_acc=0.9660  val_acc=0.8011  val_f1=0.7113  spd_loss=0.4153  lr=8.46e-05
+Ep 119/500  loss=0.5746  tr_acc=0.9609  val_acc=0.7800  val_f1=0.6932  spd_loss=0.3878  lr=8.45e-05
+Ep 120/500  loss=0.6166  tr_acc=0.9621  val_acc=0.8071  val_f1=0.7120  spd_loss=0.3725  lr=8.45e-05
+Ep 121/500  loss=0.5721  tr_acc=0.9694  val_acc=0.7943  val_f1=0.7291  spd_loss=0.3789  lr=8.44e-05
+Ep 122/500  loss=0.5739  tr_acc=0.9708  val_acc=0.7845  val_f1=0.6879  spd_loss=0.4013  lr=8.44e-05
+Ep 123/500  loss=0.5453  tr_acc=0.9647  val_acc=0.7950  val_f1=0.6920  spd_loss=0.3762  lr=8.43e-05
+Ep 124/500  loss=0.5782  tr_acc=0.9641  val_acc=0.7913  val_f1=0.7109  spd_loss=0.3898  lr=8.42e-05
+Ep 125/500  loss=0.6025  tr_acc=0.9643  val_acc=0.7882  val_f1=0.6938  spd_loss=0.3916  lr=8.42e-05
+Ep 126/500  loss=0.6188  tr_acc=0.9675  val_acc=0.8056  val_f1=0.7138  spd_loss=0.4076  lr=8.41e-05
+Ep 127/500  loss=0.5786  tr_acc=0.9651  val_acc=0.7988  val_f1=0.7013  spd_loss=0.4081  lr=8.40e-05
+Ep 128/500  loss=0.5963  tr_acc=0.9685  val_acc=0.7950  val_f1=0.6987  spd_loss=0.3842  lr=8.40e-05
+Ep 129/500  loss=0.5915  tr_acc=0.9683  val_acc=0.8011  val_f1=0.7166  spd_loss=0.3958  lr=8.39e-05
+Ep 130/500  loss=0.6363  tr_acc=0.9665  val_acc=0.8154  val_f1=0.7342  spd_loss=0.4123  lr=8.38e-05
+Ep 131/500  loss=0.5438  tr_acc=0.9655  val_acc=0.7784  val_f1=0.6814  spd_loss=0.3723  lr=8.37e-05
+Ep 132/500  loss=0.5702  tr_acc=0.9689  val_acc=0.8101  val_f1=0.7222  spd_loss=0.3976  lr=8.37e-05
+Ep 133/500  loss=0.5412  tr_acc=0.9686  val_acc=0.7852  val_f1=0.7118  spd_loss=0.3751  lr=8.36e-05
+Ep 134/500  loss=0.5445  tr_acc=0.9731  val_acc=0.8071  val_f1=0.7121  spd_loss=0.3610  lr=8.35e-05
+Ep 135/500  loss=0.5876  tr_acc=0.9664  val_acc=0.7988  val_f1=0.7069  spd_loss=0.3880  lr=8.34e-05
+Ep 136/500  loss=0.5168  tr_acc=0.9748  val_acc=0.7852  val_f1=0.6973  spd_loss=0.3811  lr=8.33e-05
+Ep 137/500  loss=0.5390  tr_acc=0.9709  val_acc=0.8033  val_f1=0.7111  spd_loss=0.3942  lr=8.32e-05
+Ep 138/500  loss=0.5889  tr_acc=0.9675  val_acc=0.7830  val_f1=0.6738  spd_loss=0.4032  lr=8.31e-05
+Ep 139/500  loss=0.5933  tr_acc=0.9675  val_acc=0.7928  val_f1=0.7225  spd_loss=0.4433  lr=8.30e-05
+Ep 140/500  loss=0.5984  tr_acc=0.9709  val_acc=0.7935  val_f1=0.7072  spd_loss=0.3968  lr=8.29e-05
+Ep 141/500  loss=0.5027  tr_acc=0.9769  val_acc=0.8146  val_f1=0.7325  spd_loss=0.3958  lr=8.28e-05
+Ep 142/500  loss=0.5722  tr_acc=0.9730  val_acc=0.7973  val_f1=0.7169  spd_loss=0.4106  lr=8.27e-05
+Ep 143/500  loss=0.5322  tr_acc=0.9746  val_acc=0.7928  val_f1=0.6965  spd_loss=0.3899  lr=8.26e-05
+Ep 144/500  loss=0.5280  tr_acc=0.9752  val_acc=0.8071  val_f1=0.7122  spd_loss=0.3718  lr=8.25e-05
+Ep 145/500  loss=0.5868  tr_acc=0.9748  val_acc=0.8003  val_f1=0.7095  spd_loss=0.4368  lr=8.24e-05
+Ep 146/500  loss=0.5551  tr_acc=0.9741  val_acc=0.7935  val_f1=0.7037  spd_loss=0.3730  lr=8.23e-05
+Ep 147/500  loss=0.5361  tr_acc=0.9757  val_acc=0.7958  val_f1=0.7010  spd_loss=0.3948  lr=8.21e-05
+Ep 148/500  loss=0.5526  tr_acc=0.9754  val_acc=0.8011  val_f1=0.7142  spd_loss=0.3886  lr=8.20e-05
+Ep 149/500  loss=0.5247  tr_acc=0.9780  val_acc=0.8146  val_f1=0.7379  spd_loss=0.3763  lr=8.19e-05
+Ep 150/500  loss=0.5294  tr_acc=0.9776  val_acc=0.8026  val_f1=0.7131  spd_loss=0.3927  lr=8.18e-05
+Ep 151/500  loss=0.5161  tr_acc=0.9776  val_acc=0.7988  val_f1=0.7102  spd_loss=0.4103  lr=8.16e-05
+Ep 152/500  loss=0.5163  tr_acc=0.9777  val_acc=0.8093  val_f1=0.7265  spd_loss=0.3999  lr=8.15e-05
+Ep 153/500  loss=0.5393  tr_acc=0.9771  val_acc=0.7875  val_f1=0.7121  spd_loss=0.3831  lr=8.14e-05
+Ep 154/500  loss=0.5397  tr_acc=0.9786  val_acc=0.7965  val_f1=0.7188  spd_loss=0.4379  lr=8.12e-05
+Ep 155/500  loss=0.5919  tr_acc=0.9732  val_acc=0.7890  val_f1=0.6948  spd_loss=0.3961  lr=8.11e-05
+Ep 156/500  loss=0.4915  tr_acc=0.9783  val_acc=0.8033  val_f1=0.7256  spd_loss=0.3955  lr=8.10e-05
+Ep 157/500  loss=0.5380  tr_acc=0.9800  val_acc=0.8048  val_f1=0.7217  spd_loss=0.4141  lr=8.08e-05
+Ep 158/500  loss=0.5485  tr_acc=0.9778  val_acc=0.7965  val_f1=0.7195  spd_loss=0.4146  lr=8.07e-05
+Ep 159/500  loss=0.5040  tr_acc=0.9794  val_acc=0.8033  val_f1=0.7149  spd_loss=0.3781  lr=8.05e-05
+Ep 160/500  loss=0.5246  tr_acc=0.9739  val_acc=0.7995  val_f1=0.7132  spd_loss=0.3954  lr=8.04e-05
+Ep 161/500  loss=0.4967  tr_acc=0.9797  val_acc=0.7732  val_f1=0.6931  spd_loss=0.3998  lr=8.02e-05
+Ep 162/500  loss=0.4782  tr_acc=0.9828  val_acc=0.7958  val_f1=0.6956  spd_loss=0.3806  lr=8.01e-05
+Ep 163/500  loss=0.4622  tr_acc=0.9793  val_acc=0.8154  val_f1=0.7329  spd_loss=0.3635  lr=7.99e-05
+Ep 164/500  loss=0.4739  tr_acc=0.9795  val_acc=0.8161  val_f1=0.7328  spd_loss=0.3750  lr=7.97e-05
+Ep 165/500  loss=0.4594  tr_acc=0.9814  val_acc=0.7928  val_f1=0.7079  spd_loss=0.3809  lr=7.96e-05
+Ep 166/500  loss=0.4822  tr_acc=0.9823  val_acc=0.7988  val_f1=0.7149  spd_loss=0.3907  lr=7.94e-05
+Ep 167/500  loss=0.4889  tr_acc=0.9840  val_acc=0.8041  val_f1=0.7207  spd_loss=0.4018  lr=7.93e-05
+Ep 168/500  loss=0.5468  tr_acc=0.9817  val_acc=0.8026  val_f1=0.7089  spd_loss=0.3920  lr=7.91e-05
+Ep 169/500  loss=0.4740  tr_acc=0.9842  val_acc=0.7792  val_f1=0.6960  spd_loss=0.3675  lr=7.89e-05
+Ep 170/500  loss=0.5091  tr_acc=0.9825  val_acc=0.8056  val_f1=0.7291  spd_loss=0.4035  lr=7.87e-05
+Ep 171/500  loss=0.5046  tr_acc=0.9809  val_acc=0.8048  val_f1=0.7175  spd_loss=0.4097  lr=7.86e-05
+Ep 172/500  loss=0.4830  tr_acc=0.9821  val_acc=0.8033  val_f1=0.7192  spd_loss=0.3611  lr=7.84e-05
+Ep 173/500  loss=0.4905  tr_acc=0.9809  val_acc=0.7898  val_f1=0.7113  spd_loss=0.3922  lr=7.82e-05
+Ep 174/500  loss=0.4508  tr_acc=0.9817  val_acc=0.8093  val_f1=0.7175  spd_loss=0.3737  lr=7.80e-05
+Ep 175/500  loss=0.4910  tr_acc=0.9831  val_acc=0.8086  val_f1=0.7412  spd_loss=0.3864  lr=7.78e-05
+Ep 176/500  loss=0.4655  tr_acc=0.9849  val_acc=0.8056  val_f1=0.7089  spd_loss=0.3781  lr=7.77e-05
+Ep 177/500  loss=0.4772  tr_acc=0.9848  val_acc=0.7837  val_f1=0.6992  spd_loss=0.3899  lr=7.75e-05
+Ep 178/500  loss=0.4689  tr_acc=0.9812  val_acc=0.7965  val_f1=0.7030  spd_loss=0.3838  lr=7.73e-05
+Ep 179/500  loss=0.5119  tr_acc=0.9811  val_acc=0.7980  val_f1=0.7129  spd_loss=0.4043  lr=7.71e-05
+Ep 180/500  loss=0.4913  tr_acc=0.9845  val_acc=0.8093  val_f1=0.7234  spd_loss=0.3876  lr=7.69e-05
+Ep 181/500  loss=0.4941  tr_acc=0.9842  val_acc=0.7980  val_f1=0.6992  spd_loss=0.4132  lr=7.67e-05
+Ep 182/500  loss=0.5173  tr_acc=0.9863  val_acc=0.8011  val_f1=0.7140  spd_loss=0.4117  lr=7.65e-05
+Ep 183/500  loss=0.4954  tr_acc=0.9835  val_acc=0.8206  val_f1=0.7439  spd_loss=0.4009  lr=7.63e-05
+Ep 184/500  loss=0.4944  tr_acc=0.9840  val_acc=0.7988  val_f1=0.7318  spd_loss=0.3888  lr=7.61e-05
+Ep 185/500  loss=0.4990  tr_acc=0.9852  val_acc=0.8056  val_f1=0.7107  spd_loss=0.4046  lr=7.59e-05
+Ep 186/500  loss=0.4941  tr_acc=0.9868  val_acc=0.7943  val_f1=0.7040  spd_loss=0.4218  lr=7.57e-05
+Ep 187/500  loss=0.4834  tr_acc=0.9857  val_acc=0.7995  val_f1=0.6949  spd_loss=0.4087  lr=7.55e-05
+Ep 188/500  loss=0.5555  tr_acc=0.9829  val_acc=0.8011  val_f1=0.7044  spd_loss=0.4152  lr=7.52e-05
+Ep 189/500  loss=0.5402  tr_acc=0.9860  val_acc=0.7943  val_f1=0.6943  spd_loss=0.3925  lr=7.50e-05
+Ep 190/500  loss=0.4673  tr_acc=0.9883  val_acc=0.8078  val_f1=0.7139  spd_loss=0.4006  lr=7.48e-05
+Ep 191/500  loss=0.4915  tr_acc=0.9870  val_acc=0.7980  val_f1=0.7190  spd_loss=0.4035  lr=7.46e-05
+Ep 192/500  loss=0.4875  tr_acc=0.9878  val_acc=0.8078  val_f1=0.7191  spd_loss=0.4008  lr=7.44e-05
+Ep 193/500  loss=0.5011  tr_acc=0.9857  val_acc=0.7875  val_f1=0.6882  spd_loss=0.4139  lr=7.42e-05
+Ep 194/500  loss=0.4937  tr_acc=0.9868  val_acc=0.7830  val_f1=0.6811  spd_loss=0.4082  lr=7.39e-05
+Ep 195/500  loss=0.5037  tr_acc=0.9859  val_acc=0.7973  val_f1=0.7080  spd_loss=0.4318  lr=7.37e-05
+Ep 196/500  loss=0.4905  tr_acc=0.9866  val_acc=0.7980  val_f1=0.7110  spd_loss=0.4182  lr=7.35e-05
+Ep 197/500  loss=0.4923  tr_acc=0.9856  val_acc=0.7905  val_f1=0.6901  spd_loss=0.4003  lr=7.33e-05
+Ep 198/500  loss=0.4807  tr_acc=0.9868  val_acc=0.8078  val_f1=0.7181  spd_loss=0.4221  lr=7.30e-05
+Ep 199/500  loss=0.4953  tr_acc=0.9876  val_acc=0.8063  val_f1=0.7251  spd_loss=0.4211  lr=7.28e-05
+Ep 200/500  loss=0.5130  tr_acc=0.9861  val_acc=0.8071  val_f1=0.7193  spd_loss=0.3793  lr=7.26e-05
+Ep 201/500  loss=0.4882  tr_acc=0.9846  val_acc=0.7905  val_f1=0.7040  spd_loss=0.4035  lr=7.23e-05
+Ep 202/500  loss=0.4284  tr_acc=0.9896  val_acc=0.7995  val_f1=0.6987  spd_loss=0.3786  lr=7.21e-05
+Ep 203/500  loss=0.4477  tr_acc=0.9897  val_acc=0.8063  val_f1=0.7258  spd_loss=0.3898  lr=7.18e-05
+Ep 204/500  loss=0.4705  tr_acc=0.9876  val_acc=0.7913  val_f1=0.7076  spd_loss=0.3952  lr=7.16e-05
+Ep 205/500  loss=0.4905  tr_acc=0.9878  val_acc=0.7950  val_f1=0.7108  spd_loss=0.4008  lr=7.13e-05
+Ep 206/500  loss=0.4852  tr_acc=0.9863  val_acc=0.7928  val_f1=0.7068  spd_loss=0.3907  lr=7.11e-05
+Ep 207/500  loss=0.4400  tr_acc=0.9888  val_acc=0.8131  val_f1=0.7318  spd_loss=0.3660  lr=7.09e-05
+Ep 208/500  loss=0.4984  tr_acc=0.9899  val_acc=0.7950  val_f1=0.6955  spd_loss=0.4152  lr=7.06e-05
+Ep 209/500  loss=0.4844  tr_acc=0.9888  val_acc=0.7815  val_f1=0.6942  spd_loss=0.3976  lr=7.04e-05
+Ep 210/500  loss=0.4986  tr_acc=0.9874  val_acc=0.8154  val_f1=0.7390  spd_loss=0.3949  lr=7.01e-05
+Ep 211/500  loss=0.4502  tr_acc=0.9895  val_acc=0.8176  val_f1=0.7332  spd_loss=0.4013  lr=6.98e-05
+Ep 212/500  loss=0.4512  tr_acc=0.9907  val_acc=0.8033  val_f1=0.7121  spd_loss=0.4112  lr=6.96e-05
+Ep 213/500  loss=0.4810  tr_acc=0.9923  val_acc=0.8116  val_f1=0.7388  spd_loss=0.4157  lr=6.93e-05
+Ep 214/500  loss=0.4525  tr_acc=0.9896  val_acc=0.7875  val_f1=0.6992  spd_loss=0.4048  lr=6.91e-05
+Ep 215/500  loss=0.4441  tr_acc=0.9895  val_acc=0.7973  val_f1=0.7075  spd_loss=0.3776  lr=6.88e-05
+Ep 216/500  loss=0.4205  tr_acc=0.9910  val_acc=0.8033  val_f1=0.7086  spd_loss=0.3754  lr=6.85e-05
+Ep 217/500  loss=0.5048  tr_acc=0.9903  val_acc=0.8063  val_f1=0.7242  spd_loss=0.3910  lr=6.83e-05
+Ep 218/500  loss=0.4622  tr_acc=0.9887  val_acc=0.8109  val_f1=0.7193  spd_loss=0.3852  lr=6.80e-05
+Ep 219/500  loss=0.4864  tr_acc=0.9888  val_acc=0.8033  val_f1=0.7181  spd_loss=0.4169  lr=6.78e-05
+Ep 220/500  loss=0.4513  tr_acc=0.9892  val_acc=0.8071  val_f1=0.7308  spd_loss=0.3863  lr=6.75e-05
+Ep 221/500  loss=0.4318  tr_acc=0.9911  val_acc=0.8093  val_f1=0.7227  spd_loss=0.3824  lr=6.72e-05
+Ep 222/500  loss=0.4971  tr_acc=0.9921  val_acc=0.8154  val_f1=0.7413  spd_loss=0.4285  lr=6.69e-05
+Ep 223/500  loss=0.5023  tr_acc=0.9891  val_acc=0.8033  val_f1=0.7140  spd_loss=0.4034  lr=6.67e-05
+Ep 224/500  loss=0.4784  tr_acc=0.9917  val_acc=0.8063  val_f1=0.7172  spd_loss=0.4069  lr=6.64e-05
+Ep 225/500  loss=0.5049  tr_acc=0.9908  val_acc=0.8176  val_f1=0.7366  spd_loss=0.4143  lr=6.61e-05
+Ep 226/500  loss=0.4089  tr_acc=0.9928  val_acc=0.8071  val_f1=0.7145  spd_loss=0.3793  lr=6.58e-05
+Ep 227/500  loss=0.4503  tr_acc=0.9920  val_acc=0.8124  val_f1=0.7239  spd_loss=0.4066  lr=6.56e-05
+Ep 228/500  loss=0.4580  tr_acc=0.9923  val_acc=0.8139  val_f1=0.7249  spd_loss=0.4050  lr=6.53e-05
+Ep 229/500  loss=0.4728  tr_acc=0.9895  val_acc=0.8146  val_f1=0.7219  spd_loss=0.4156  lr=6.50e-05
+Ep 230/500  loss=0.4779  tr_acc=0.9905  val_acc=0.8146  val_f1=0.7322  spd_loss=0.4107  lr=6.47e-05
+Ep 231/500  loss=0.4807  tr_acc=0.9939  val_acc=0.8124  val_f1=0.7292  spd_loss=0.4405  lr=6.44e-05
+Ep 232/500  loss=0.4745  tr_acc=0.9931  val_acc=0.8176  val_f1=0.7446  spd_loss=0.4348  lr=6.41e-05
+Ep 233/500  loss=0.4630  tr_acc=0.9920  val_acc=0.8026  val_f1=0.7125  spd_loss=0.4185  lr=6.38e-05
+Ep 234/500  loss=0.4894  tr_acc=0.9907  val_acc=0.8131  val_f1=0.7248  spd_loss=0.4101  lr=6.36e-05
+Ep 235/500  loss=0.4080  tr_acc=0.9942  val_acc=0.8191  val_f1=0.7309  spd_loss=0.3799  lr=6.33e-05
+Ep 236/500  loss=0.4959  tr_acc=0.9915  val_acc=0.8071  val_f1=0.7175  spd_loss=0.4131  lr=6.30e-05
+Ep 237/500  loss=0.4704  tr_acc=0.9923  val_acc=0.8063  val_f1=0.7227  spd_loss=0.4095  lr=6.27e-05
+Ep 238/500  loss=0.4759  tr_acc=0.9942  val_acc=0.8206  val_f1=0.7348  spd_loss=0.3925  lr=6.24e-05
+Ep 239/500  loss=0.4553  tr_acc=0.9930  val_acc=0.8131  val_f1=0.7299  spd_loss=0.4301  lr=6.21e-05
+Ep 240/500  loss=0.4388  tr_acc=0.9938  val_acc=0.8116  val_f1=0.7174  spd_loss=0.4040  lr=6.18e-05
+Ep 241/500  loss=0.4778  tr_acc=0.9924  val_acc=0.8124  val_f1=0.7276  spd_loss=0.4017  lr=6.15e-05
+Ep 242/500  loss=0.4691  tr_acc=0.9918  val_acc=0.8086  val_f1=0.7303  spd_loss=0.3906  lr=6.12e-05
+Ep 243/500  loss=0.4410  tr_acc=0.9915  val_acc=0.8086  val_f1=0.7028  spd_loss=0.3986  lr=6.09e-05
+Ep 244/500  loss=0.4507  tr_acc=0.9933  val_acc=0.7973  val_f1=0.7123  spd_loss=0.4193  lr=6.06e-05
+Ep 245/500  loss=0.4170  tr_acc=0.9927  val_acc=0.8026  val_f1=0.7144  spd_loss=0.3730  lr=6.03e-05
+Ep 246/500  loss=0.4312  tr_acc=0.9931  val_acc=0.7995  val_f1=0.6940  spd_loss=0.3894  lr=6.00e-05
+Ep 247/500  loss=0.4713  tr_acc=0.9929  val_acc=0.8026  val_f1=0.7064  spd_loss=0.4377  lr=5.97e-05
+Ep 248/500  loss=0.4676  tr_acc=0.9931  val_acc=0.7943  val_f1=0.7029  spd_loss=0.4363  lr=5.94e-05
+Ep 249/500  loss=0.4513  tr_acc=0.9921  val_acc=0.8124  val_f1=0.7308  spd_loss=0.3985  lr=5.91e-05
+Ep 250/500  loss=0.4638  tr_acc=0.9924  val_acc=0.8086  val_f1=0.7163  spd_loss=0.4089  lr=5.88e-05
+Ep 251/500  loss=0.4853  tr_acc=0.9931  val_acc=0.8146  val_f1=0.7431  spd_loss=0.4043  lr=5.85e-05
+Ep 252/500  loss=0.4239  tr_acc=0.9915  val_acc=0.8191  val_f1=0.7425  spd_loss=0.3856  lr=5.81e-05
+Ep 253/500  loss=0.4010  tr_acc=0.9945  val_acc=0.8206  val_f1=0.7278  spd_loss=0.3763  lr=5.78e-05
+Ep 254/500  loss=0.4298  tr_acc=0.9932  val_acc=0.8056  val_f1=0.7276  spd_loss=0.3945  lr=5.75e-05
+Ep 255/500  loss=0.4946  tr_acc=0.9957  val_acc=0.8003  val_f1=0.7190  spd_loss=0.4415  lr=5.72e-05
+Ep 256/500  loss=0.4604  tr_acc=0.9937  val_acc=0.8086  val_f1=0.7250  spd_loss=0.4128  lr=5.69e-05
+Ep 257/500  loss=0.4477  tr_acc=0.9939  val_acc=0.8101  val_f1=0.7305  spd_loss=0.4040  lr=5.66e-05
+Ep 258/500  loss=0.4475  tr_acc=0.9934  val_acc=0.8176  val_f1=0.7371  spd_loss=0.4015  lr=5.63e-05
+Ep 259/500  loss=0.4340  tr_acc=0.9946  val_acc=0.7995  val_f1=0.7050  spd_loss=0.4085  lr=5.60e-05
+Ep 260/500  loss=0.4170  tr_acc=0.9955  val_acc=0.7995  val_f1=0.7148  spd_loss=0.3865  lr=5.56e-05
+Ep 261/500  loss=0.4554  tr_acc=0.9930  val_acc=0.8063  val_f1=0.7223  spd_loss=0.3839  lr=5.53e-05
+Ep 262/500  loss=0.4440  tr_acc=0.9940  val_acc=0.7973  val_f1=0.6965  spd_loss=0.4085  lr=5.50e-05
+Ep 263/500  loss=0.4505  tr_acc=0.9939  val_acc=0.8139  val_f1=0.7216  spd_loss=0.4173  lr=5.47e-05
+Ep 264/500  loss=0.4498  tr_acc=0.9944  val_acc=0.8169  val_f1=0.7322  spd_loss=0.4246  lr=5.44e-05
+Ep 265/500  loss=0.4474  tr_acc=0.9953  val_acc=0.8124  val_f1=0.7274  spd_loss=0.4199  lr=5.40e-05
+Ep 266/500  loss=0.4156  tr_acc=0.9952  val_acc=0.7950  val_f1=0.7153  spd_loss=0.3950  lr=5.37e-05
+Ep 267/500  loss=0.4429  tr_acc=0.9937  val_acc=0.8139  val_f1=0.7279  spd_loss=0.4003  lr=5.34e-05
+Ep 268/500  loss=0.4775  tr_acc=0.9936  val_acc=0.8056  val_f1=0.7208  spd_loss=0.4034  lr=5.31e-05
+Ep 269/500  loss=0.4213  tr_acc=0.9947  val_acc=0.8041  val_f1=0.7161  spd_loss=0.3963  lr=5.27e-05
+Ep 270/500  loss=0.4365  tr_acc=0.9934  val_acc=0.8169  val_f1=0.7348  spd_loss=0.3938  lr=5.24e-05
+Ep 271/500  loss=0.4562  tr_acc=0.9951  val_acc=0.7973  val_f1=0.7040  spd_loss=0.4095  lr=5.21e-05
+Ep 272/500  loss=0.4393  tr_acc=0.9948  val_acc=0.8206  val_f1=0.7382  spd_loss=0.4169  lr=5.18e-05
+Ep 273/500  loss=0.4533  tr_acc=0.9958  val_acc=0.8063  val_f1=0.7248  spd_loss=0.4174  lr=5.14e-05
+Ep 274/500  loss=0.4274  tr_acc=0.9950  val_acc=0.8018  val_f1=0.7137  spd_loss=0.3965  lr=5.11e-05
+Ep 275/500  loss=0.4020  tr_acc=0.9948  val_acc=0.8184  val_f1=0.7332  spd_loss=0.3789  lr=5.08e-05
+Ep 276/500  loss=0.4401  tr_acc=0.9951  val_acc=0.8161  val_f1=0.7326  spd_loss=0.3939  lr=5.05e-05
+Ep 277/500  loss=0.4054  tr_acc=0.9963  val_acc=0.8161  val_f1=0.7258  spd_loss=0.3843  lr=5.01e-05
+Ep 278/500  loss=0.4396  tr_acc=0.9955  val_acc=0.8199  val_f1=0.7286  spd_loss=0.4147  lr=4.98e-05
+Ep 279/500  loss=0.4462  tr_acc=0.9940  val_acc=0.8154  val_f1=0.7290  spd_loss=0.3925  lr=4.95e-05
+Ep 280/500  loss=0.4169  tr_acc=0.9946  val_acc=0.8048  val_f1=0.7207  spd_loss=0.3887  lr=4.91e-05
+Ep 281/500  loss=0.4554  tr_acc=0.9944  val_acc=0.8176  val_f1=0.7418  spd_loss=0.4250  lr=4.88e-05
+Ep 282/500  loss=0.4267  tr_acc=0.9957  val_acc=0.8214  val_f1=0.7436  spd_loss=0.3984  lr=4.85e-05
+Ep 283/500  loss=0.4111  tr_acc=0.9957  val_acc=0.8116  val_f1=0.7219  spd_loss=0.3930  lr=4.82e-05
+Ep 284/500  loss=0.4550  tr_acc=0.9951  val_acc=0.8229  val_f1=0.7460  spd_loss=0.4305  lr=4.78e-05
+Ep 285/500  loss=0.4312  tr_acc=0.9951  val_acc=0.8169  val_f1=0.7397  spd_loss=0.4033  lr=4.75e-05
+Ep 286/500  loss=0.4302  tr_acc=0.9948  val_acc=0.8176  val_f1=0.7331  spd_loss=0.4122  lr=4.72e-05
+Ep 287/500  loss=0.4564  tr_acc=0.9955  val_acc=0.8101  val_f1=0.7257  spd_loss=0.4103  lr=4.68e-05
+Ep 288/500  loss=0.4741  tr_acc=0.9962  val_acc=0.8184  val_f1=0.7381  spd_loss=0.4428  lr=4.65e-05
+Ep 289/500  loss=0.4293  tr_acc=0.9972  val_acc=0.8116  val_f1=0.7299  spd_loss=0.4151  lr=4.62e-05
+Ep 290/500  loss=0.4235  tr_acc=0.9965  val_acc=0.8176  val_f1=0.7385  spd_loss=0.3934  lr=4.58e-05
+Ep 291/500  loss=0.4523  tr_acc=0.9961  val_acc=0.8139  val_f1=0.7242  spd_loss=0.4067  lr=4.55e-05
+Ep 292/500  loss=0.4150  tr_acc=0.9976  val_acc=0.8124  val_f1=0.7227  spd_loss=0.4027  lr=4.52e-05
+Ep 293/500  loss=0.4106  tr_acc=0.9959  val_acc=0.8206  val_f1=0.7334  spd_loss=0.3906  lr=4.48e-05
+Ep 294/500  loss=0.4569  tr_acc=0.9966  val_acc=0.8365  val_f1=0.7564  spd_loss=0.4420  lr=4.45e-05
+Ep 295/500  loss=0.4272  tr_acc=0.9967  val_acc=0.8063  val_f1=0.7154  spd_loss=0.4129  lr=4.42e-05
+Ep 296/500  loss=0.4368  tr_acc=0.9966  val_acc=0.8222  val_f1=0.7403  spd_loss=0.4134  lr=4.38e-05
+Ep 297/500  loss=0.4298  tr_acc=0.9969  val_acc=0.8078  val_f1=0.7193  spd_loss=0.3981  lr=4.35e-05
+Ep 298/500  loss=0.4484  tr_acc=0.9966  val_acc=0.8041  val_f1=0.7208  spd_loss=0.4202  lr=4.32e-05
+Ep 299/500  loss=0.3777  tr_acc=0.9968  val_acc=0.8131  val_f1=0.7308  spd_loss=0.3658  lr=4.28e-05
+Ep 300/500  loss=0.4641  tr_acc=0.9960  val_acc=0.8229  val_f1=0.7454  spd_loss=0.4223  lr=4.25e-05
+Ep 301/500  loss=0.4360  tr_acc=0.9967  val_acc=0.8184  val_f1=0.7440  spd_loss=0.4166  lr=4.22e-05
+Ep 302/500  loss=0.4768  tr_acc=0.9957  val_acc=0.8214  val_f1=0.7413  spd_loss=0.4440  lr=4.18e-05
+Ep 303/500  loss=0.4059  tr_acc=0.9981  val_acc=0.8086  val_f1=0.7220  spd_loss=0.3882  lr=4.15e-05
+Ep 304/500  loss=0.4296  tr_acc=0.9959  val_acc=0.8011  val_f1=0.7218  spd_loss=0.4089  lr=4.12e-05
+Ep 305/500  loss=0.4353  tr_acc=0.9961  val_acc=0.8011  val_f1=0.7134  spd_loss=0.4029  lr=4.08e-05
+Ep 306/500  loss=0.4275  tr_acc=0.9969  val_acc=0.8033  val_f1=0.7139  spd_loss=0.4104  lr=4.05e-05
+Ep 307/500  loss=0.4262  tr_acc=0.9965  val_acc=0.8237  val_f1=0.7430  spd_loss=0.4109  lr=4.02e-05
+Ep 308/500  loss=0.4290  tr_acc=0.9962  val_acc=0.8139  val_f1=0.7356  spd_loss=0.4087  lr=3.98e-05
+Ep 309/500  loss=0.4018  tr_acc=0.9970  val_acc=0.8191  val_f1=0.7377  spd_loss=0.3897  lr=3.95e-05
+Ep 310/500  loss=0.4444  tr_acc=0.9969  val_acc=0.8206  val_f1=0.7451  spd_loss=0.4291  lr=3.92e-05
+Ep 311/500  loss=0.4561  tr_acc=0.9982  val_acc=0.8124  val_f1=0.7322  spd_loss=0.4303  lr=3.88e-05
+Ep 312/500  loss=0.3960  tr_acc=0.9971  val_acc=0.8191  val_f1=0.7304  spd_loss=0.3749  lr=3.85e-05
+Ep 313/500  loss=0.4389  tr_acc=0.9975  val_acc=0.8161  val_f1=0.7385  spd_loss=0.4103  lr=3.82e-05
+Ep 314/500  loss=0.4286  tr_acc=0.9973  val_acc=0.8131  val_f1=0.7303  spd_loss=0.4167  lr=3.78e-05
+Ep 315/500  loss=0.3783  tr_acc=0.9978  val_acc=0.8101  val_f1=0.7260  spd_loss=0.3692  lr=3.75e-05
+Ep 316/500  loss=0.4477  tr_acc=0.9974  val_acc=0.8116  val_f1=0.7275  spd_loss=0.4155  lr=3.72e-05
+Ep 317/500  loss=0.4034  tr_acc=0.9971  val_acc=0.8176  val_f1=0.7401  spd_loss=0.3888  lr=3.68e-05
+Ep 318/500  loss=0.4303  tr_acc=0.9975  val_acc=0.8206  val_f1=0.7412  spd_loss=0.4114  lr=3.65e-05
+Ep 319/500  loss=0.4388  tr_acc=0.9978  val_acc=0.8199  val_f1=0.7370  spd_loss=0.4230  lr=3.62e-05
+Ep 320/500  loss=0.4150  tr_acc=0.9975  val_acc=0.8237  val_f1=0.7431  spd_loss=0.3898  lr=3.59e-05
+Ep 321/500  loss=0.4203  tr_acc=0.9976  val_acc=0.8169  val_f1=0.7298  spd_loss=0.4085  lr=3.55e-05
+Ep 322/500  loss=0.3918  tr_acc=0.9982  val_acc=0.8199  val_f1=0.7340  spd_loss=0.3794  lr=3.52e-05
+Ep 323/500  loss=0.4158  tr_acc=0.9968  val_acc=0.8191  val_f1=0.7362  spd_loss=0.3976  lr=3.49e-05
+Ep 324/500  loss=0.4124  tr_acc=0.9974  val_acc=0.8191  val_f1=0.7373  spd_loss=0.4034  lr=3.45e-05
+Ep 325/500  loss=0.4725  tr_acc=0.9982  val_acc=0.8116  val_f1=0.7307  spd_loss=0.4239  lr=3.42e-05
+Ep 326/500  loss=0.4425  tr_acc=0.9976  val_acc=0.8124  val_f1=0.7270  spd_loss=0.3917  lr=3.39e-05
+Ep 327/500  loss=0.4312  tr_acc=0.9975  val_acc=0.8109  val_f1=0.7290  spd_loss=0.3916  lr=3.36e-05
+Ep 328/500  loss=0.3939  tr_acc=0.9986  val_acc=0.8033  val_f1=0.7301  spd_loss=0.3819  lr=3.32e-05
+Ep 329/500  loss=0.4066  tr_acc=0.9976  val_acc=0.8169  val_f1=0.7368  spd_loss=0.3999  lr=3.29e-05
+Ep 330/500  loss=0.3781  tr_acc=0.9976  val_acc=0.8199  val_f1=0.7363  spd_loss=0.3686  lr=3.26e-05
+Ep 331/500  loss=0.4058  tr_acc=0.9983  val_acc=0.8206  val_f1=0.7402  spd_loss=0.3999  lr=3.23e-05
+Ep 332/500  loss=0.4066  tr_acc=0.9982  val_acc=0.8093  val_f1=0.7208  spd_loss=0.3981  lr=3.19e-05
+Ep 333/500  loss=0.3915  tr_acc=0.9982  val_acc=0.8124  val_f1=0.7244  spd_loss=0.3728  lr=3.16e-05
+Ep 334/500  loss=0.4237  tr_acc=0.9979  val_acc=0.8312  val_f1=0.7572  spd_loss=0.4163  lr=3.13e-05
+Ep 335/500  loss=0.4218  tr_acc=0.9976  val_acc=0.8139  val_f1=0.7311  spd_loss=0.4048  lr=3.10e-05
+Ep 336/500  loss=0.4619  tr_acc=0.9969  val_acc=0.8237  val_f1=0.7411  spd_loss=0.4450  lr=3.06e-05
+Ep 337/500  loss=0.4287  tr_acc=0.9977  val_acc=0.8206  val_f1=0.7462  spd_loss=0.4162  lr=3.03e-05
+Ep 338/500  loss=0.3898  tr_acc=0.9984  val_acc=0.8222  val_f1=0.7430  spd_loss=0.3836  lr=3.00e-05
+Ep 339/500  loss=0.4438  tr_acc=0.9987  val_acc=0.8154  val_f1=0.7414  spd_loss=0.4246  lr=2.97e-05
+Ep 340/500  loss=0.4063  tr_acc=0.9992  val_acc=0.8131  val_f1=0.7365  spd_loss=0.3998  lr=2.94e-05
+Ep 341/500  loss=0.3958  tr_acc=0.9990  val_acc=0.8274  val_f1=0.7513  spd_loss=0.3908  lr=2.90e-05
+Ep 342/500  loss=0.3909  tr_acc=0.9981  val_acc=0.8139  val_f1=0.7301  spd_loss=0.3812  lr=2.87e-05
+Ep 343/500  loss=0.3857  tr_acc=0.9985  val_acc=0.8184  val_f1=0.7396  spd_loss=0.3798  lr=2.84e-05
+Ep 344/500  loss=0.3946  tr_acc=0.9990  val_acc=0.8146  val_f1=0.7394  spd_loss=0.3895  lr=2.81e-05
+Ep 345/500  loss=0.4025  tr_acc=0.9990  val_acc=0.8116  val_f1=0.7375  spd_loss=0.3988  lr=2.78e-05
+Ep 346/500  loss=0.3894  tr_acc=0.9983  val_acc=0.8222  val_f1=0.7435  spd_loss=0.3818  lr=2.75e-05
+Ep 347/500  loss=0.4204  tr_acc=0.9979  val_acc=0.8176  val_f1=0.7375  spd_loss=0.4123  lr=2.72e-05
+Ep 348/500  loss=0.4424  tr_acc=0.9981  val_acc=0.8139  val_f1=0.7420  spd_loss=0.4229  lr=2.69e-05
+Ep 349/500  loss=0.4081  tr_acc=0.9983  val_acc=0.8048  val_f1=0.7185  spd_loss=0.3932  lr=2.65e-05
+Ep 350/500  loss=0.4020  tr_acc=0.9981  val_acc=0.8086  val_f1=0.7232  spd_loss=0.3940  lr=2.62e-05
+Ep 351/500  loss=0.4003  tr_acc=0.9986  val_acc=0.8184  val_f1=0.7342  spd_loss=0.3916  lr=2.59e-05
+Ep 352/500  loss=0.4124  tr_acc=0.9989  val_acc=0.8206  val_f1=0.7345  spd_loss=0.4052  lr=2.56e-05
+Ep 353/500  loss=0.4104  tr_acc=0.9982  val_acc=0.8244  val_f1=0.7441  spd_loss=0.3993  lr=2.53e-05
+Ep 354/500  loss=0.4054  tr_acc=0.9986  val_acc=0.8191  val_f1=0.7386  spd_loss=0.4011  lr=2.50e-05
+Ep 355/500  loss=0.4380  tr_acc=0.9984  val_acc=0.8191  val_f1=0.7302  spd_loss=0.4319  lr=2.47e-05
+Ep 356/500  loss=0.4107  tr_acc=0.9990  val_acc=0.8086  val_f1=0.7250  spd_loss=0.4062  lr=2.44e-05
+Ep 357/500  loss=0.3814  tr_acc=0.9985  val_acc=0.8139  val_f1=0.7315  spd_loss=0.3739  lr=2.41e-05
+Ep 358/500  loss=0.4121  tr_acc=0.9990  val_acc=0.8191  val_f1=0.7395  spd_loss=0.4076  lr=2.38e-05
+Ep 359/500  loss=0.4348  tr_acc=0.9985  val_acc=0.8139  val_f1=0.7319  spd_loss=0.4100  lr=2.35e-05
+Ep 360/500  loss=0.3990  tr_acc=0.9987  val_acc=0.8139  val_f1=0.7292  spd_loss=0.3950  lr=2.32e-05
+Ep 361/500  loss=0.3934  tr_acc=0.9991  val_acc=0.8184  val_f1=0.7343  spd_loss=0.3867  lr=2.29e-05
+Ep 362/500  loss=0.4208  tr_acc=0.9991  val_acc=0.8252  val_f1=0.7513  spd_loss=0.4117  lr=2.26e-05
+Ep 363/500  loss=0.4684  tr_acc=0.9983  val_acc=0.8191  val_f1=0.7399  spd_loss=0.4393  lr=2.23e-05
+Ep 364/500  loss=0.4054  tr_acc=0.9984  val_acc=0.8199  val_f1=0.7389  spd_loss=0.3909  lr=2.20e-05
+Ep 365/500  loss=0.4316  tr_acc=0.9994  val_acc=0.8161  val_f1=0.7324  spd_loss=0.4290  lr=2.17e-05
+Ep 366/500  loss=0.4152  tr_acc=0.9987  val_acc=0.8124  val_f1=0.7327  spd_loss=0.4067  lr=2.14e-05
+Ep 367/500  loss=0.3938  tr_acc=0.9986  val_acc=0.8244  val_f1=0.7487  spd_loss=0.3788  lr=2.12e-05
+Ep 368/500  loss=0.4234  tr_acc=0.9987  val_acc=0.8214  val_f1=0.7409  spd_loss=0.4131  lr=2.09e-05
+Ep 369/500  loss=0.4422  tr_acc=0.9993  val_acc=0.8222  val_f1=0.7452  spd_loss=0.4397  lr=2.06e-05
+Ep 370/500  loss=0.3696  tr_acc=0.9989  val_acc=0.8229  val_f1=0.7468  spd_loss=0.3656  lr=2.03e-05
+Ep 371/500  loss=0.4169  tr_acc=0.9991  val_acc=0.8176  val_f1=0.7353  spd_loss=0.4092  lr=2.00e-05
+Ep 372/500  loss=0.3956  tr_acc=0.9994  val_acc=0.8116  val_f1=0.7302  spd_loss=0.3926  lr=1.97e-05
+Ep 373/500  loss=0.4092  tr_acc=0.9994  val_acc=0.8206  val_f1=0.7406  spd_loss=0.4032  lr=1.94e-05
+Ep 374/500  loss=0.4260  tr_acc=0.9990  val_acc=0.8184  val_f1=0.7353  spd_loss=0.4187  lr=1.92e-05
+Ep 375/500  loss=0.3988  tr_acc=0.9994  val_acc=0.8199  val_f1=0.7396  spd_loss=0.3967  lr=1.89e-05
+Ep 376/500  loss=0.4120  tr_acc=0.9991  val_acc=0.8154  val_f1=0.7249  spd_loss=0.4074  lr=1.86e-05
+Ep 377/500  loss=0.4023  tr_acc=0.9991  val_acc=0.8116  val_f1=0.7189  spd_loss=0.3975  lr=1.83e-05
+Ep 378/500  loss=0.3950  tr_acc=0.9990  val_acc=0.8154  val_f1=0.7375  spd_loss=0.3794  lr=1.81e-05
+Ep 379/500  loss=0.4267  tr_acc=0.9994  val_acc=0.8154  val_f1=0.7297  spd_loss=0.4234  lr=1.78e-05
+Ep 380/500  loss=0.3923  tr_acc=0.9994  val_acc=0.8131  val_f1=0.7219  spd_loss=0.3904  lr=1.75e-05
+Ep 381/500  loss=0.3920  tr_acc=0.9993  val_acc=0.8116  val_f1=0.7272  spd_loss=0.3866  lr=1.72e-05
+Ep 382/500  loss=0.3934  tr_acc=0.9992  val_acc=0.8124  val_f1=0.7216  spd_loss=0.3903  lr=1.70e-05
+Ep 383/500  loss=0.4178  tr_acc=0.9995  val_acc=0.8154  val_f1=0.7213  spd_loss=0.4163  lr=1.67e-05
+Ep 384/500  loss=0.4145  tr_acc=0.9997  val_acc=0.8191  val_f1=0.7363  spd_loss=0.4032  lr=1.65e-05
+Ep 385/500  loss=0.3963  tr_acc=0.9993  val_acc=0.8086  val_f1=0.7145  spd_loss=0.3935  lr=1.62e-05
+Ep 386/500  loss=0.4370  tr_acc=0.9995  val_acc=0.8184  val_f1=0.7358  spd_loss=0.4102  lr=1.59e-05
+Ep 387/500  loss=0.4130  tr_acc=0.9999  val_acc=0.8116  val_f1=0.7228  spd_loss=0.4100  lr=1.57e-05
+Ep 388/500  loss=0.4037  tr_acc=0.9994  val_acc=0.8229  val_f1=0.7483  spd_loss=0.4021  lr=1.54e-05
+Ep 389/500  loss=0.4116  tr_acc=0.9991  val_acc=0.8222  val_f1=0.7404  spd_loss=0.4075  lr=1.52e-05
+Ep 390/500  loss=0.4109  tr_acc=0.9994  val_acc=0.8229  val_f1=0.7447  spd_loss=0.3874  lr=1.49e-05
+Ep 391/500  loss=0.3911  tr_acc=0.9992  val_acc=0.8169  val_f1=0.7320  spd_loss=0.3771  lr=1.46e-05
+Ep 392/500  loss=0.4166  tr_acc=0.9997  val_acc=0.8161  val_f1=0.7322  spd_loss=0.4143  lr=1.44e-05
+Ep 393/500  loss=0.4201  tr_acc=0.9998  val_acc=0.8109  val_f1=0.7201  spd_loss=0.4164  lr=1.41e-05
+Ep 394/500  loss=0.3902  tr_acc=0.9991  val_acc=0.8252  val_f1=0.7426  spd_loss=0.3857  lr=1.39e-05
+Ep 395/500  loss=0.4216  tr_acc=0.9993  val_acc=0.8101  val_f1=0.7187  spd_loss=0.3861  lr=1.37e-05
+Ep 396/500  loss=0.4208  tr_acc=0.9989  val_acc=0.8222  val_f1=0.7380  spd_loss=0.4165  lr=1.34e-05
+Ep 397/500  loss=0.4067  tr_acc=0.9991  val_acc=0.8252  val_f1=0.7466  spd_loss=0.4035  lr=1.32e-05
+Ep 398/500  loss=0.4288  tr_acc=0.9990  val_acc=0.8274  val_f1=0.7411  spd_loss=0.4235  lr=1.29e-05
+Ep 399/500  loss=0.3954  tr_acc=0.9998  val_acc=0.8214  val_f1=0.7351  spd_loss=0.3945  lr=1.27e-05
+Ep 400/500  loss=0.3921  tr_acc=0.9994  val_acc=0.8229  val_f1=0.7399  spd_loss=0.3891  lr=1.24e-05
+Ep 401/500  loss=0.4122  tr_acc=0.9994  val_acc=0.8169  val_f1=0.7314  spd_loss=0.4095  lr=1.22e-05
+Ep 402/500  loss=0.3813  tr_acc=0.9994  val_acc=0.8267  val_f1=0.7442  spd_loss=0.3786  lr=1.20e-05
+Ep 403/500  loss=0.4122  tr_acc=0.9995  val_acc=0.8131  val_f1=0.7303  spd_loss=0.4104  lr=1.17e-05
+Ep 404/500  loss=0.4079  tr_acc=0.9998  val_acc=0.8244  val_f1=0.7411  spd_loss=0.4067  lr=1.15e-05
+Ep 405/500  loss=0.4078  tr_acc=0.9994  val_acc=0.8252  val_f1=0.7417  spd_loss=0.4036  lr=1.13e-05
+Ep 406/500  loss=0.4003  tr_acc=0.9998  val_acc=0.8206  val_f1=0.7372  spd_loss=0.3997  lr=1.11e-05
+Ep 407/500  loss=0.4018  tr_acc=0.9998  val_acc=0.8184  val_f1=0.7321  spd_loss=0.4006  lr=1.08e-05
+Ep 408/500  loss=0.4458  tr_acc=0.9992  val_acc=0.8244  val_f1=0.7364  spd_loss=0.4298  lr=1.06e-05
+Ep 409/500  loss=0.4214  tr_acc=0.9995  val_acc=0.8282  val_f1=0.7464  spd_loss=0.4201  lr=1.04e-05
+Ep 410/500  loss=0.4099  tr_acc=0.9999  val_acc=0.8244  val_f1=0.7479  spd_loss=0.4090  lr=1.02e-05
+Ep 411/500  loss=0.4348  tr_acc=1.0000  val_acc=0.8252  val_f1=0.7429  spd_loss=0.4345  lr=9.97e-06
+Ep 412/500  loss=0.4077  tr_acc=0.9993  val_acc=0.8206  val_f1=0.7364  spd_loss=0.4040  lr=9.75e-06
+Ep 413/500  loss=0.3867  tr_acc=0.9993  val_acc=0.8350  val_f1=0.7609  spd_loss=0.3832  lr=9.54e-06
+Ep 414/500  loss=0.4054  tr_acc=0.9995  val_acc=0.8244  val_f1=0.7430  spd_loss=0.4012  lr=9.33e-06
+Ep 415/500  loss=0.3973  tr_acc=0.9999  val_acc=0.8282  val_f1=0.7483  spd_loss=0.3966  lr=9.12e-06
+Ep 416/500  loss=0.3798  tr_acc=0.9998  val_acc=0.8214  val_f1=0.7344  spd_loss=0.3770  lr=8.92e-06
+Ep 417/500  loss=0.4204  tr_acc=0.9993  val_acc=0.8267  val_f1=0.7508  spd_loss=0.4144  lr=8.71e-06
+Ep 418/500  loss=0.4059  tr_acc=0.9997  val_acc=0.8282  val_f1=0.7554  spd_loss=0.4003  lr=8.51e-06
+Ep 419/500  loss=0.3940  tr_acc=0.9994  val_acc=0.8229  val_f1=0.7376  spd_loss=0.3927  lr=8.31e-06
+Ep 420/500  loss=0.4162  tr_acc=0.9997  val_acc=0.8327  val_f1=0.7588  spd_loss=0.4152  lr=8.12e-06
+Ep 421/500  loss=0.3891  tr_acc=0.9999  val_acc=0.8304  val_f1=0.7543  spd_loss=0.3843  lr=7.92e-06
+Ep 422/500  loss=0.4007  tr_acc=0.9994  val_acc=0.8274  val_f1=0.7429  spd_loss=0.3983  lr=7.73e-06
+Ep 423/500  loss=0.4240  tr_acc=0.9995  val_acc=0.8229  val_f1=0.7379  spd_loss=0.4227  lr=7.54e-06
+Ep 424/500  loss=0.3839  tr_acc=0.9999  val_acc=0.8289  val_f1=0.7464  spd_loss=0.3829  lr=7.35e-06
+Ep 425/500  loss=0.4103  tr_acc=0.9994  val_acc=0.8335  val_f1=0.7559  spd_loss=0.4080  lr=7.16e-06
+Ep 426/500  loss=0.4118  tr_acc=0.9997  val_acc=0.8244  val_f1=0.7452  spd_loss=0.4101  lr=6.98e-06
+Ep 427/500  loss=0.3871  tr_acc=0.9998  val_acc=0.8320  val_f1=0.7530  spd_loss=0.3863  lr=6.80e-06
+Ep 428/500  loss=0.3985  tr_acc=0.9997  val_acc=0.8365  val_f1=0.7566  spd_loss=0.3938  lr=6.62e-06
+Ep 429/500  loss=0.3838  tr_acc=0.9998  val_acc=0.8154  val_f1=0.7306  spd_loss=0.3832  lr=6.44e-06
+Ep 430/500  loss=0.4001  tr_acc=0.9997  val_acc=0.8304  val_f1=0.7480  spd_loss=0.3992  lr=6.26e-06
+Ep 431/500  loss=0.4112  tr_acc=0.9997  val_acc=0.8327  val_f1=0.7502  spd_loss=0.3971  lr=6.09e-06
+Ep 432/500  loss=0.3905  tr_acc=0.9997  val_acc=0.8289  val_f1=0.7478  spd_loss=0.3894  lr=5.92e-06
+Ep 433/500  loss=0.4250  tr_acc=0.9998  val_acc=0.8365  val_f1=0.7602  spd_loss=0.4231  lr=5.75e-06
+Ep 434/500  loss=0.4215  tr_acc=0.9998  val_acc=0.8289  val_f1=0.7490  spd_loss=0.4177  lr=5.58e-06
+Ep 435/500  loss=0.4396  tr_acc=0.9998  val_acc=0.8312  val_f1=0.7511  spd_loss=0.4379  lr=5.42e-06
+Ep 436/500  loss=0.4217  tr_acc=0.9993  val_acc=0.8320  val_f1=0.7521  spd_loss=0.4195  lr=5.26e-06
+Ep 437/500  loss=0.4132  tr_acc=1.0000  val_acc=0.8297  val_f1=0.7482  spd_loss=0.4130  lr=5.10e-06
+Ep 438/500  loss=0.3983  tr_acc=0.9999  val_acc=0.8297  val_f1=0.7459  spd_loss=0.3979  lr=4.94e-06
+Ep 439/500  loss=0.4068  tr_acc=0.9998  val_acc=0.8222  val_f1=0.7397  spd_loss=0.4050  lr=4.78e-06
+Ep 440/500  loss=0.3608  tr_acc=0.9999  val_acc=0.8282  val_f1=0.7489  spd_loss=0.3603  lr=4.63e-06
+Ep 441/500  loss=0.3904  tr_acc=1.0000  val_acc=0.8335  val_f1=0.7558  spd_loss=0.3903  lr=4.48e-06
+Ep 442/500  loss=0.3887  tr_acc=0.9999  val_acc=0.8350  val_f1=0.7514  spd_loss=0.3881  lr=4.33e-06
+Ep 443/500  loss=0.4393  tr_acc=1.0000  val_acc=0.8320  val_f1=0.7473  spd_loss=0.4391  lr=4.19e-06
+Ep 444/500  loss=0.4349  tr_acc=0.9998  val_acc=0.8282  val_f1=0.7470  spd_loss=0.4314  lr=4.04e-06
+Ep 445/500  loss=0.3869  tr_acc=0.9999  val_acc=0.8274  val_f1=0.7471  spd_loss=0.3851  lr=3.90e-06
+Ep 446/500  loss=0.3874  tr_acc=0.9997  val_acc=0.8222  val_f1=0.7409  spd_loss=0.3866  lr=3.77e-06
+Ep 447/500  loss=0.3977  tr_acc=0.9999  val_acc=0.8304  val_f1=0.7542  spd_loss=0.3958  lr=3.63e-06
+Ep 448/500  loss=0.4489  tr_acc=0.9995  val_acc=0.8252  val_f1=0.7451  spd_loss=0.4473  lr=3.50e-06
+Ep 449/500  loss=0.4184  tr_acc=0.9997  val_acc=0.8267  val_f1=0.7454  spd_loss=0.4093  lr=3.36e-06
+Ep 450/500  loss=0.3772  tr_acc=0.9998  val_acc=0.8365  val_f1=0.7578  spd_loss=0.3766  lr=3.24e-06
+Ep 451/500  loss=0.3961  tr_acc=0.9999  val_acc=0.8320  val_f1=0.7535  spd_loss=0.3953  lr=3.11e-06
+Ep 452/500  loss=0.4220  tr_acc=1.0000  val_acc=0.8199  val_f1=0.7366  spd_loss=0.4217  lr=2.98e-06
+Ep 453/500  loss=0.3944  tr_acc=0.9997  val_acc=0.8297  val_f1=0.7499  spd_loss=0.3915  lr=2.86e-06
+Ep 454/500  loss=0.4171  tr_acc=0.9995  val_acc=0.8304  val_f1=0.7505  spd_loss=0.4045  lr=2.74e-06
+Ep 455/500  loss=0.4080  tr_acc=0.9999  val_acc=0.8199  val_f1=0.7380  spd_loss=0.4073  lr=2.63e-06
+Ep 456/500  loss=0.4109  tr_acc=0.9997  val_acc=0.8297  val_f1=0.7549  spd_loss=0.4098  lr=2.51e-06
+Ep 457/500  loss=0.3952  tr_acc=0.9999  val_acc=0.8229  val_f1=0.7414  spd_loss=0.3947  lr=2.40e-06
+Ep 458/500  loss=0.4222  tr_acc=0.9999  val_acc=0.8214  val_f1=0.7360  spd_loss=0.4209  lr=2.29e-06
+Ep 459/500  loss=0.4397  tr_acc=0.9997  val_acc=0.8304  val_f1=0.7493  spd_loss=0.4384  lr=2.18e-06
+Ep 460/500  loss=0.4254  tr_acc=0.9995  val_acc=0.8327  val_f1=0.7512  spd_loss=0.4239  lr=2.08e-06
+Ep 461/500  loss=0.3964  tr_acc=0.9998  val_acc=0.8357  val_f1=0.7549  spd_loss=0.3958  lr=1.98e-06
+Ep 462/500  loss=0.3952  tr_acc=0.9997  val_acc=0.8304  val_f1=0.7503  spd_loss=0.3929  lr=1.88e-06
+Ep 463/500  loss=0.3919  tr_acc=1.0000  val_acc=0.8191  val_f1=0.7325  spd_loss=0.3917  lr=1.78e-06
+Ep 464/500  loss=0.4138  tr_acc=0.9998  val_acc=0.8289  val_f1=0.7445  spd_loss=0.4131  lr=1.69e-06
+Ep 465/500  loss=0.4126  tr_acc=0.9995  val_acc=0.8304  val_f1=0.7481  spd_loss=0.4107  lr=1.60e-06
+Ep 466/500  loss=0.3966  tr_acc=0.9999  val_acc=0.8267  val_f1=0.7458  spd_loss=0.3961  lr=1.51e-06
+Ep 467/500  loss=0.3806  tr_acc=0.9994  val_acc=0.8252  val_f1=0.7439  spd_loss=0.3797  lr=1.42e-06
+Ep 468/500  loss=0.3934  tr_acc=0.9999  val_acc=0.8297  val_f1=0.7462  spd_loss=0.3931  lr=1.34e-06
+Ep 469/500  loss=0.3947  tr_acc=0.9999  val_acc=0.8335  val_f1=0.7542  spd_loss=0.3943  lr=1.25e-06
+Ep 470/500  loss=0.4257  tr_acc=1.0000  val_acc=0.8289  val_f1=0.7508  spd_loss=0.4255  lr=1.17e-06
+Ep 471/500  loss=0.4324  tr_acc=0.9999  val_acc=0.8252  val_f1=0.7426  spd_loss=0.4019  lr=1.10e-06
+Ep 472/500  loss=0.4032  tr_acc=0.9999  val_acc=0.8327  val_f1=0.7541  spd_loss=0.4023  lr=1.02e-06
+Ep 473/500  loss=0.3990  tr_acc=0.9999  val_acc=0.8297  val_f1=0.7503  spd_loss=0.3986  lr=9.52e-07
+Ep 474/500  loss=0.4058  tr_acc=0.9998  val_acc=0.8327  val_f1=0.7535  spd_loss=0.4053  lr=8.83e-07
+Ep 475/500  loss=0.4274  tr_acc=1.0000  val_acc=0.8312  val_f1=0.7496  spd_loss=0.4272  lr=8.50e-07
+Ep 476/500  loss=0.3945  tr_acc=0.9999  val_acc=0.8327  val_f1=0.7539  spd_loss=0.3941  lr=8.50e-07
+Ep 477/500  loss=0.3837  tr_acc=0.9995  val_acc=0.8327  val_f1=0.7537  spd_loss=0.3807  lr=8.50e-07
+Ep 478/500  loss=0.4027  tr_acc=1.0000  val_acc=0.8327  val_f1=0.7547  spd_loss=0.4027  lr=8.50e-07
+Ep 479/500  loss=0.4023  tr_acc=0.9998  val_acc=0.8335  val_f1=0.7560  spd_loss=0.4014  lr=8.50e-07
+Ep 480/500  loss=0.3925  tr_acc=0.9998  val_acc=0.8312  val_f1=0.7544  spd_loss=0.3839  lr=8.50e-07
+Ep 481/500  loss=0.3942  tr_acc=1.0000  val_acc=0.8380  val_f1=0.7641  spd_loss=0.3941  lr=8.50e-07
+Ep 482/500  loss=0.4055  tr_acc=1.0000  val_acc=0.8304  val_f1=0.7491  spd_loss=0.4050  lr=8.50e-07
+Ep 483/500  loss=0.3989  tr_acc=0.9998  val_acc=0.8297  val_f1=0.7474  spd_loss=0.3981  lr=8.50e-07
+Ep 484/500  loss=0.4076  tr_acc=0.9997  val_acc=0.8350  val_f1=0.7559  spd_loss=0.4062  lr=8.50e-07
+Ep 485/500  loss=0.4061  tr_acc=0.9998  val_acc=0.8380  val_f1=0.7621  spd_loss=0.4044  lr=8.50e-07
+Ep 486/500  loss=0.4201  tr_acc=0.9999  val_acc=0.8206  val_f1=0.7371  spd_loss=0.4199  lr=8.50e-07
+Ep 487/500  loss=0.4071  tr_acc=0.9999  val_acc=0.8357  val_f1=0.7604  spd_loss=0.4051  lr=8.50e-07
+Ep 488/500  loss=0.4062  tr_acc=1.0000  val_acc=0.8365  val_f1=0.7612  spd_loss=0.4060  lr=8.50e-07
+Ep 489/500  loss=0.3913  tr_acc=0.9999  val_acc=0.8304  val_f1=0.7519  spd_loss=0.3911  lr=8.50e-07
+Ep 490/500  loss=0.3829  tr_acc=0.9999  val_acc=0.8327  val_f1=0.7548  spd_loss=0.3818  lr=8.50e-07
+Ep 491/500  loss=0.4066  tr_acc=0.9998  val_acc=0.8274  val_f1=0.7467  spd_loss=0.3908  lr=8.50e-07
+Ep 492/500  loss=0.3956  tr_acc=0.9999  val_acc=0.8357  val_f1=0.7644  spd_loss=0.3954  lr=8.50e-07
+Ep 493/500  loss=0.4230  tr_acc=0.9995  val_acc=0.8282  val_f1=0.7442  spd_loss=0.4215  lr=8.50e-07
+Ep 494/500  loss=0.3976  tr_acc=0.9998  val_acc=0.8297  val_f1=0.7479  spd_loss=0.3920  lr=8.50e-07
+Ep 495/500  loss=0.4236  tr_acc=0.9998  val_acc=0.8350  val_f1=0.7556  spd_loss=0.4229  lr=8.50e-07
+Ep 496/500  loss=0.3669  tr_acc=0.9998  val_acc=0.8244  val_f1=0.7410  spd_loss=0.3666  lr=8.50e-07
+Ep 497/500  loss=0.4007  tr_acc=1.0000  val_acc=0.8312  val_f1=0.7531  spd_loss=0.4006  lr=8.50e-07
+Ep 498/500  loss=0.4168  tr_acc=0.9999  val_acc=0.8320  val_f1=0.7567  spd_loss=0.4151  lr=8.50e-07
+Ep 499/500  loss=0.3946  tr_acc=0.9997  val_acc=0.8327  val_f1=0.7574  spd_loss=0.3931  lr=8.50e-07
+Ep 500/500  loss=0.3972  tr_acc=0.9998  val_acc=0.8304  val_f1=0.7513  spd_loss=0.3964  lr=8.50e-07
+Training complete. Best AUROC: 0.9544, Best F1: 0.7644
+Loaded best model from best_f1_model.pt (epoch 492)
+
+Evaluating on derm7pt
+
+Evaluating on padufes20
+
+Evaluating on isic2019
+
+Cross-dataset summary:
+            accuracy  precision    recall  ...       EOM       PQD       DPM
+derm7pt    0.506912   0.294606  0.337185  ...  0.318446  0.714286  0.122222
+padufes20  0.492971   0.415548  0.511739  ...  0.298485  0.838256  0.192776
+
+[2 rows x 10 columns]
+
+All results saved to outputs/results_FairAdaBN_resnet18
+Checkpoints saved to outputs/checkpoints_FairAdaBN_resnet18
+=========================================
+Finished: Tue May 26 10:24:13 AM CEST 2026
+Exit code: 0
+
+[DONE] Training completed successfully.
+Outputs:
+  Checkpoints → process_FairAdaBN_resnet18/outputs/checkpoints/
+  Results     → process_FairAdaBN_resnet18/outputs/results/
+  CSVs        → process_FairAdaBN_resnet18/outputs/csvs/

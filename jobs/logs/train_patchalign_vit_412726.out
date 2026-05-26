@@ -1,0 +1,71 @@
+=========================================
+Job:       train_patchalign_vit  (412726)
+Node:      bigpu02
+Started:   Tue May 26 10:24:38 AM CEST 2026
+=========================================
+[INFO] No HF token found at /users/jlacmou/.hf_token — downloads may be slow.
+[INFO] No kaggle.json found in process_patchalign_vit. Relying on ~/.kaggle/ or env vars.
+[SETUP] Creating virtual environment...
+[SETUP] Installing / verifying Python dependencies...
+
+── GPU info ──────────────────────────────
+Tesla V100-PCIE-32GB, 32768 MiB, 575.57.08
+PyTorch : 2.12.0+cu126
+CUDA    : 12.6
+Devices : 1
+GPU 0   : Tesla V100-PCIE-32GB
+VRAM    : 34.1 GB
+──────────────────────────────────────────
+
+[CHECK] Validating dataset roots...
+  [MISSING] process_patchalign_vit/data/datasets/asosenge/hibaskinlesionsdataset-main  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/hibaskinlesionsdataset-main
+License(s): other
+Downloading hibaskinlesionsdataset-main.zip to process_patchalign_vit/data/datasets/asosenge/hibaskinlesionsdataset-main
+
+  [DOWNLOADED] process_patchalign_vit/data/datasets/asosenge/hibaskinlesionsdataset-main
+  [MISSING] process_patchalign_vit/data/datasets/asosenge/fitzpatrick17k  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/fitzpatrick17k
+License(s): other
+Downloading fitzpatrick17k.zip to process_patchalign_vit/data/datasets/asosenge/fitzpatrick17k
+
+  [DOWNLOADED] process_patchalign_vit/data/datasets/asosenge/fitzpatrick17k
+  [MISSING] process_patchalign_vit/data/datasets/asosenge/ham10000  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/ham10000
+License(s): Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+Downloading ham10000.zip to process_patchalign_vit/data/datasets/asosenge/ham10000
+
+  [DOWNLOADED] process_patchalign_vit/data/datasets/asosenge/ham10000
+  [MISSING] process_patchalign_vit/data/datasets/asosenge/derm7pt  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/derm7pt
+License(s): other
+Downloading derm7pt.zip to process_patchalign_vit/data/datasets/asosenge/derm7pt
+
+  [DOWNLOADED] process_patchalign_vit/data/datasets/asosenge/derm7pt
+  [MISSING] process_patchalign_vit/data/datasets/mahdavi1202/skin-cancer  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/mahdavi1202/skin-cancer
+License(s): Attribution 4.0 International (CC BY 4.0)
+Downloading skin-cancer.zip to process_patchalign_vit/data/datasets/mahdavi1202/skin-cancer
+
+  [DOWNLOADED] process_patchalign_vit/data/datasets/mahdavi1202/skin-cancer
+  [MISSING] process_patchalign_vit/data/datasets/sengenjih/isic2019  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/sengenjih/isic2019
+License(s): Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+Downloading isic2019.zip to process_patchalign_vit/data/datasets/sengenjih/isic2019
+
+  [DOWNLOADED] process_patchalign_vit/data/datasets/sengenjih/isic2019
+
+[CONVERT] Converting notebook to Python script...
+[PATCH] Redirecting Kaggle paths → cluster paths...
+  DATA_ROOT  → process_patchalign_vit/data/datasets
+  WORK_ROOT  → process_patchalign_vit/outputs
+  BB_CACHE   → process_patchalign_vit/backbone_cache
+  Patch applied successfully.
+
+[RUN] Starting training — Tue May 26 10:45:16 AM CEST 2026
+=========================================
+Device: cuda
+CSV dir      : outputs/csvs
+Checkpoints  : outputs/checkpoints_PatchAlign_vit
+Results      : outputs/results_PatchAlign_vit
+Dataset roots:
