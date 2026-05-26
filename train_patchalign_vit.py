@@ -483,8 +483,8 @@ def main():
     print(f"CSV dir      : {CFG['csv_dir']}")
     print(f"Checkpoints  : {CFG['ckpt_dir']}")
     print(f"Results      : {CFG['results_dir']}")
-    print("Dataset roots:")
-    for name, root in CFG['dataset_roots'].items():
+    print("Image roots:")
+    for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
     # ── Load text embeddings and extract the 6 relevant classes ───────────────
