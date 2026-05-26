@@ -7,6 +7,7 @@ PatchAlign — Dual ViT (vit_small_patch16_224) with Masked Graph Optimal Transp
 
 """
 
+import train_Modality_Invariance_resnet18
 import os
 os.environ['MPLBACKEND'] = 'Agg'
 import sys
@@ -483,7 +484,7 @@ def main():
     print(f"CSV dir      : {CFG['csv_dir']}")
     print(f"Checkpoints  : {CFG['ckpt_dir']}")
     print(f"Results      : {CFG['results_dir']}")
-    print("Dataset roots:")
+    print("Image roots:")
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
