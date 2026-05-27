@@ -3,11 +3,24 @@
 
 """
 Modality-Invariant ViT (vit_small_patch16_224) for Skin Disease Classification
-Uses multi-objective losses: Lcls, Lconf, Lcon, LMI.
+Uses multi-objective losses: Lcls, Lconf, Lcon (cross-modal), LMI (VICReg).
+
+CHANGELOG vs previous version:
+  1. Imports get_layer_wise_lr_params_vit from models_losses (no longer a
+     local duplicate).
+  2. Imports cross_modal_supcon_loss from models_losses.
+  3. train_epoch: loss_con now uses cross_modal_supcon_loss(z_c, z_d, labels)
+     instead of sup_con(z, labels) — this actually trains cross-modal alignment.
+  4. train_epoch: loss_mi now uses the VICReg-based mi_loss() which prevents
+     representation collapse.
+  5. lambda_mi reduced from 0.8 → 0.15 to avoid MI loss overwhelming cls loss.
+  6. lambda_skin added (0.3) so skin_type_loss has an explicit weight.
+  7. warmup_epochs reduced from 100 → 60 (12% of 500 epochs).
+  8. Paired-batch rate is logged each epoch so you can verify MI fires.
 
 All outputs (checkpoints, results, logs) are saved in:
-    - checkpoints_modality_vit/
-    - results_modality_vit/
+    - checkpoints_Modality_Invariance_vit/
+    - results_Modality_Invariance_vit/
 """
 
 import os
@@ -37,27 +50,15 @@ from sklearn.metrics import f1_score
 from models.models_losses import (
     DualViT,
     SupConLoss,
+    cross_modal_supcon_loss,   # FIX: use the cross-modal version
     confusion_loss,
     skin_type_loss,
-    mi_loss,
+    mi_loss,                   # FIX: now points to mi_loss_vicreg internally
     mixup_embeddings,
     cls_loss_fn,
     compute_class_weights,
+    get_layer_wise_lr_params_vit,  # FIX: imported from shared module
 )
-
-# Local definition of ViT layer-wise LR decay (since it's missing in models_losses.py)
-def get_layer_wise_lr_params_vit(model, base_lr=3e-5, lr_decay=0.85):
-    backbone_params = []
-    head_params = []
-    for name, param in model.named_parameters():
-        if 'classifier' in name or 'skin_clf' in name or 'proj_head' in name:
-            head_params.append(param)
-        else:
-            backbone_params.append(param)
-    return [
-        {'params': backbone_params, 'lr': base_lr * lr_decay},
-        {'params': head_params, 'lr': base_lr}
-    ]
 
 from models.evaluation import (
     validate,
@@ -78,7 +79,7 @@ from models.evaluation import (
 warnings.filterwarnings("ignore")
 
 # ------------------------------------------------------------
-# Configuration – edit these as needed
+# Configuration
 # ------------------------------------------------------------
 SEED = 42
 random.seed(SEED)
@@ -91,22 +92,16 @@ torch.backends.cudnn.benchmark = False
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-# ============================================================
-# PATH CONFIGURATION  — update these for each environment
-# ============================================================
-
-# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
-#WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
-WORK_ROOT = Path('outputs')
+WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('process_Modality_Invariance_vit/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'fitzpatrick17k': Path('process_Modality_Invariance_vit/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'ham10000':       Path('process_Modality_Invariance_vit/data/datasets/asosenge/ham10000/HAM10000'),
-    'derm7pt':        Path('process_Modality_Invariance_vit/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('process_Modality_Invariance_vit/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('process_Modality_Invariance_vit/data/datasets/sengenjih/isic2019'),                 # update path as needed
+    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'ham10000':       Path('/kaggle/input/datasets/asosenge/ham10000/HAM10000'),
+    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
 }
 
 print("Checking configured paths:")
@@ -116,37 +111,39 @@ for name, root in IMAGE_ROOTS.items():
     print(f"  {name:<15}: {root}  {'[OK]' if root.exists() else '[MISSING — update IMAGE_ROOTS]'}")
 
 CFG = {
-    'csv_dir':       CSV_DIR,
+    'csv_dir':      CSV_DIR,
     'image_roots':  IMAGE_ROOTS,
-    'ckpt_dir':      WORK_ROOT / 'checkpoints_Modality_Invariance_vit',
-    'results_dir':   WORK_ROOT / 'results_Modality_Invariance_vit',
+    'ckpt_dir':     WORK_ROOT / 'checkpoints_Modality_Invariance_vit',
+    'results_dir':  WORK_ROOT / 'results_Modality_Invariance_vit',
 
-    'backbone': 'vit_small_patch16_224',
-    'embed_dim': 512,
-    'img_size': 224,
-    'num_classes': 5,
+    'backbone':       'vit_small_patch16_224',
+    'embed_dim':      512,
+    'img_size':       224,
+    'num_classes':    5,
     'num_skin_types': 6,
 
-    'batch_size': 32,
-    'num_epochs': 500,      # Update as needed
-    'lr': 3e-5,
-    'min_lr': 1e-6,
-    'weight_decay': 0.05,
-    'warmup_epochs': 100,    #Update as needed
+    'batch_size':     32,
+    'num_epochs':     500,
+    'lr':             3e-5,
+    'min_lr':         1e-6,
+    'weight_decay':   0.05,
+    'warmup_epochs':  60,       # FIX: was 100; 60 ≈ 12% of 500 is more standard
+
     'aug_probability': 0.85,
 
-    'lambda_cls': 1.0,
-    'lambda_conf': 0.5,
-    'lambda_con': 0.5,
-    'lambda_mi': 0.8,
-    'temperature': 0.07,
+    'lambda_cls':   1.0,
+    'lambda_conf':  0.5,
+    'lambda_skin':  0.3,        # FIX: was implicit 1.0; explicit weight now
+    'lambda_con':   0.5,
+    'lambda_mi':    0.15,       # FIX: was 0.8; lowered to avoid overwhelming cls
+    'temperature':  0.07,
     'label_smoothing': 0.05,
-    'mixup_alpha': 0.4,
+    'mixup_alpha':  0.4,
 
-    'use_conf': True,
-    'use_con': True,
-    'use_mi': True,
-    'use_mixup': True,
+    'use_conf':   True,
+    'use_con':    True,
+    'use_mi':     True,
+    'use_mixup':  True,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -154,15 +151,15 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------------
-# Training epoch function (uses imported losses)
+# Training epoch
 # ------------------------------------------------------------
 def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, device):
     model.train()
     totals = dict(total=0., cls=0., conf=0., skin=0., con=0., mi=0.)
     all_preds, all_labels = [], []
     n_batches = 0
+    n_paired_batches = 0   # FIX: track how often MI actually fires
 
-    sup_con = SupConLoss(cfg["temperature"]).to(device)
     weight_tensor = torch.tensor(class_weights, dtype=torch.float32, device=device) if class_weights else None
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", unit="batch", dynamic_ncols=True, leave=False)
@@ -178,8 +175,8 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
             labels = batch["label"]
             skin_types = batch["skin_type"]
 
-            use_mixup = cfg.get("use_mixup", True)
-            if use_mixup and out["z"].requires_grad:
+            # --- Classification loss (with optional manifold mixup) ---
+            if cfg.get("use_mixup", True) and out["z"].requires_grad:
                 z_mix, y_a, y_b, lam = mixup_embeddings(out["z"], labels, alpha=cfg["mixup_alpha"])
                 logits_mix = model.classifier(z_mix)
                 loss_cls = lam * cls_loss_fn(logits_mix, y_a, weight_tensor, cfg["label_smoothing"]) \
@@ -187,18 +184,41 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
             else:
                 loss_cls = cls_loss_fn(out["logits"], labels, weight_tensor, cfg["label_smoothing"])
 
+            # --- Fairness losses (confusion + skin type) ---
             loss_conf = confusion_loss(out["skin_logits"]) if cfg.get("use_conf") else 0.0
-            loss_skin = skin_type_loss(model.skin_clf(out["z"].detach()), skin_types) if cfg.get("use_conf") else 0.0
-            loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
-            loss_mi = mi_loss(out["z_c"], out["z_d"]) if (cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 0) else 0.0
+            loss_skin = skin_type_loss(model.skin_clf(out["z"].detach()), skin_types) \
+                        if cfg.get("use_conf") else 0.0
 
+            # --- FIX: Cross-modal supervised contrastive loss ---
+            # Previously: sup_con(out["z"], labels) — contrasted the fused
+            # embedding against itself, teaching nothing about cross-modal
+            # alignment.
+            # Now: we concatenate z_c and z_d (separate clinical/derm
+            # projections) and run SupCon across them so the model is explicitly
+            # trained to align the two modalities.
+            loss_con = 0.0
+            if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
+                paired_labels = labels[out["paired_mask"]]
+                loss_con = cross_modal_supcon_loss(
+                    out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
+                )
+
+            # --- FIX: VICReg-based MI loss (collapse-resistant) ---
+            loss_mi = 0.0
+            if cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 1:
+                loss_mi = mi_loss(out["z_c"], out["z_d"])
+                n_paired_batches += 1
+
+            # --- Total loss ---
             total_loss = cfg["lambda_cls"] * loss_cls
             if cfg.get("use_conf"):
-                total_loss += cfg["lambda_conf"] * loss_conf + loss_skin
-            if cfg.get("use_con"):
-                total_loss += cfg["lambda_con"] * loss_con
-            if cfg.get("use_mi") and loss_mi != 0:
-                total_loss += cfg["lambda_mi"] * loss_mi
+                total_loss = total_loss \
+                    + cfg["lambda_conf"] * loss_conf \
+                    + cfg["lambda_skin"] * loss_skin   # FIX: explicit lambda
+            if cfg.get("use_con") and torch.is_tensor(loss_con):
+                total_loss = total_loss + cfg["lambda_con"] * loss_con
+            if cfg.get("use_mi") and torch.is_tensor(loss_mi):
+                total_loss = total_loss + cfg["lambda_mi"] * loss_mi
 
         scaler.scale(total_loss).backward()
         scaler.unscale_(optimizer)
@@ -207,11 +227,11 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
         scaler.update()
 
         totals["total"] += total_loss.item()
-        totals["cls"] += loss_cls.item() if isinstance(loss_cls, torch.Tensor) else loss_cls
-        totals["conf"] += loss_conf.item() if isinstance(loss_conf, torch.Tensor) else loss_conf
-        totals["skin"] += loss_skin.item() if isinstance(loss_skin, torch.Tensor) else loss_skin
-        totals["con"] += loss_con.item() if isinstance(loss_con, torch.Tensor) else loss_con
-        totals["mi"] += loss_mi.item() if isinstance(loss_mi, torch.Tensor) else loss_mi
+        totals["cls"]   += loss_cls.item() if torch.is_tensor(loss_cls) else loss_cls
+        totals["conf"]  += loss_conf.item() if torch.is_tensor(loss_conf) else loss_conf
+        totals["skin"]  += loss_skin.item() if torch.is_tensor(loss_skin) else loss_skin
+        totals["con"]   += loss_con.item()  if torch.is_tensor(loss_con)  else loss_con
+        totals["mi"]    += loss_mi.item()   if torch.is_tensor(loss_mi)   else loss_mi
         n_batches += 1
 
         with torch.no_grad():
@@ -224,15 +244,17 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     pbar.close()
     for k in totals:
         totals[k] /= max(n_batches, 1)
-    all_preds = np.concatenate(all_preds)
+    all_preds  = np.concatenate(all_preds)
     all_labels = np.concatenate(all_labels)
-    totals["acc"] = (all_preds == all_labels).mean()
-    totals["macro_f1"] = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+    totals["acc"]       = (all_preds == all_labels).mean()
+    totals["macro_f1"]  = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+    # FIX: report paired-batch rate so you can verify MI is actually training
+    totals["paired_rate"] = n_paired_batches / max(n_batches, 1)
     return totals
 
 
 # ------------------------------------------------------------
-# Main training and evaluation pipeline
+# Main
 # ------------------------------------------------------------
 def main():
     print(f"CSV dir      : {CFG['csv_dir']}")
@@ -261,10 +283,11 @@ def main():
         pretrained=True,
         use_projection=True,
     ).to(DEVICE)
-    
 
+    # FIX: use the shared get_layer_wise_lr_params_vit (no longer a local copy)
     param_groups = get_layer_wise_lr_params_vit(model, base_lr=CFG["lr"], lr_decay=0.85)
-    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
+    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"],
+                                  betas=(0.9, 0.999), eps=1e-8)
 
     def lr_lambda(epoch):
         if epoch < CFG["warmup_epochs"]:
@@ -277,30 +300,15 @@ def main():
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     scaler = torch.cuda.amp.GradScaler(enabled=(DEVICE.type == "cuda"))
 
-    start_epoch = 0
     best_auroc = 0.0
-    best_f1 = 0.0
-    patience = 20
-    patience_counter = 0
-    history = defaultdict(list)
+    best_f1    = 0.0
+    history    = defaultdict(list)
 
-    for epoch in range(start_epoch, CFG["num_epochs"]):
+    for epoch in range(CFG["num_epochs"]):
         train_metrics = train_epoch(model, train_loader, optimizer, CFG, epoch, scaler, class_weights, DEVICE)
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
-
-        # ----- EARLY STOPPING (patience=20) -----
-        # current_f1 = val_metrics["macro_f1"]
-        # if current_f1 > best_f1:
-        #     best_f1 = current_f1
-        #     patience_counter = 0
-        # else:
-        #     patience_counter += 1
-        # if patience_counter >= patience:
-        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
-        #     break
-        # -----------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -308,10 +316,12 @@ def main():
             history[f"val_{k}"].append(float(val_metrics[k]))
         history["lr"].append(float(lr))
 
+        # FIX: print paired_rate so you can confirm MI is firing
         print(f"Ep {epoch+1:3d}/{CFG['num_epochs']}  "
               f"loss={train_metrics['total']:.4f}  tr_acc={train_metrics['acc']:.4f}  "
               f"val_acc={val_metrics['acc']:.4f}  val_auroc={val_metrics['auroc']:.4f}  "
-              f"val_f1={val_metrics['macro_f1']:.4f}  lr={lr:.2e}")
+              f"val_f1={val_metrics['macro_f1']:.4f}  "
+              f"paired={train_metrics['paired_rate']:.2f}  lr={lr:.2e}")
 
         ckpt_state = {
             "epoch": epoch,
@@ -344,12 +354,11 @@ def main():
     ckpt = torch.load(best_ckpt, map_location=DEVICE, weights_only=False)
     model.load_state_dict(ckpt["model"])
     print(f"Loaded best model from {best_ckpt.name} (epoch {ckpt['epoch']+1})")
-    
 
-    # Evaluation
+    # ----- Evaluation -----
     class_names = [LABEL_NAMES[i] for i in range(CFG["num_classes"])]
 
-    val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
+    val_res  = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
     save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
     plot_confusion_matrix(val_res["conf_mat"], class_names,
@@ -361,7 +370,7 @@ def main():
                    "ROC Curves - Validation", CFG["results_dir"] / "val_roc.png")
 
     if test_loader:
-        test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
+        test_res  = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
         save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES)
         plot_confusion_matrix(test_res["conf_mat"], class_names,
@@ -372,31 +381,35 @@ def main():
         plot_roc_curve(test_res["labels"], test_res["probs"], class_names,
                        "ROC Curves - Test", CFG["results_dir"] / "test_roc.png")
 
-    # Cross-dataset evaluation
+    # ----- Cross-dataset evaluation -----
     cross_results = {}
     for ds_name, loader in eval_loaders.items():
         print(f"\nEvaluating on {ds_name}")
-        res = validate(model, loader, DEVICE, CFG["num_classes"], desc=f"Cross-eval: {ds_name}")
+        res  = validate(model, loader, DEVICE, CFG["num_classes"], desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
         save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
         plot_confusion_matrix(res["conf_mat"], class_names,
-                              f"Confusion Matrix - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
+                              f"Confusion Matrix - {ds_name}",
+                              CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
         plot_per_class_metrics(res, class_names,
-                               f"Per-Class Metrics - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
-        plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
+                               f"Per-Class Metrics - {ds_name}",
+                               CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
+        plot_fairness_metrics(fair, f"Fairness - {ds_name}",
+                              CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
         plot_roc_curve(res["labels"], res["probs"], class_names,
-                       f"ROC Curves - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_roc.png")
+                       f"ROC Curves - {ds_name}",
+                       CFG["results_dir"] / f"cross_{ds_name}_roc.png")
         cross_results[ds_name] = {
-            "accuracy": res["acc"],
-            "precision": res["macro_prec"],
-            "recall": res["macro_rec"],
-            "auroc": res["auroc"],
-            "macro_f1": res["macro_f1"],
-            "micro_f1": res["micro_f1"],
+            "accuracy":    res["acc"],
+            "precision":   res["macro_prec"],
+            "recall":      res["macro_rec"],
+            "auroc":       res["auroc"],
+            "macro_f1":    res["macro_f1"],
+            "micro_f1":    res["micro_f1"],
             "weighted_f1": res["weighted_f1"],
-            "EOM": fair["EOM"],
-            "PQD": fair["PQD"],
-            "DPM": fair["DPM"],
+            "EOM":         fair["EOM"],
+            "PQD":         fair["PQD"],
+            "DPM":         fair["DPM"],
         }
     if cross_results:
         cross_df = pd.DataFrame(cross_results).T
@@ -419,7 +432,6 @@ def main():
                 all_embs.append(out["z"].cpu().numpy())
                 all_labels_tsne.append(batch["label"].cpu().numpy())
                 all_skins_tsne.append(batch["skin_type"].cpu().numpy())
-                # modality: 1 = derm, 0 = clinical/unknown
                 mod_int = np.array(
                     [1 if m == "derm" else 0
                      for m in batch.get("modality", ["clinical"] * b)],
@@ -432,13 +444,11 @@ def main():
         skins_tsne  = np.concatenate(all_skins_tsne)
         mods_tsne   = np.concatenate(all_mods_tsne)
 
-        # Figure A — by disease class and by FST
         plot_tsne_class_fst(
             embs, labels_tsne, skins_tsne,
             title="t-SNE — Shared Embedding Space  [Internal Test]",
             save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
         )
-        # Figure B — modality-invariance diagnostics
         plot_tsne_modality(
             embs, skins_tsne, mods_tsne,
             title="t-SNE — Modality-Invariance  [Internal Test]",
