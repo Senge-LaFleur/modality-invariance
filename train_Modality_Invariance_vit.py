@@ -123,11 +123,11 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size':     32,
-    'num_epochs':     500,
+    'num_epochs':     50,
     'lr':             3e-5,
     'min_lr':         1e-6,
     'weight_decay':   0.05,
-    'warmup_epochs':  60,       # FIX: was 100; 60 ≈ 12% of 500 is more standard
+    'warmup_epochs':  5,       # FIX: was 100; 60 ≈ 12% of 500 is more standard
 
     'aug_probability': 0.85,
 
