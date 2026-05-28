@@ -128,7 +128,7 @@ CFG = {
     'backbone':        'vit_small_patch16_224',
     'embed_dim':       512,
     'img_size':        224,
-    'num_classes':     3,   # melanoma / nevus / basal cell carcinoma
+    'num_classes':     3,      # melanoma / nevus / basal cell carcinoma
     'num_skin_types':  6,
 
     'batch_size':      32,
@@ -136,7 +136,7 @@ CFG = {
     'lr':              3e-5,
     'min_lr':          1e-6,
     'weight_decay':    0.05,
-    'warmup_epochs':   5,     # update as needed
+    'warmup_epochs':   5,      # update as needed
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
