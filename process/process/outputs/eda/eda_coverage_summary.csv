@@ -1,7 +1,9 @@
-Dataset,Modality,Total rows,FST known,FST %,FST source
-HIBA,clinical,168,164,97.6%,ground-truth
-Fitzpatrick17k,clinical,1899,1823,96.0%,ground-truth
-HAM10000,dermoscopic,6682,563,8.4%,N/A
-Derm7pt,clinical,869,811,93.3%,ITA-estimated
-PAD-UFES-20,clinical,2063,1447,70.1%,ground-truth
-ISIC2019,dermoscopic,27551,0,0.0%,N/A
+Dataset,Modality,Rows,FST known,FST%,FST source,Class distribution
+HIBA + Derm7pt (paired train),paired,737,689,93%,ground-truth,melanoma=205  nevus=433  basal cell carcinoma=99
+HIBA + Derm7pt (paired val),paired,159,151,95%,ground-truth,melanoma=45  nevus=93  basal cell carcinoma=21
+HIBA + Derm7pt (paired test),paired,159,148,93%,ground-truth,melanoma=45  nevus=93  basal cell carcinoma=21
+HIBA residual clin (train),clinical,26,25,96%,ground-truth,melanoma=11  nevus=6  basal cell carcinoma=9
+HIBA residual derm (train),derm,549,504,92%,ground-truth,melanoma=105  nevus=353  basal cell carcinoma=91
+Fitzpatrick17k (cross-eval),clinical,1727,1672,97%,ground-truth,melanoma=573  nevus=558  basal cell carcinoma=596
+PAD-UFES-20 (cross-eval),clinical,1141,972,85%,ground-truth,melanoma=52  nevus=244  basal cell carcinoma=845
+ISIC2019 (cross-eval),derm,25517,0,0%,N/A,melanoma=5849  nevus=15370  basal cell carcinoma=4298

@@ -1,15 +1,3 @@
-"""
-evaluation.py
-
-Provides functions for:
-- Loading data (paired/unpaired) with fast ID‑based image resolution (prebuilt maps)
-- Running validation (collecting predictions, computing metrics)
-- Fairness metrics (EOM, PQD, DPM, per-FST accuracy)
-- Plotting: confusion matrix, per-class metrics, fairness summary, training curves, t‑SNE, ROC curves
-- Saving results as CSV files (overall, per-class, per-FST)
-- Building train/val/test/cross‑eval data loaders
-"""
-
 import numpy as np
 import pandas as pd
 import torch
@@ -36,7 +24,17 @@ from tqdm import tqdm
 
 
 # ------------------------------------------------------------
-# Helper: pre‑build image maps for all datasets
+# Label mapping (shared with training scripts) — 3-class
+# ------------------------------------------------------------
+LABEL_NAMES = {
+    0: 'melanoma',
+    1: 'nevus',
+    2: 'basal cell carcinoma',
+}
+
+
+# ------------------------------------------------------------
+# Helper: pre-build image maps for all datasets
 # ------------------------------------------------------------
 def build_image_maps(dataset_roots):
     """
@@ -56,26 +54,25 @@ def build_image_maps(dataset_roots):
 
 
 # ------------------------------------------------------------
-# Custom Dataset Classes (ID‑based image resolution using prebuilt maps)
+# Custom Dataset Classes (ID-based image resolution using prebuilt maps)
 # ------------------------------------------------------------
 class UnpairedDataset(Dataset):
-    """
-    Dataset for unpaired images.
-    CSV must contain an ID column (specified by `id_col`) and columns:
-    'label', 'skin_type', 'dataset'
-    """
-    def __init__(self, df, image_maps, transform=None, id_col='image_id'):
+    def __init__(self, df, image_maps, transform=None,
+                 id_col='image_id', modality='clinical'):
         self.df = df.reset_index(drop=True)
         self.image_maps = image_maps
         self.transform = transform
         self.id_col = id_col
+        self.modality = modality  # 'clinical' or 'derm'
 
     def _resolve_path(self, row):
         ds = row['dataset']
         img_id = str(row[self.id_col])
         full_path = self.image_maps[ds].get(img_id)
         if full_path is None:
-            raise FileNotFoundError(f"Image not found for {ds}: {img_id}")
+            raise FileNotFoundError(
+                f"Image not found for dataset={ds}, id_col={self.id_col}, id={img_id}"
+            )
         return full_path
 
     def __len__(self):
@@ -94,15 +91,11 @@ class UnpairedDataset(Dataset):
             'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
             'dataset': row['dataset'],
             'paired': False,
-            'modality': 'clinical' if self.id_col == 'clinical' else 'derm'
+            'modality': self.modality,
         }
 
 
 class PairedDataset(Dataset):
-    """
-    Dataset for paired clinical + dermoscopic images.
-    CSV must contain columns: 'clinical', 'derm', 'label', 'skin_type', 'dataset'
-    """
     def __init__(self, df, image_maps, transform=None,
                  clinical_col='clinical', derm_col='derm'):
         self.df = df.reset_index(drop=True)
@@ -141,22 +134,14 @@ class PairedDataset(Dataset):
             'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
             'dataset': ds,
             'paired': True,
-            'modality': 'paired'
+            'modality': 'paired',
         }
 
 
 # ------------------------------------------------------------
-# DataLoader Builder (ID‑based, using prebuilt image maps)
+# DataLoader Builder (ID-based, using prebuilt image maps)
 # ------------------------------------------------------------
 def build_loaders(cfg, seed=42):
-    """
-    Build train, val, test, and cross-evaluation loaders from CSV files.
-    CSV files are assumed to have columns:
-        - For unpaired clinical: 'clinical', 'label', 'skin_type', 'dataset'
-        - For unpaired derm:     'derm', 'label', 'skin_type', 'dataset'
-        - For paired:            'clinical', 'derm', 'label', 'skin_type', 'dataset'
-        - For cross-eval:        'image_id', 'label', 'skin_type', 'dataset'
-    """
     csv_dir = Path(cfg['csv_dir'])
     # Accept both 'dataset_roots' and 'image_roots' keys
     if 'dataset_roots' in cfg:
@@ -188,135 +173,195 @@ def build_loaders(cfg, seed=42):
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
+    def _load_csv(fname):
+        p = csv_dir / fname
+        return pd.read_csv(p) if p.exists() else pd.DataFrame()
+
     # Load CSV files
-    paired_train = pd.read_csv(csv_dir / 'paired_train.csv') if (csv_dir / 'paired_train.csv').exists() else pd.DataFrame()
-    clin_train   = pd.read_csv(csv_dir / 'clin_train.csv')   if (csv_dir / 'clin_train.csv').exists() else pd.DataFrame()
-    derm_train   = pd.read_csv(csv_dir / 'derm_train.csv')   if (csv_dir / 'derm_train.csv').exists() else pd.DataFrame()
+    paired_train = _load_csv('paired_train.csv')
+    clin_train   = _load_csv('clin_train.csv')
+    derm_train   = _load_csv('derm_train.csv')
 
-    paired_val = pd.read_csv(csv_dir / 'paired_val.csv') if (csv_dir / 'paired_val.csv').exists() else pd.DataFrame()
-    clin_val   = pd.read_csv(csv_dir / 'clin_val.csv')   if (csv_dir / 'clin_val.csv').exists() else pd.DataFrame()
-    derm_val   = pd.read_csv(csv_dir / 'derm_val.csv')   if (csv_dir / 'derm_val.csv').exists() else pd.DataFrame()
+    paired_val = _load_csv('paired_val.csv')
+    clin_val   = _load_csv('clin_val.csv')
+    derm_val   = _load_csv('derm_val.csv')
 
-    paired_test = pd.read_csv(csv_dir / 'paired_test.csv') if (csv_dir / 'paired_test.csv').exists() else pd.DataFrame()
-    clin_test   = pd.read_csv(csv_dir / 'clin_test.csv')   if (csv_dir / 'clin_test.csv').exists() else pd.DataFrame()
-    derm_test   = pd.read_csv(csv_dir / 'derm_test.csv')   if (csv_dir / 'derm_test.csv').exists() else pd.DataFrame()
+    paired_test = _load_csv('paired_test.csv')
+    clin_test   = _load_csv('clin_test.csv')
+    derm_test   = _load_csv('derm_test.csv')
 
-    # Build training datasets
+    # ------------------------------------------------------------------
+    # Training datasets
+    # paired: clinical | derm columns
+    # clin/derm unpaired: image_id column  (new schema from v3 notebook)
+    # ------------------------------------------------------------------
     train_datasets = []
     if not paired_train.empty:
-        train_datasets.append(PairedDataset(paired_train, image_maps, transform=train_transform))
+        train_datasets.append(
+            PairedDataset(paired_train, image_maps, transform=train_transform)
+        )
     if not clin_train.empty:
-        train_datasets.append(UnpairedDataset(clin_train, image_maps, transform=train_transform, id_col='clinical'))
+        train_datasets.append(
+            UnpairedDataset(clin_train, image_maps, transform=train_transform,
+                            id_col='image_id', modality='clinical')
+        )
     if not derm_train.empty:
-        train_datasets.append(UnpairedDataset(derm_train, image_maps, transform=train_transform, id_col='derm'))
+        train_datasets.append(
+            UnpairedDataset(derm_train, image_maps, transform=train_transform,
+                            id_col='image_id', modality='derm')
+        )
 
     if not train_datasets:
-        raise FileNotFoundError("No training data found. Check CSV files in " + str(csv_dir))
+        raise FileNotFoundError(
+            "No training data found. Check CSV files in " + str(csv_dir)
+        )
 
     train_dataset = torch.utils.data.ConcatDataset(train_datasets)
 
     # Validation datasets
     val_datasets = []
     if not paired_val.empty:
-        val_datasets.append(PairedDataset(paired_val, image_maps, transform=val_transform))
+        val_datasets.append(
+            PairedDataset(paired_val, image_maps, transform=val_transform)
+        )
     if not clin_val.empty:
-        val_datasets.append(UnpairedDataset(clin_val, image_maps, transform=val_transform, id_col='clinical'))
+        val_datasets.append(
+            UnpairedDataset(clin_val, image_maps, transform=val_transform,
+                            id_col='image_id', modality='clinical')
+        )
     if not derm_val.empty:
-        val_datasets.append(UnpairedDataset(derm_val, image_maps, transform=val_transform, id_col='derm'))
+        val_datasets.append(
+            UnpairedDataset(derm_val, image_maps, transform=val_transform,
+                            id_col='image_id', modality='derm')
+        )
     val_dataset = torch.utils.data.ConcatDataset(val_datasets) if val_datasets else None
 
     # Test datasets
     test_datasets = []
     if not paired_test.empty:
-        test_datasets.append(PairedDataset(paired_test, image_maps, transform=val_transform))
+        test_datasets.append(
+            PairedDataset(paired_test, image_maps, transform=val_transform)
+        )
     if not clin_test.empty:
-        test_datasets.append(UnpairedDataset(clin_test, image_maps, transform=val_transform, id_col='clinical'))
+        test_datasets.append(
+            UnpairedDataset(clin_test, image_maps, transform=val_transform,
+                            id_col='image_id', modality='clinical')
+        )
     if not derm_test.empty:
-        test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm'))
+        test_datasets.append(
+            UnpairedDataset(derm_test, image_maps, transform=val_transform,
+                            id_col='image_id', modality='derm')
+        )
     test_dataset = torch.utils.data.ConcatDataset(test_datasets) if test_datasets else None
 
     # Weighted sampler for training (handle class imbalance)
     labels = []
     for ds in train_datasets:
-        if isinstance(ds, PairedDataset):
-            labels.extend(ds.df['label'].tolist())
-        else:
-            labels.extend(ds.df['label'].tolist())
+        labels.extend(ds.df['label'].tolist())
     class_counts = np.bincount(labels, minlength=cfg['num_classes'])
     class_weights = 1.0 / (class_counts + 1e-6)
     sample_weights = [class_weights[lbl] for lbl in labels]
-    sampler = WeightedRandomSampler(sample_weights, num_samples=len(train_dataset), replacement=True)
+    sampler = WeightedRandomSampler(
+        sample_weights, num_samples=len(train_dataset), replacement=True
+    )
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler,
-                              num_workers=4, pin_memory=True, drop_last=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False,
-                            num_workers=4, pin_memory=True) if val_dataset else None
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False,
-                             num_workers=4, pin_memory=True) if test_dataset else None
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, sampler=sampler,
+        num_workers=4, pin_memory=True, drop_last=True
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=False,
+        num_workers=4, pin_memory=True
+    ) if val_dataset else None
+    test_loader = DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False,
+        num_workers=4, pin_memory=True
+    ) if test_dataset else None
 
-    # Cross-evaluation loaders (e.g., Derm7pt)
+    # ------------------------------------------------------------------
+    # Cross-evaluation loaders
+    # ------------------------------------------------------------------
     eval_loaders = {}
-    if (csv_dir / 'eval_derm7pt.csv').exists():
-        derm7pt_df = pd.read_csv(csv_dir / 'eval_derm7pt.csv')
-        has_paired   = {'clinical', 'derm', 'label', 'skin_type', 'dataset'}.issubset(derm7pt_df.columns)
-        has_unpaired = {'image_id', 'label', 'skin_type', 'dataset'}.issubset(derm7pt_df.columns)
-        if has_paired:
-            # Derm7pt is a paired dataset: each row has a clinical AND a dermoscopic image ID
-            derm7pt_df = derm7pt_df[['clinical', 'derm', 'label', 'skin_type', 'dataset']]
-            derm7pt_dataset = PairedDataset(derm7pt_df, image_maps, transform=val_transform,
-                                            clinical_col='clinical', derm_col='derm')
-            eval_loaders['derm7pt'] = DataLoader(derm7pt_dataset, batch_size=batch_size, shuffle=False,
-                                                 num_workers=4, pin_memory=True)
-            print(f"[INFO] Loaded derm7pt paired eval set: {len(derm7pt_df)} samples")
-        elif has_unpaired:
-            # Fallback: unpaired CSV with a single image_id column
-            derm7pt_df = derm7pt_df[['image_id', 'label', 'skin_type', 'dataset']]
-            derm7pt_dataset = UnpairedDataset(derm7pt_df, image_maps, transform=val_transform, id_col='image_id')
-            eval_loaders['derm7pt'] = DataLoader(derm7pt_dataset, batch_size=batch_size, shuffle=False,
-                                                 num_workers=4, pin_memory=True)
-            print(f"[INFO] Loaded derm7pt unpaired eval set: {len(derm7pt_df)} samples")
-        else:
-            print("[WARN] eval_derm7pt.csv must contain either "
-                  "('clinical','derm','label','skin_type','dataset') for paired mode "
-                  "or ('image_id','label','skin_type','dataset') for unpaired mode. Skipping.")
 
-    # PAD-UFES-20 (clinical unpaired cross-eval)
+    # ── Fitzpatrick17k (clinical, image_id column) — NEW in v3 ─────────
+    _fitz_csv = csv_dir / 'eval_fitzpatrick17k.csv'
+    if _fitz_csv.exists():
+        fitz_df = pd.read_csv(_fitz_csv)
+        has_cols = {'image_id', 'label', 'skin_type', 'dataset'}.issubset(fitz_df.columns)
+        if has_cols:
+            fitz_dataset = UnpairedDataset(
+                fitz_df, image_maps, transform=val_transform,
+                id_col='image_id', modality='clinical'
+            )
+            eval_loaders['fitzpatrick17k'] = DataLoader(
+                fitz_dataset, batch_size=batch_size, shuffle=False,
+                num_workers=4, pin_memory=True
+            )
+            print(f"[INFO] Loaded fitzpatrick17k eval set: {len(fitz_df)} samples")
+        else:
+            print(
+                "[WARN] eval_fitzpatrick17k.csv must contain "
+                "('image_id','label','skin_type','dataset'). Skipping."
+            )
+    else:
+        print(
+            f"[WARN] eval_fitzpatrick17k.csv not found at {_fitz_csv} — "
+            "run data_preprocessing_v3 to generate it."
+        )
+
+    # ── PAD-UFES-20 (clinical, 'clinical' column) ───────────────────────
     _padufes_csv = csv_dir / 'eval_padufes20.csv'
     if _padufes_csv.exists():
         padufes_df = pd.read_csv(_padufes_csv)
-        has_clinical = {'clinical', 'label', 'skin_type', 'dataset'}.issubset(padufes_df.columns)
+        has_clinical = {'clinical', 'label', 'skin_type', 'dataset'}.issubset(
+            padufes_df.columns
+        )
         if has_clinical:
-            padufes_df = padufes_df[['clinical', 'label', 'skin_type', 'dataset']]
-            padufes_dataset = UnpairedDataset(padufes_df, image_maps, transform=val_transform,
-                                              id_col='clinical')
-            eval_loaders['padufes20'] = DataLoader(padufes_dataset, batch_size=batch_size,
-                                                   shuffle=False, num_workers=4, pin_memory=True)
-            print(f"[INFO] Loaded padufes20 unpaired eval set: {len(padufes_df)} samples")
+            padufes_dataset = UnpairedDataset(
+                padufes_df, image_maps, transform=val_transform,
+                id_col='clinical', modality='clinical'
+            )
+            eval_loaders['padufes20'] = DataLoader(
+                padufes_dataset, batch_size=batch_size, shuffle=False,
+                num_workers=4, pin_memory=True
+            )
+            print(f"[INFO] Loaded padufes20 eval set: {len(padufes_df)} samples")
         else:
-            print("[WARN] eval_padufes20.csv must contain "
-                  "('clinical','label','skin_type','dataset'). Skipping.")
+            print(
+                "[WARN] eval_padufes20.csv must contain "
+                "('clinical','label','skin_type','dataset'). Skipping."
+            )
     else:
-        print(f"[WARN] eval_padufes20.csv not found at {_padufes_csv} — "
-              "run the preprocessing notebook to generate it, then re-run training.")
+        print(
+            f"[WARN] eval_padufes20.csv not found at {_padufes_csv} — "
+            "run data_preprocessing_v3 to generate it."
+        )
 
-    # ISIC2019 (dermoscopic unpaired cross-eval)
+    # ── ISIC2019 (dermoscopic, 'derm' column) ───────────────────────────
     _isic_csv = csv_dir / 'eval_isic2019.csv'
     if _isic_csv.exists():
         isic_df = pd.read_csv(_isic_csv)
         has_derm = {'derm', 'label', 'skin_type', 'dataset'}.issubset(isic_df.columns)
         if has_derm:
-            isic_df = isic_df[['derm', 'label', 'skin_type', 'dataset']]
-            isic_dataset = UnpairedDataset(isic_df, image_maps, transform=val_transform,
-                                           id_col='derm')
-            eval_loaders['isic2019'] = DataLoader(isic_dataset, batch_size=batch_size,
-                                                  shuffle=False, num_workers=4, pin_memory=True)
-            print(f"[INFO] Loaded isic2019 unpaired eval set: {len(isic_df)} samples")
+            isic_dataset = UnpairedDataset(
+                isic_df, image_maps, transform=val_transform,
+                id_col='derm', modality='derm'
+            )
+            eval_loaders['isic2019'] = DataLoader(
+                isic_dataset, batch_size=batch_size, shuffle=False,
+                num_workers=4, pin_memory=True
+            )
+            print(f"[INFO] Loaded isic2019 eval set: {len(isic_df)} samples")
         else:
-            print("[WARN] eval_isic2019.csv must contain "
-                  "('derm','label','skin_type','dataset'). Skipping.")
+            print(
+                "[WARN] eval_isic2019.csv must contain "
+                "('derm','label','skin_type','dataset'). Skipping."
+            )
     else:
-        print(f"[WARN] eval_isic2019.csv not found at {_isic_csv} — "
-              "run the preprocessing notebook to generate it, then re-run training.")
+        print(
+            f"[WARN] eval_isic2019.csv not found at {_isic_csv} — "
+            "run data_preprocessing_v3 to generate it."
+        )
 
     return train_loader, val_loader, test_loader, eval_loaders
 
@@ -336,8 +381,8 @@ def robust_macro_auroc(probs, labels):
         if binary.sum() == 0 or binary.sum() == len(binary):
             continue
         try:
-            auc = roc_auc_score(binary, probs[:, c])
-            aucs.append(auc)
+            auc_score = roc_auc_score(binary, probs[:, c])
+            aucs.append(auc_score)
         except Exception:
             continue
     return float(np.mean(aucs)) if aucs else float("nan")
@@ -347,7 +392,7 @@ def robust_macro_auroc(probs, labels):
 # Validation function (with descriptive progress bar)
 # ------------------------------------------------------------
 @torch.no_grad()
-def validate(model, loader, device, num_classes=5, desc="Validation"):
+def validate(model, loader, device, num_classes=3, desc="Validation"):
     model.eval()
     all_probs, all_labels, all_skins = [], [], []
     print(f"Running {desc}...")
@@ -380,7 +425,7 @@ def validate(model, loader, device, num_classes=5, desc="Validation"):
     per_class_rec = recall_score(labels, preds, average=None, zero_division=0,
                                  labels=list(range(num_classes)))
     per_class_f1 = f1_score(labels, preds, average=None, zero_division=0,
-                            labels=list(range(num_classes)))
+                             labels=list(range(num_classes)))
     conf_mat = sk_confusion_matrix(labels, preds, labels=list(range(num_classes)))
 
     return {
@@ -403,7 +448,7 @@ def validate(model, loader, device, num_classes=5, desc="Validation"):
 
 
 # ------------------------------------------------------------
-# Fairness metrics (unchanged)
+# Fairness metrics
 # ------------------------------------------------------------
 def pg_acc(preds, labels, groups, K=6):
     out = {}
@@ -471,7 +516,7 @@ def fairness(res, K=6):
 
 
 # ------------------------------------------------------------
-# CSV saving functions (unchanged)
+# CSV saving functions
 # ------------------------------------------------------------
 def save_results_csv(res, fair, split_name, results_dir, label_names):
     results_dir = Path(results_dir)
@@ -501,7 +546,9 @@ def save_results_csv(res, fair, split_name, results_dir, label_names):
             "recall": res["per_class_rec"][i],
             "f1": res["per_class_f1"][i],
         })
-    pd.DataFrame(per_class).to_csv(results_dir / f"{split_name}_per_class.csv", index=False)
+    pd.DataFrame(per_class).to_csv(
+        results_dir / f"{split_name}_per_class.csv", index=False
+    )
 
     per_fst = []
     for fst_idx, acc in fair["pg_acc"].items():
@@ -510,7 +557,9 @@ def save_results_csv(res, fair, split_name, results_dir, label_names):
             "fitzpatrick_type": f"FST {fst_idx+1}",
             "accuracy": acc if not np.isnan(acc) else None,
         })
-    pd.DataFrame(per_fst).to_csv(results_dir / f"{split_name}_per_fst.csv", index=False)
+    pd.DataFrame(per_fst).to_csv(
+        results_dir / f"{split_name}_per_fst.csv", index=False
+    )
 
 
 # ------------------------------------------------------------
@@ -528,7 +577,8 @@ def plot_confusion_matrix(conf_mat, class_names, title, save_path):
 
     row_sums = conf_mat.sum(axis=1, keepdims=True).clip(min=1)
     conf_norm = conf_mat.astype(float) / row_sums
-    sns.heatmap(conf_norm, annot=True, fmt=".2f", cmap="Blues", ax=axes[1], vmin=0, vmax=1, cbar=False)
+    sns.heatmap(conf_norm, annot=True, fmt=".2f", cmap="Blues",
+                ax=axes[1], vmin=0, vmax=1, cbar=False)
     axes[1].set_title("Normalized (Recall)")
     axes[1].set_xlabel("Predicted")
     axes[1].set_ylabel("True")
@@ -602,14 +652,6 @@ def plot_fairness_metrics(fair, title, save_path):
     plt.close()
 
 def plot_roc_curve(y_true, y_probs, class_names, title, save_path):
-    """
-    Plot ROC curves for each class and macro-average.
-    y_true: 1D array of true labels
-    y_probs: 2D array of predicted probabilities (N x C)
-    class_names: list of class names
-    title: plot title
-    save_path: path to save the figure
-    """
     n_classes = len(class_names)
     fpr = dict()
     tpr = dict()
@@ -619,7 +661,7 @@ def plot_roc_curve(y_true, y_probs, class_names, title, save_path):
         fpr[i], tpr[i], _ = roc_curve((y_true == i).astype(int), y_probs[:, i])
         roc_auc[i] = auc(fpr[i], tpr[i])
 
-    # Compute macro-average ROC
+    # Macro-average ROC
     all_fpr = np.unique(np.concatenate([fpr[i] for i in range(n_classes)]))
     mean_tpr = np.zeros_like(all_fpr)
     for i in range(n_classes):
@@ -647,18 +689,10 @@ def plot_roc_curve(y_true, y_probs, class_names, title, save_path):
     plt.close()
 
 def plot_training_curves(history, title, save_path):
-    """
-    2x4 grid:
-      Row 0 - loss components: Total Loss | L_MI | L_conf | L_con
-      Row 1 - classification metrics: Accuracy | AUROC | Macro-F1 | Learning Rate
-    Any panel whose key is absent in history is rendered as an empty labelled axes
-    so the layout is always consistent regardless of which losses are active.
-    """
     epochs = list(range(1, len(history.get("train_total", [])) + 1))
     fig, axes = plt.subplots(2, 4, figsize=(22, 9))
     fig.suptitle(title, fontsize=14, fontweight="bold")
 
-    # Row 0 - loss curves (train only; val losses not tracked)
     for ax, key, panel_title, color in [
         (axes[0, 0], "train_total", "Total Loss", "#1950A0"),
         (axes[0, 1], "train_mi",    "L_MI",       "#0096B4"),
@@ -672,7 +706,6 @@ def plot_training_curves(history, title, save_path):
         ax.grid(True, alpha=0.3)
         ax.spines[["top", "right"]].set_visible(False)
 
-    # Row 1 - classification metrics: train (solid) vs val (dashed)
     for ax, t_key, v_key, panel_title, color in [
         (axes[1, 0], "train_acc",      "val_acc",      "Accuracy",     "#1950A0"),
         (axes[1, 1], "train_auroc",    "val_auroc",    "AUROC",        "#0096B4"),
@@ -699,9 +732,10 @@ def plot_training_curves(history, title, save_path):
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close()
 
-# ── Palettes shared by tsne functions ───────────────────────────────────
-_CLS_COLORS = ["#1950A0", "#0096B4", "#DC641E", "#2ECC71", "#9B59B6"]
-_CLS_NAMES  = {0: "melanoma", 1: "nevus", 2: "basal cell ca.", 3: "actinic ker.", 4: "squamous cc."}
+
+# ── Palettes shared by t-SNE functions ─────────────────────────────────────
+_CLS_COLORS = ["#1950A0", "#0096B4", "#DC641E"]   # 3 classes
+_CLS_NAMES  = {0: "melanoma", 1: "nevus", 2: "basal cell ca."}
 _FST_COLORS = ["#FFEDE0", "#F4C18C", "#D49060", "#A0522D", "#5C3317", "#2B1500"]
 _FST_MAP    = {i: f"FST {i+1}" for i in range(6)}
 _MOD_COLORS = {0: "#1950A0", 1: "#DC641E"}
@@ -712,7 +746,6 @@ _MOD_SIZES   = {0: 20,  1: 16}
 
 def _tsne_scatter_labeled(ax, xy, color_ids, palette, labels_map, title,
                           xlabel="t-SNE-1", ylabel="t-SNE-2", s=18, alpha=0.7):
-    """Scatter helper: one colour per unique id, legend from labels_map."""
     for cid in sorted(set(color_ids.tolist())):
         mask = color_ids == cid
         ax.scatter(xy[mask, 0], xy[mask, 1], c=palette[cid % len(palette)],
@@ -729,31 +762,18 @@ def _run_tsne(embeddings, perplexity=40, seed=42):
     if n < 5:
         return None
     perp = min(perplexity, max(5, n // 10))
-    # Try to use max_iter (newer sklearn) first, fall back to n_iter (older)
     try:
         tsne = TSNE(n_components=2, random_state=seed, perplexity=perp,
                     max_iter=1000, learning_rate='auto', init='pca')
         return tsne.fit_transform(embeddings)
     except TypeError:
-        # Older version: use n_iter instead of max_iter and without learning_rate='auto'
         tsne = TSNE(n_components=2, random_state=seed, perplexity=perp,
                     n_iter=1000, learning_rate=200.0, init='pca')
         return tsne.fit_transform(embeddings)
 
 
-def plot_tsne_class_fst(embeddings, labels, skins, title, save_path, perplexity=40, seed=42):
-    """
-    Figure A — two-panel t-SNE:
-      Left  : coloured by disease class (5 classes)
-      Right : coloured by Fitzpatrick Skin Type (FST 1-6), unknown samples in grey
-    Args:
-        embeddings : np.ndarray (N, D)
-        labels     : np.ndarray (N,) int  — disease class index
-        skins      : np.ndarray (N,) int  — FST index 0-5; negative = unknown
-        title      : suptitle string (e.g. "t-SNE — Shared Embedding Space  [Internal Test]")
-        save_path  : Path or str
-    """
-    from matplotlib.colors import ListedColormap as _LC
+def plot_tsne_class_fst(embeddings, labels, skins, title, save_path,
+                        perplexity=40, seed=42):
     e2d = _run_tsne(embeddings, perplexity=perplexity, seed=seed)
     if e2d is None:
         print(f"[SKIP] plot_tsne_class_fst: too few samples ({embeddings.shape[0]})")
@@ -762,18 +782,17 @@ def plot_tsne_class_fst(embeddings, labels, skins, title, save_path, perplexity=
     fig, axes = plt.subplots(1, 2, figsize=(15, 6))
     fig.suptitle(title, fontsize=13, fontweight="bold")
 
-    # Left — by disease class
     _tsne_scatter_labeled(axes[0], e2d, labels, _CLS_COLORS, _CLS_NAMES,
-                          "By Disease Class (5 classes)")
+                          "By Disease Class (3 classes)")
 
-    # Right — by FST (known only; unknown = grey)
     mk_known = skins >= 0
     if mk_known.any():
         _tsne_scatter_labeled(axes[1], e2d[mk_known], skins[mk_known],
                               _FST_COLORS, _FST_MAP, "By Fitzpatrick Skin Type")
     if (~mk_known).any():
         axes[1].scatter(e2d[~mk_known, 0], e2d[~mk_known, 1],
-                        c="#CCCCCC", s=8, alpha=0.25, label="FST unknown", edgecolors="none")
+                        c="#CCCCCC", s=8, alpha=0.25, label="FST unknown",
+                        edgecolors="none")
         axes[1].legend(fontsize=7, markerscale=1.4, framealpha=0.6, ncol=2)
 
     plt.tight_layout()
@@ -782,18 +801,8 @@ def plot_tsne_class_fst(embeddings, labels, skins, title, save_path, perplexity=
     plt.close()
 
 
-def plot_tsne_modality(embeddings, skins, modalities, title, save_path, perplexity=40, seed=42):
-    """
-    Figure B — two-panel t-SNE for modality-invariance diagnostics:
-      Left  : coloured by modality (Clinical=blue, Dermoscopic=orange)
-      Right : FST gradient × modality marker (circle=clinical, square=derm)
-    Args:
-        embeddings : np.ndarray (N, D)
-        skins      : np.ndarray (N,) int  — FST index 0-5; negative = unknown
-        modalities : np.ndarray (N,) int  — 0 = clinical, 1 = dermoscopic
-        title      : suptitle string
-        save_path  : Path or str
-    """
+def plot_tsne_modality(embeddings, skins, modalities, title, save_path,
+                       perplexity=40, seed=42):
     from matplotlib.colors import ListedColormap as _LC
     from matplotlib.lines import Line2D
     e2d = _run_tsne(embeddings, perplexity=perplexity, seed=seed)
@@ -807,7 +816,6 @@ def plot_tsne_modality(embeddings, skins, modalities, title, save_path, perplexi
     fig, axes = plt.subplots(1, 2, figsize=(15, 6))
     fig.suptitle(title, fontsize=12, fontweight="bold")
 
-    # Left — by modality
     for mid in [0, 1]:
         mask = modalities == mid
         if mask.any():
@@ -822,7 +830,6 @@ def plot_tsne_modality(embeddings, skins, modalities, title, save_path, perplexi
     axes[0].legend(fontsize=9, markerscale=1.5, framealpha=0.7)
     axes[0].spines[["top", "right"]].set_visible(False)
 
-    # Right — FST gradient × modality marker
     sc = None
     for mid in [0, 1]:
         m_mask  = modalities == mid
@@ -844,8 +851,9 @@ def plot_tsne_modality(embeddings, skins, modalities, title, save_path, perplexi
         Line2D([0], [0], marker="o", color="grey", ms=7, ls="none", label="Clinical"),
         Line2D([0], [0], marker="s", color="grey", ms=7, ls="none", label="Dermoscopic"),
     ]
-    axes[1].legend(handles=legend_h, fontsize=8, title="Modality", title_fontsize=8, framealpha=0.7)
-    axes[1].set_title("By FST x Modality\n(interleaved -> no skin-colour confounding)",
+    axes[1].legend(handles=legend_h, fontsize=8, title="Modality",
+                   title_fontsize=8, framealpha=0.7)
+    axes[1].set_title("By FST x Modality\n(interleaved → no skin-colour confounding)",
                       fontweight="bold", fontsize=10)
     axes[1].set_xlabel("t-SNE-1"); axes[1].set_ylabel("t-SNE-2")
     axes[1].spines[["top", "right"]].set_visible(False)
@@ -857,10 +865,7 @@ def plot_tsne_modality(embeddings, skins, modalities, title, save_path, perplexi
 
 
 def plot_tsne(embeddings, labels, title, save_path, perplexity=40, seed=42):
-    """
-    Legacy single-panel t-SNE coloured by class label.
-    Prefer plot_tsne_class_fst / plot_tsne_modality for richer diagnostics.
-    """
+    """Legacy single-panel t-SNE coloured by class label."""
     e2d = _run_tsne(embeddings, perplexity=perplexity, seed=seed)
     if e2d is None:
         print(f"[SKIP] plot_tsne: too few samples ({embeddings.shape[0]})")
@@ -871,6 +876,7 @@ def plot_tsne(embeddings, labels, title, save_path, perplexity=40, seed=42):
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close()
+
 
 def print_full_report(res, fair, split_name, label_names):
     print(f"\n{'='*60}")
@@ -903,7 +909,8 @@ def print_full_report(res, fair, split_name, label_names):
     print(f"\n{'─'*40}")
     print("  Confusion Matrix  (rows=True, cols=Pred)")
     print(f"{'─'*40}")
-    short = [label_names.get(i, str(i))[:5].ljust(5) for i in range(len(res["per_class_prec"]))]
+    short = [label_names.get(i, str(i))[:5].ljust(5)
+             for i in range(len(res["per_class_prec"]))]
     print("       " + "  ".join(short))
     for i, row in enumerate(res["conf_mat"]):
         row_vals = "  ".join(f"{v:5d}" for v in row)
@@ -924,15 +931,3 @@ def print_full_report(res, fair, split_name, label_names):
         note = "" if not np.isnan(v) else f"  ← n={n_grp} (no samples)"
         print(f"  FST {g+1}  n={n_grp:>4}  {v:.4f}  {bar}{note}")
     print(f"\n{'='*60}\n")
-
-
-# ------------------------------------------------------------
-# Label mapping (shared with training scripts)
-# ------------------------------------------------------------
-LABEL_NAMES = {
-    0: 'melanoma',
-    1: 'nevus',
-    2: 'basal cell carcinoma',
-    3: 'actinic keratosis',
-    4: 'squamous cell carcinoma',
-}
