@@ -135,7 +135,7 @@ CFG = {
     'lambda_conf':  0.5,
     'lambda_skin':  0.3,        # FIX: was implicit 1.0; explicit weight now
     'lambda_con':   0.5,
-    'lambda_mi':    0.15,       # FIX: was 0.8; lowered to avoid overwhelming cls
+    'lambda_mi':    0.5,       # FIX: was 0.8; lowered to avoid overwhelming cls
     'temperature':  0.07,
     'label_smoothing': 0.05,
     'mixup_alpha':  0.4,
