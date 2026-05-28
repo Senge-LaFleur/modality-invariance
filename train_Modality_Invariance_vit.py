@@ -130,17 +130,17 @@ CFG = {
     'num_skin_types':  6,
 
     'batch_size':      32,
-    'num_epochs':      500,     # update as needed
+    'num_epochs':      50,     # update as needed
     'lr':              3e-5,
     'min_lr':          1e-6,
     'weight_decay':    0.05,
-    'warmup_epochs':   100,     # update as needed
+    'warmup_epochs':   10,     # update as needed
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
     'lambda_conf':     0.5,
     'lambda_con':      0.5,
-    'lambda_mi':       0.8,
+    'lambda_mi':       0.5,
     'temperature':     0.07,
     'label_smoothing': 0.05,
     'mixup_alpha':     0.4,
