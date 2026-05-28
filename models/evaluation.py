@@ -190,68 +190,38 @@ def build_loaders(cfg, seed=42):
     clin_test   = _load_csv('clin_test.csv')
     derm_test   = _load_csv('derm_test.csv')
 
-    # ------------------------------------------------------------------
-    # Training datasets
-    # paired: clinical | derm columns
-    # clin/derm unpaired: image_id column  (new schema from v3 notebook)
-    # ------------------------------------------------------------------
+    # Build training datasets
     train_datasets = []
     if not paired_train.empty:
-        train_datasets.append(
-            PairedDataset(paired_train, image_maps, transform=train_transform)
-        )
+        train_datasets.append(PairedDataset(paired_train, image_maps, transform=train_transform))
     if not clin_train.empty:
-        train_datasets.append(
-            UnpairedDataset(clin_train, image_maps, transform=train_transform,
-                            id_col='image_id', modality='clinical')
-        )
+        train_datasets.append(UnpairedDataset(clin_train, image_maps, transform=train_transform, id_col='clinical'))
     if not derm_train.empty:
-        train_datasets.append(
-            UnpairedDataset(derm_train, image_maps, transform=train_transform,
-                            id_col='image_id', modality='derm')
-        )
+        train_datasets.append(UnpairedDataset(derm_train, image_maps, transform=train_transform, id_col='derm'))
 
     if not train_datasets:
-        raise FileNotFoundError(
-            "No training data found. Check CSV files in " + str(csv_dir)
-        )
+        raise FileNotFoundError("No training data found. Check CSV files in " + str(csv_dir))
 
     train_dataset = torch.utils.data.ConcatDataset(train_datasets)
 
     # Validation datasets
     val_datasets = []
     if not paired_val.empty:
-        val_datasets.append(
-            PairedDataset(paired_val, image_maps, transform=val_transform)
-        )
+        val_datasets.append(PairedDataset(paired_val, image_maps, transform=val_transform))
     if not clin_val.empty:
-        val_datasets.append(
-            UnpairedDataset(clin_val, image_maps, transform=val_transform,
-                            id_col='image_id', modality='clinical')
-        )
+        val_datasets.append(UnpairedDataset(clin_val, image_maps, transform=val_transform, id_col='clinical'))
     if not derm_val.empty:
-        val_datasets.append(
-            UnpairedDataset(derm_val, image_maps, transform=val_transform,
-                            id_col='image_id', modality='derm')
-        )
+        val_datasets.append(UnpairedDataset(derm_val, image_maps, transform=val_transform, id_col='derm'))
     val_dataset = torch.utils.data.ConcatDataset(val_datasets) if val_datasets else None
 
     # Test datasets
     test_datasets = []
     if not paired_test.empty:
-        test_datasets.append(
-            PairedDataset(paired_test, image_maps, transform=val_transform)
-        )
+        test_datasets.append(PairedDataset(paired_test, image_maps, transform=val_transform))
     if not clin_test.empty:
-        test_datasets.append(
-            UnpairedDataset(clin_test, image_maps, transform=val_transform,
-                            id_col='image_id', modality='clinical')
-        )
+        test_datasets.append(UnpairedDataset(clin_test, image_maps, transform=val_transform, id_col='clinical'))
     if not derm_test.empty:
-        test_datasets.append(
-            UnpairedDataset(derm_test, image_maps, transform=val_transform,
-                            id_col='image_id', modality='derm')
-        )
+        test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm'))
     test_dataset = torch.utils.data.ConcatDataset(test_datasets) if test_datasets else None
 
     # Weighted sampler for training (handle class imbalance)
@@ -287,11 +257,11 @@ def build_loaders(cfg, seed=42):
     _fitz_csv = csv_dir / 'eval_fitzpatrick17k.csv'
     if _fitz_csv.exists():
         fitz_df = pd.read_csv(_fitz_csv)
-        has_cols = {'image_id', 'label', 'skin_type', 'dataset'}.issubset(fitz_df.columns)
+        has_cols = {'clinical', 'label', 'skin_type', 'dataset'}.issubset(fitz_df.columns)
         if has_cols:
             fitz_dataset = UnpairedDataset(
                 fitz_df, image_maps, transform=val_transform,
-                id_col='image_id', modality='clinical'
+                id_col='clinical', modality='clinical'
             )
             eval_loaders['fitzpatrick17k'] = DataLoader(
                 fitz_dataset, batch_size=batch_size, shuffle=False,
@@ -301,7 +271,7 @@ def build_loaders(cfg, seed=42):
         else:
             print(
                 "[WARN] eval_fitzpatrick17k.csv must contain "
-                "('image_id','label','skin_type','dataset'). Skipping."
+                "('clinical','label','skin_type','dataset'). Skipping."
             )
     else:
         print(

@@ -1,4 +1,4 @@
-image_id,label,skin_type,dataset
+clinical,label,skin_type,dataset
 b87804452f60aa162a6d29c0f66a2466,0,1,fitzpatrick17k
 4c3f795cf8eb72b946f9bd2642cf23c1,0,5,fitzpatrick17k
 d2c77aa81ca884f99174471132bd3e24,2,0,fitzpatrick17k
