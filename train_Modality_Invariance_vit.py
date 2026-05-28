@@ -41,6 +41,7 @@ from sklearn.metrics import f1_score
 from models.models_losses import (
     DualViT,
     SupConLoss,
+    cross_modal_supcon_loss,
     confusion_loss,
     skin_type_loss,
     mi_loss,
@@ -131,11 +132,11 @@ CFG = {
     'num_skin_types':  6,
 
     'batch_size':      32,
-    'num_epochs':      5,     # update as needed
+    'num_epochs':      50,     # update as needed
     'lr':              3e-5,
     'min_lr':          1e-6,
     'weight_decay':    0.05,
-    'warmup_epochs':   1,     # update as needed
+    'warmup_epochs':   5,     # update as needed
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
@@ -205,12 +206,25 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 skin_type_loss(model.skin_clf(out["z"].detach()), skin_types)
                 if cfg.get("use_conf") else 0.0
             )
-            loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
-            loss_mi = (
-                mi_loss(out["z_c"], out["z_d"])
-                if (cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 0)
-                else 0.0
-            )
+            loss_con = 0.0
+            if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
+                paired_labels = labels[out["paired_mask"]]
+                loss_con = cross_modal_supcon_loss(
+                    out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
+                )
+ 
+            # --- FIX: VICReg-based MI loss (collapse-resistant) ---
+            loss_mi = 0.0
+            if cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 1:
+                loss_mi = mi_loss(out["z_c"], out["z_d"])
+                n_paired_batches += 1
+
+            # loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
+            # loss_mi = (
+            #     mi_loss(out["z_c"], out["z_d"])
+            #     if (cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 0)
+            #     else 0.0
+            # )
 
             total_loss = cfg["lambda_cls"] * loss_cls
             if cfg.get("use_conf"):
