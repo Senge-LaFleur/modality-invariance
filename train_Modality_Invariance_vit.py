@@ -141,6 +141,7 @@ CFG = {
 
     'lambda_cls':      1.0,
     'lambda_conf':     0.5,
+    'lambda_skin':     0.3,  
     'lambda_con':      0.5,
     'lambda_mi':       0.15,
     'temperature':     0.07,
@@ -228,7 +229,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
 
             total_loss = cfg["lambda_cls"] * loss_cls
             if cfg.get("use_conf"):
-                total_loss += cfg["lambda_conf"] * loss_conf + loss_skin
+                total_loss += cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_skin   # FIX: explicit lambda
             if cfg.get("use_con"):
                 total_loss += cfg["lambda_con"] * loss_con
             if cfg.get("use_mi") and loss_mi != 0:
