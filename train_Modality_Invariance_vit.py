@@ -166,6 +166,8 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     totals = dict(total=0., cls=0., conf=0., skin=0., con=0., mi=0.)
     all_preds, all_labels = [], []
     n_batches = 0
+    n_paired_batches = 0   # FIX: track how often MI actually fires
+
 
     sup_con = SupConLoss(cfg["temperature"]).to(device)
     weight_tensor = (
@@ -263,6 +265,10 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     all_labels = np.concatenate(all_labels)
     totals["acc"] = (all_preds == all_labels).mean()
     totals["macro_f1"] = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+    
+    # FIX: report paired-batch rate so you can verify MI is actually training
+    totals["paired_rate"] = n_paired_batches / max(n_batches, 1)
+
     return totals
 
 
@@ -358,7 +364,8 @@ def main():
             f"Ep {epoch+1:3d}/{CFG['num_epochs']}  "
             f"loss={train_metrics['total']:.4f}  tr_acc={train_metrics['acc']:.4f}  "
             f"val_acc={val_metrics['acc']:.4f}  val_auroc={val_metrics['auroc']:.4f}  "
-            f"val_f1={val_metrics['macro_f1']:.4f}  lr={lr:.2e}"
+            f"val_f1={val_metrics['macro_f1']:.4f}  "
+            f"paired={train_metrics['paired_rate']:.2f}  lr={lr:.2e}"
         )
 
         ckpt_state = {
