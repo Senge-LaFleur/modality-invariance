@@ -358,31 +358,6 @@ def robust_macro_auroc(probs, labels):
     return float(np.mean(aucs)) if aucs else float("nan")
 
 
-# ------------------------------------------------------------
-# Helper: robust accuracy (balanced / macro-averaged recall)
-# ------------------------------------------------------------
-
-def robust_accuracy(preds, labels):
-    """
-    Macro-averaged per-class recall (i.e. balanced accuracy), computed
-    only over classes actually present in `labels`.
-    Mirrors robust_macro_auroc: classes absent from a split are skipped
-    entirely rather than being counted as 0, so a small cross-eval subset
-    that happens to lack one class is not unfairly penalised.
-    """
-
-    present = np.unique(labels)
-    if len(present) == 0:
-        return float("nan")
-    recalls = []
-    for c in present:
-        mask = labels == c
-        if mask.sum() == 0:
-            continue
-        recalls.append(float((preds[mask] == c).mean()))
-    return float(np.mean(recalls)) if recalls else float("nan")
-
-
 def robust_macro_f1(labels, preds):
     """
     Compute macro F1 only over classes that actually appear in the ground truth.
@@ -431,7 +406,7 @@ def validate(model, loader, device, num_classes=3, desc="Validation"):
     skins = np.concatenate(all_skins)
     preds = probs.argmax(axis=1)
 
-    acc = robust_accuracy(preds, labels)
+    acc = (preds == labels).mean()
     auroc = robust_macro_auroc(probs, labels)
     macro_f1 = robust_macro_f1(labels, preds)
     micro_f1 = f1_score(labels, preds, average="micro", zero_division=0)

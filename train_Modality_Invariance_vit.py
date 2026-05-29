@@ -209,12 +209,13 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 skin_type_loss(model.skin_clf(out["z"].detach()), skin_types)
                 if cfg.get("use_conf") else 0.0
             )
-            loss_con = 0.0
-            if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
-                paired_labels = labels[out["paired_mask"]]
-                loss_con = cross_modal_supcon_loss(
-                    out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
-                )
+            # loss_con = 0.0
+            # if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
+            #     paired_labels = labels[out["paired_mask"]]
+            #     loss_con = cross_modal_supcon_loss(
+            #         out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
+            #     )
+            loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
  
             # --- FIX: VICReg-based MI loss (collapse-resistant) ---
             loss_mi = 0.0
@@ -222,7 +223,6 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 loss_mi = mi_loss(out["z_c"], out["z_d"])
                 n_paired_batches += 1
 
-            # loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
             # loss_mi = (
             #     mi_loss(out["z_c"], out["z_d"])
             #     if (cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 0)
