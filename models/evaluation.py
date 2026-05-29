@@ -33,14 +33,6 @@ LABEL_NAMES = {
 }
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# FST-AWARE AUGMENTATION CONFIG  — fairness improvement strategy
-# ════════════════════════════════════════════════════════════════════════════
-FST_AUGMENT_SCALE = {
-    0: 1.0, 1: 1.0, 2: 1.2, 3: 1.5, 4: 1.8, 5: 2.0, -1: 1.0
-}
-
-
 # ------------------------------------------------------------
 # Helper: pre-build image maps for all datasets
 # ------------------------------------------------------------
@@ -91,7 +83,7 @@ class UnpairedDataset(Dataset):
         full_path = self._resolve_path(row)
         img = Image.open(full_path).convert('RGB')
         if self.transform:
-            img = self._apply_scaled_augmentation(img, idx)
+            img = self.transform(img)
         return {
             'clinical': img,
             'derm': img,
@@ -101,30 +93,6 @@ class UnpairedDataset(Dataset):
             'paired': False,
             'modality': self.modality,
         }
-    
-    def _apply_scaled_augmentation(self, img, idx):
-        """Apply augmentation scaled by class+FST imbalance."""
-        aug_scale = getattr(self, 'aug_scales', None)
-        if aug_scale is None or idx >= len(aug_scale):
-            return self.transform(img)
-        
-        scale = float(aug_scale[idx])
-        
-        scaled_transform = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=(0.85, 1.0)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomVerticalFlip(p=0.3),
-            transforms.ColorJitter(
-                brightness=0.2 * scale,
-                contrast=0.2 * scale,
-                saturation=0.2 * scale,
-                hue=0.1 * scale
-            ),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-        return scaled_transform(img)
-
 
 
 class PairedDataset(Dataset):
@@ -156,8 +124,9 @@ class PairedDataset(Dataset):
         clinical_img = Image.open(clinical_path).convert('RGB')
         derm_img = Image.open(derm_path).convert('RGB')
         if self.transform:
-            clinical_img = self._apply_scaled_augmentation(clinical_img, idx)
-            derm_img = self._apply_scaled_augmentation(derm_img, idx)
+            clinical_img = self.transform(clinical_img)
+            derm_img = self.transform(derm_img)
+
         return {
             'clinical': clinical_img,
             'derm': derm_img,
@@ -167,30 +136,6 @@ class PairedDataset(Dataset):
             'paired': True,
             'modality': 'paired',
         }
-    
-    def _apply_scaled_augmentation(self, img, idx):
-        """Apply augmentation scaled by class+FST imbalance."""
-        aug_scale = getattr(self, 'aug_scales', None)
-        if aug_scale is None or idx >= len(aug_scale):
-            return self.transform(img)
-        
-        scale = float(aug_scale[idx])
-        
-        scaled_transform = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=(0.85, 1.0)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomVerticalFlip(p=0.3),
-            transforms.ColorJitter(
-                brightness=0.2 * scale,
-                contrast=0.2 * scale,
-                saturation=0.2 * scale,
-                hue=0.1 * scale
-            ),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-        return scaled_transform(img)
-
 
 
 # ------------------------------------------------------------
@@ -279,60 +224,13 @@ def build_loaders(cfg, seed=42):
         test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm'))
     test_dataset = torch.utils.data.ConcatDataset(test_datasets) if test_datasets else None
 
-
-    # ════════════════════════════════════════════════════════════════════════
-    # JOINT CLASS × FST WEIGHTED SAMPLER + ONLINE AUGMENTATION STRATEGY
-    # ════════════════════════════════════════════════════════════════════════
+    # Weighted sampler for training (handle class imbalance)
     labels = []
-    fst_list = []
     for ds in train_datasets:
         labels.extend(ds.df['label'].tolist())
-        fst_vals = ds.df.get('skin_type', pd.Series([-1]*len(ds.df)))
-        fst_list.extend(fst_vals.fillna(-1).astype(int).tolist())
-    
     class_counts = np.bincount(labels, minlength=cfg['num_classes'])
     class_weights = 1.0 / (class_counts + 1e-6)
-    
-    fst_for_counting = [max(f, 0) for f in fst_list]
-    fst_counts = np.bincount(fst_for_counting, minlength=cfg.get('num_skin_types', 6))
-    fst_weights = 1.0 / (fst_counts + 1e-6)
-    
-    # Normalize weights to [1, 2] range for augmentation scaling
-    class_aug_scales = 1.0 + (class_weights / class_weights.max())
-    fst_aug_scales = 1.0 + (fst_weights / fst_weights.max())
-    
-    # Joint weighting for sampling and augmentation
-    sample_weights = []
-    aug_scales = []
-    for lbl, fst in zip(labels, fst_list):
-        class_w = class_weights[lbl]
-        fst_w = fst_weights[max(fst, 0)]
-        sample_weights.append(class_w * fst_w)
-        
-        class_aug = class_aug_scales[lbl]
-        fst_aug = fst_aug_scales[max(fst, 0)]
-        aug_scales.append(class_aug * fst_aug)
-    
-    aug_scales = np.array(aug_scales)
-    aug_scales = 1.0 + (aug_scales - aug_scales.min()) / (aug_scales.max() - aug_scales.min() + 1e-6)
-    
-    # Store aug scales in each dataset for per-sample augmentation
-    for ds_idx, ds in enumerate(train_datasets):
-        start_idx = sum(len(train_datasets[i]) for i in range(ds_idx))
-        end_idx = start_idx + len(ds)
-        ds.aug_scales = aug_scales[start_idx:end_idx]
-    
-    print("\n" + "="*70)
-    print("[FST+CLASS-AWARE TRAINING] Joint Sampling + Online Augmentation")
-    print("="*70)
-    print(f"Class counts:         {dict(enumerate(class_counts.tolist()))}")
-    print(f"FST counts:           {dict(enumerate(fst_counts.tolist()))}")
-    print(f"Class aug scales:     {np.round(class_aug_scales, 3).tolist()}")
-    print(f"FST aug scales:       {np.round(fst_aug_scales, 3).tolist()}")
-    print(f"Combined aug range:   [{aug_scales.min():.2f}, {aug_scales.max():.2f}]")
-    print(f"Total samples:        {len(train_dataset)}")
-    print("="*70 + "\n")
-    
+    sample_weights = [class_weights[lbl] for lbl in labels]
     sampler = WeightedRandomSampler(
         sample_weights, num_samples=len(train_dataset), replacement=True
     )
