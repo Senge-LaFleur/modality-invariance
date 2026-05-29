@@ -337,7 +337,7 @@ def build_loaders(cfg, seed=42):
 
 
 # ------------------------------------------------------------
-# Helper: robust macro AUROC
+# Helper: robust macro AUROC and robust macro F1
 # ------------------------------------------------------------
 def robust_macro_auroc(probs, labels):
     present = np.unique(labels)
@@ -356,6 +356,29 @@ def robust_macro_auroc(probs, labels):
         except Exception:
             continue
     return float(np.mean(aucs)) if aucs else float("nan")
+
+
+def robust_macro_f1(labels, preds):
+    """
+    Compute macro F1 only over classes that actually appear in the ground truth.
+    Ignores missing classes, avoiding the artificial 0.0 that standard macro F1 would add.
+    """
+    present_classes = np.unique(labels)
+    if len(present_classes) < 2:   # need at least 2 classes for macro average to be meaningful
+        return float("nan")
+    
+    f1_scores = []
+    for c in present_classes:
+        tp = np.sum((labels == c) & (preds == c))
+        fp = np.sum((labels != c) & (preds == c))
+        fn = np.sum((labels == c) & (preds != c))
+        
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall    = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+        f1_scores.append(f1)
+    
+    return float(np.mean(f1_scores))
 
 
 # ------------------------------------------------------------
@@ -385,7 +408,7 @@ def validate(model, loader, device, num_classes=3, desc="Validation"):
 
     acc = (preds == labels).mean()
     auroc = robust_macro_auroc(probs, labels)
-    macro_f1 = f1_score(labels, preds, average="macro", zero_division=0)
+    macro_f1 = robust_macro_f1(labels, preds)
     micro_f1 = f1_score(labels, preds, average="micro", zero_division=0)
     weighted_f1 = f1_score(labels, preds, average="weighted", zero_division=0)
     macro_prec = precision_score(labels, preds, average="macro", zero_division=0)
