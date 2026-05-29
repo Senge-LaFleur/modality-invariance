@@ -355,63 +355,63 @@ def skin_type_loss(skin_logits_detached, skin_labels):
 # ------------------------------------------------------------------
 # FIX: VICReg-style MI loss (replaces the collapsing cosine+MSE loss)
 # ------------------------------------------------------------------
-def mi_loss_vicreg(z_c, z_d, lambda_inv=1.0, lambda_var=1.0, lambda_cov=0.04):
-    """
-    Modality invariance loss with collapse prevention (VICReg-style).
+# def mi_loss_vicreg(z_c, z_d, lambda_inv=1.0, lambda_var=1.0, lambda_cov=0.04):
+#     """
+#     Modality invariance loss with collapse prevention (VICReg-style).
 
-    The original mi_loss() used only cosine similarity + MSE, which gives the
-    optimiser a trivial solution: collapse all embeddings to a constant vector,
-    which scores perfectly on both metrics while being useless for downstream
-    classification. This caused the AUROC drops seen in the results (90.01 vs
-    95.71 baseline for ResNet, 88.38 vs 97.12 for ViT).
+#     The original mi_loss() used only cosine similarity + MSE, which gives the
+#     optimiser a trivial solution: collapse all embeddings to a constant vector,
+#     which scores perfectly on both metrics while being useless for downstream
+#     classification. This caused the AUROC drops seen in the results (90.01 vs
+#     95.71 baseline for ResNet, 88.38 vs 97.12 for ViT).
 
-    This version adds:
-      - Variance term: penalises dimensions whose standard deviation falls
-        below 1, preventing collapse.
-      - Covariance term: penalises off-diagonal covariance, decorrelating
-        the embedding dimensions so each carries distinct information.
+#     This version adds:
+#       - Variance term: penalises dimensions whose standard deviation falls
+#         below 1, preventing collapse.
+#       - Covariance term: penalises off-diagonal covariance, decorrelating
+#         the embedding dimensions so each carries distinct information.
 
-    Reference: Bardes, Ponce & LeCun, "VICReg: Variance-Invariance-Covariance
-    Regularization for Self-Supervised Learning", ICLR 2022.
+#     Reference: Bardes, Ponce & LeCun, "VICReg: Variance-Invariance-Covariance
+#     Regularization for Self-Supervised Learning", ICLR 2022.
 
-    Args:
-        z_c:        [N, D] clinical embeddings (L2-normalised)
-        z_d:        [N, D] derm embeddings (L2-normalised)
-        lambda_inv: weight for the invariance (alignment) term
-        lambda_var: weight for the variance (anti-collapse) term
-        lambda_cov: weight for the covariance (decorrelation) term
+#     Args:
+#         z_c:        [N, D] clinical embeddings (L2-normalised)
+#         z_d:        [N, D] derm embeddings (L2-normalised)
+#         lambda_inv: weight for the invariance (alignment) term
+#         lambda_var: weight for the variance (anti-collapse) term
+#         lambda_cov: weight for the covariance (decorrelation) term
 
-    Returns:
-        scalar loss
-    """
-    if z_c.size(0) < 2:
-        return z_c.new_tensor(0.)
+#     Returns:
+#         scalar loss
+#     """
+#     if z_c.size(0) < 2:
+#         return z_c.new_tensor(0.)
 
-    # --- Invariance: pull the two modalities together ---
-    inv = F.mse_loss(z_c, z_d)
+#     # --- Invariance: pull the two modalities together ---
+#     inv = F.mse_loss(z_c, z_d)
 
-    # --- Variance: prevent dimensional collapse ---
-    std_c = torch.sqrt(z_c.var(dim=0) + 1e-4)
-    std_d = torch.sqrt(z_d.var(dim=0) + 1e-4)
-    var = torch.mean(F.relu(1.0 - std_c)) + torch.mean(F.relu(1.0 - std_d))
+#     # --- Variance: prevent dimensional collapse ---
+#     std_c = torch.sqrt(z_c.var(dim=0) + 1e-4)
+#     std_d = torch.sqrt(z_d.var(dim=0) + 1e-4)
+#     var = torch.mean(F.relu(1.0 - std_c)) + torch.mean(F.relu(1.0 - std_d))
 
-    # --- Covariance: decorrelate embedding dimensions ---
-    N, D = z_c.shape
-    z_c_n = z_c - z_c.mean(dim=0)
-    z_d_n = z_d - z_d.mean(dim=0)
-    cov_c = (z_c_n.T @ z_c_n) / (N - 1)
-    cov_d = (z_d_n.T @ z_d_n) / (N - 1)
+#     # --- Covariance: decorrelate embedding dimensions ---
+#     N, D = z_c.shape
+#     z_c_n = z_c - z_c.mean(dim=0)
+#     z_d_n = z_d - z_d.mean(dim=0)
+#     cov_c = (z_c_n.T @ z_c_n) / (N - 1)
+#     cov_d = (z_d_n.T @ z_d_n) / (N - 1)
 
-    # Sum of squared off-diagonal elements, normalised by D
-    def off_diag_sq(mat):
-        return (mat.pow(2).sum() - mat.diagonal().pow(2).sum()) / D
+#     # Sum of squared off-diagonal elements, normalised by D
+#     def off_diag_sq(mat):
+#         return (mat.pow(2).sum() - mat.diagonal().pow(2).sum()) / D
 
-    cov = off_diag_sq(cov_c) + off_diag_sq(cov_d)
+#     cov = off_diag_sq(cov_c) + off_diag_sq(cov_d)
 
-    return lambda_inv * inv + lambda_var * var + lambda_cov * cov
+#     return lambda_inv * inv + lambda_var * var + lambda_cov * cov
 
 
-def mi_loss_legacy(z_c, z_d):
+def mi_loss(z_c, z_d):
     """
     DEPRECATED — kept for reference only. Do NOT use in training.
     The cosine+MSE formulation has no collapse-prevention mechanism,
@@ -424,9 +424,9 @@ def mi_loss_legacy(z_c, z_d):
 
 # Keep the old name as an alias pointing to the safe version, so any code
 # that still calls mi_loss() gets the fixed implementation automatically.
-def mi_loss(z_c, z_d):
-    """Alias for mi_loss_vicreg() with default weights. Backwards-compatible."""
-    return mi_loss_vicreg(z_c, z_d)
+# def mi_loss(z_c, z_d):
+#     """Alias for mi_loss_vicreg() with default weights. Backwards-compatible."""
+#     return mi_loss_vicreg(z_c, z_d)
 
 
 def mixup_embeddings(z, labels, alpha=0.4):
