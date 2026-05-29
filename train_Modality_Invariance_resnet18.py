@@ -41,6 +41,7 @@ from sklearn.metrics import f1_score
 from models.models_losses import (
     DualResNet18,
     SupConLoss,
+    cross_modal_supcon_loss,
     confusion_loss,
     skin_type_loss,
     mi_loss,
@@ -115,15 +116,16 @@ CFG = {
     'num_skin_types':  6,
 
     'batch_size':      32,
-    'num_epochs':      5,     # update as needed
-    'lr':              1e-4,
+    'num_epochs':      50,     # update as needed
+    'lr':              3e-5,
     'min_lr':          1e-6,
-    'weight_decay':    1e-4,
-    'warmup_epochs':   1,     # update as needed
+    'weight_decay':    0.05,
+    'warmup_epochs':   5,     # update as needed
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
     'lambda_conf':     0.5,
+    'lambda_skin':     0.3,
     'lambda_con':      0.5,
     'lambda_mi':       0.15,
     'temperature':     0.07,
@@ -148,6 +150,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     totals = dict(total=0., cls=0., conf=0., skin=0., con=0., mi=0.)
     all_preds, all_labels = [], []
     n_batches = 0
+    n_paired_batches = 0   # FIX: track how often MI actually fires
 
     sup_con = SupConLoss(cfg["temperature"]).to(device)
     weight_tensor = (
@@ -189,16 +192,29 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 skin_type_loss(model.skin_clf(out["z"].detach()), skin_types)
                 if cfg.get("use_conf") else 0.0
             )
-            loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
-            loss_mi = (
-                mi_loss(out["z_c"], out["z_d"])
-                if (cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 0)
-                else 0.0
-            )
+            loss_con = 0.0
+            if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
+                paired_labels = labels[out["paired_mask"]]
+                loss_con = cross_modal_supcon_loss(
+                    out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
+                )
+ 
+            # --- FIX: VICReg-based MI loss (collapse-resistant) ---
+            loss_mi = 0.0
+            if cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 1:
+                loss_mi = mi_loss(out["z_c"], out["z_d"])
+                n_paired_batches += 1
+
+            # loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
+            # loss_mi = (
+            #     mi_loss(out["z_c"], out["z_d"])
+            #     if (cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 0)
+            #     else 0.0
+            # )
 
             total_loss = cfg["lambda_cls"] * loss_cls
             if cfg.get("use_conf"):
-                total_loss += cfg["lambda_conf"] * loss_conf + loss_skin
+                total_loss += cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_skin
             if cfg.get("use_con"):
                 total_loss += cfg["lambda_con"] * loss_con
             if cfg.get("use_mi") and loss_mi != 0:
@@ -232,9 +248,16 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     all_labels = np.concatenate(all_labels)
     totals["acc"] = (all_preds == all_labels).mean()
     totals["macro_f1"] = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+
+    # FIX: report paired-batch rate so you can verify MI is actually training
+    totals["paired_rate"] = n_paired_batches / max(n_batches, 1)
+
     return totals
 
 
+# ------------------------------------------------------------
+# Main training and evaluation pipeline
+# ------------------------------------------------------------
 def main():
     print(f"CSV dir:        {CFG['csv_dir']}")
     print(f"Checkpoints:    {CFG['ckpt_dir']}")
@@ -321,7 +344,8 @@ def main():
             f"Ep {epoch+1:3d}/{CFG['num_epochs']}  "
             f"loss={train_metrics['total']:.4f}  tr_acc={train_metrics['acc']:.4f}  "
             f"val_acc={val_metrics['acc']:.4f}  val_auroc={val_metrics['auroc']:.4f}  "
-            f"val_f1={val_metrics['macro_f1']:.4f}  lr={lr:.2e}"
+            f"val_f1={val_metrics['macro_f1']:.4f}  "
+            f"paired={train_metrics['paired_rate']:.2f}  lr={lr:.2e}"
         )
 
         ckpt_state = {
