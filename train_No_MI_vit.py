@@ -137,7 +137,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_ten
     total_loss_c = 0.0
     total_loss_conf = 0.0
     total_loss_s = 0.0
-    total_loss_contr = 0.0
+    total_loss_con = 0.0
     all_preds, all_labels = [], []
     n_batches = 0
 
