@@ -43,6 +43,7 @@ from models.models_losses import (
     DualViT,
     SupConLoss,
     confusion_loss,
+    cross_modal_supcon_loss,
     skin_type_loss,
     get_layer_wise_lr_params,
     cls_loss_fn,
@@ -79,16 +80,15 @@ print(f"Device: {DEVICE}")
 
 # WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 #WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
-WORK_ROOT = Path('outputs')
+WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('process_No_MI_vit/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'fitzpatrick17k': Path('process_No_MI_vit/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'ham10000':       Path('process_No_MI_vit/data/datasets/asosenge/ham10000/HAM10000'),
-    'derm7pt':        Path('process_No_MI_vit/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('process_No_MI_vit/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('process_No_MI_vit/data/datasets/sengenjih/isic2019'),                 # update path as needed
+    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
+    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
 }
 
 CFG = {
@@ -100,24 +100,26 @@ CFG = {
     'backbone': 'vit_small',
     'embed_dim': 512,
     'img_size': 224,
-    'num_classes': 5,
+    'num_classes': 3,
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 500,           # adjust as needed
+    'num_epochs': 50,           # adjust as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 100,
+    'warmup_epochs': 5,
     'aug_probability': 0.85,
 
     # hyperparameters
-    'alpha': 1.0,      #lambda confusion
-    'beta': 0.8,       #lambda contrastive
-    'temperature': 0.07,
+    'lambda_cls': 1.0,
+    'lambda_conf':     0.2,
+    'lambda_skin':     0.2,  
+    'lambda_con':      0.5,    #lambda contrastive
+    'temperature': 0.1,
 
     # Label smoothing for weighted CE
-    'label_smoothing': 0.05,
+    'label_smoothing': 0.01,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -127,8 +129,7 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 # ------------------------------------------------------------
 # Training function for FairDisCo (with weighted CE)
 # ------------------------------------------------------------
-def train_epoch(model, loader, optimizer, epoch, scaler, device,
-                alpha, beta, temperature, weight_tensor, label_smoothing):
+def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_tensor):
     model.train()
     total_loss = 0.0
     total_loss_c = 0.0
@@ -138,7 +139,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device,
     all_preds, all_labels = [], []
     n_batches = 0
 
-    contrast_criterion = SupConLoss(temperature=temperature)
+    # contrast_criterion = SupConLoss(temperature=cfg["temperature"])
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", unit="batch", dynamic_ncols=True, leave=False)
     for batch in pbar:
@@ -150,17 +151,25 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device,
 
         with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
             out = model(batch)
+            labels = batch["label"]
+            skin_types = batch["skin_type"]
 
             # Weighted label‑smoothed CE
             loss_c = cls_loss_fn(out["logits"], batch["label"],
                                  weight_tensor=weight_tensor,
-                                 smoothing=label_smoothing)
+                                 smoothing=cfg["label_smoothing"])
 
             loss_conf = confusion_loss(out["skin_logits"])
             loss_s = skin_type_loss(out["skin_logits"].detach(), batch["skin_type"])
-            loss_contr = contrast_criterion(out["z"], batch["label"])
+            # loss_con = contrast_criterion(out["z"], batch["label"])
+            loss_con = 0.0
+            if "z_c" in out and out["z_c"].size(0) > 1:
+                paired_labels = labels[out["paired_mask"]]
+                loss_con = cross_modal_supcon_loss(
+                    out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
+                )
 
-            loss = loss_c + alpha * loss_conf + loss_s + beta * loss_contr
+            loss = cfg["lambda_cls"] * loss_c + cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_s + cfg["lambda_con"] * loss_con
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -172,7 +181,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device,
         total_loss_c += loss_c.item()
         total_loss_conf += loss_conf.item()
         total_loss_s += loss_s.item()
-        total_loss_contr += loss_contr.item() if not torch.is_tensor(loss_contr) else loss_contr.item()
+        total_loss_con += loss_con.item() if not torch.is_tensor(loss_con) else loss_con.item()
         n_batches += 1
 
         with torch.no_grad():
@@ -187,7 +196,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device,
     avg_loss_c = total_loss_c / max(n_batches, 1)
     avg_loss_conf = total_loss_conf / max(n_batches, 1)
     avg_loss_s = total_loss_s / max(n_batches, 1)
-    avg_loss_contr = total_loss_contr / max(n_batches, 1)
+    avg_loss_con = total_loss_con / max(n_batches, 1)
 
     all_preds = np.concatenate(all_preds)
     all_labels = np.concatenate(all_labels)
@@ -199,7 +208,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device,
         "loss_c": avg_loss_c,
         "loss_conf": avg_loss_conf,
         "loss_s": avg_loss_s,
-        "loss_contr": avg_loss_contr,
+        "loss_con": avg_loss_con,
         "acc": acc,
         "macro_f1": macro_f1,
     }
@@ -257,15 +266,14 @@ def main():
     start_epoch = 0
     best_auroc = 0.0
     best_f1 = 0.0
-    patience = 20
-    patience_counter = 0
+    # patience = 20
+    # patience_counter = 0
     history = defaultdict(list)
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
-            model, train_loader, optimizer, epoch, scaler, DEVICE,
-            alpha=CFG["alpha"], beta=CFG["beta"], temperature=CFG["temperature"],
-            weight_tensor=weight_tensor, label_smoothing=CFG["label_smoothing"]
+            model, train_loader, optimizer, CFG, epoch, scaler, DEVICE,
+            weight_tensor=weight_tensor
         )
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")

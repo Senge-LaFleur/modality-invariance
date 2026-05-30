@@ -75,16 +75,15 @@ print(f"Device: {DEVICE}")
 
 # WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 #WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
-WORK_ROOT = Path('outputs')
+WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('process_BASE+MI_vit/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'fitzpatrick17k': Path('process_BASE+MI_vit/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'ham10000':       Path('process_BASE+MI_vit/data/datasets/asosenge/ham10000/HAM10000'),
-    'derm7pt':        Path('process_BASE+MI_vit/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('process_BASE+MI_vit/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('process_BASE+MI_vit/data/datasets/sengenjih/isic2019'),                 # update path as needed
+    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
+    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
 }
 
 CFG = {
@@ -96,22 +95,23 @@ CFG = {
     'backbone': 'vit_small',
     'embed_dim': 512,          # projection output dimension
     'img_size': 224,
-    'num_classes': 5,
+    'num_classes': 3,
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 500,          # update as needed
+    'num_epochs': 50,          # update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 100,       # update as needed
+    'warmup_epochs': 5,       # update as needed
     'aug_probability': 0.85,
 
     # MI loss weight
-    'mi_weight': 0.8,
+    'lambda_cls': 1.0,
+    'lambda_mi': 0.15,
 
     # Label smoothing for weighted CE
-    'label_smoothing': 0.05,
+    'label_smoothing': 0.01,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -121,8 +121,7 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 # ------------------------------------------------------------
 # Training function with weighted CE and MI loss
 # ------------------------------------------------------------
-def train_epoch(model, loader, optimizer, epoch, scaler, device,
-                mi_weight, weight_tensor, label_smoothing):
+def train_epoch(model, loader, optimizer, epoch, scaler, device, lambda_cls, lambda_mi, weight_tensor, label_smoothing):
     model.train()
     total_loss = 0.0
     total_loss_c = 0.0
@@ -146,12 +145,17 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device,
                                  weight_tensor=weight_tensor,
                                  smoothing=label_smoothing)
 
-            # MI loss only for paired samples
+            # --- FIX: VICReg-based MI loss (collapse-resistant) ---
             loss_mi = 0.0
-            if "z_c" in out and "z_d" in out:
+            if "z_c" in out and out["z_c"].size(0) > 1:
                 loss_mi = mi_loss(out["z_c"], out["z_d"])
 
-            loss = loss_c + mi_weight * loss_mi
+            # # MI loss only for paired samples
+            # loss_mi = 0.0
+            # if "z_c" in out and "z_d" in out:
+            #     loss_mi = mi_loss(out["z_c"], out["z_d"])
+
+            loss = lambda_cls * loss_c + lambda_mi * loss_mi
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -249,7 +253,7 @@ def main():
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
             model, train_loader, optimizer, epoch, scaler, DEVICE,
-            mi_weight=CFG["mi_weight"],
+            lambda_mi=CFG["lambda_mi"],
             weight_tensor=weight_tensor,
             label_smoothing=CFG["label_smoothing"]
         )

@@ -117,25 +117,25 @@ CFG = {
 
     'batch_size':      32,
     'num_epochs':      50,     # update as needed
-    'lr':              3e-5,
-    'min_lr':          1e-6,
-    'weight_decay':    0.05,
+    'lr': 1e-4,
+    'min_lr': 1e-6,
+    'weight_decay': 1e-4,
     'warmup_epochs':   5,     # update as needed
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
-    'lambda_conf':     0.5,
-    'lambda_skin':     0.3,
+    'lambda_conf':     0.2,
+    'lambda_skin':     0.2,  
     'lambda_con':      0.5,
     'lambda_mi':       0.15,
-    'temperature':     0.07,
-    'label_smoothing': 0.05,
+    'temperature':     0.1,
+    'label_smoothing': 0.01,
     'mixup_alpha':     0.4,
 
     'use_conf':  True,
     'use_con':   True,
     'use_mi':    True,
-    'use_mixup': True,
+    'use_mixup': False,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)

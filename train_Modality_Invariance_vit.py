@@ -133,25 +133,28 @@ CFG = {
 
     'batch_size':      32,
     'num_epochs':      50,     # update as needed
-    'lr':              3e-5,
-    'min_lr':          1e-6,
-    'weight_decay':    0.05,
+    # 'lr':              3e-5,
+    # 'min_lr':          1e-6,
+    # 'weight_decay':    0.05,
+    'lr': 1e-4,
+    'min_lr': 1e-6,
+    'weight_decay': 1e-4,
     'warmup_epochs':   5,      # update as needed
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
-    'lambda_conf':     0.5,
-    'lambda_skin':     0.3,  
+    'lambda_conf':     0.2,
+    'lambda_skin':     0.2,  
     'lambda_con':      0.5,
     'lambda_mi':       0.15,
-    'temperature':     0.07,
-    'label_smoothing': 0.05,
+    'temperature':     0.1,
+    'label_smoothing': 0.01,
     'mixup_alpha':     0.4,
 
     'use_conf':  True,
     'use_con':   True,
     'use_mi':    True,
-    'use_mixup': True,
+    'use_mixup': False,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -209,25 +212,25 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 skin_type_loss(model.skin_clf(out["z"].detach()), skin_types)
                 if cfg.get("use_conf") else 0.0
             )
-            # loss_con = 0.0
-            # if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
-            #     paired_labels = labels[out["paired_mask"]]
-            #     loss_con = cross_modal_supcon_loss(
-            #         out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
-            #     )
-            loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
+            loss_con = 0.0
+            if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
+                paired_labels = labels[out["paired_mask"]]
+                loss_con = cross_modal_supcon_loss(
+                    out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
+                )
+            # loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
  
             # --- FIX: VICReg-based MI loss (collapse-resistant) ---
-            # loss_mi = 0.0
-            # if cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 1:
-            #     loss_mi = mi_loss(out["z_c"], out["z_d"])
-            #     n_paired_batches += 1
+            loss_mi = 0.0
+            if cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 1:
+                loss_mi = mi_loss(out["z_c"], out["z_d"])
+                n_paired_batches += 1
 
-            loss_mi = (
-                mi_loss(out["z_c"], out["z_d"])
-                if (cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 0)
-                else 0.0
-            )
+            # loss_mi = (
+            #     mi_loss(out["z_c"], out["z_d"])
+            #     if (cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 0)
+            #     else 0.0
+            # )
 
             total_loss = cfg["lambda_cls"] * loss_cls
             if cfg.get("use_conf"):
