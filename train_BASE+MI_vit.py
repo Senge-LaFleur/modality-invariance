@@ -112,6 +112,8 @@ CFG = {
 
     # Label smoothing for weighted CE
     'label_smoothing': 0.01,
+
+    'phase2_start': 60,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -121,7 +123,7 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 # ------------------------------------------------------------
 # Training function with weighted CE and MI loss
 # ------------------------------------------------------------
-def train_epoch(model, loader, optimizer, epoch, scaler, device, lambda_cls, lambda_mi, weight_tensor, label_smoothing):
+def train_epoch(model, loader, optimizer, epoch, cfg, scaler, device, weight_tensor):
     model.train()
     total_loss = 0.0
     total_loss_c = 0.0
@@ -143,7 +145,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, lambda_cls, lam
             # Weighted label‑smoothed CE
             loss_c = cls_loss_fn(out["logits"], batch["label"],
                                  weight_tensor=weight_tensor,
-                                 smoothing=label_smoothing)
+                                 smoothing=cfg["label_smoothing"])
 
             # --- FIX: VICReg-based MI loss (collapse-resistant) ---
             loss_mi = 0.0
@@ -155,7 +157,7 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, lambda_cls, lam
             # if "z_c" in out and "z_d" in out:
             #     loss_mi = mi_loss(out["z_c"], out["z_d"])
 
-            loss = lambda_cls * loss_c + lambda_mi * loss_mi
+            loss = cfg["lambda_cls"] * loss_c + cfg["lambda_mi"] * loss_mi
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -252,10 +254,8 @@ def main():
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
-            model, train_loader, optimizer, epoch, scaler, DEVICE,
-            lambda_mi=CFG["lambda_mi"],
+            model, train_loader, optimizer, epoch, scaler, DEVICE, CFG,
             weight_tensor=weight_tensor,
-            label_smoothing=CFG["label_smoothing"]
         )
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")

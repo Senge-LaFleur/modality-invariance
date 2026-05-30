@@ -136,6 +136,8 @@ CFG = {
     'use_con':   True,
     'use_mi':    True,
     'use_mixup': False,
+
+    'phase2_start': 60,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
