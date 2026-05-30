@@ -97,7 +97,7 @@ CFG = {
     'backbone': 'resnet18',
     'embed_dim': 512,
     'img_size': 224,
-    'num_classes': 5,
+    'num_classes': 3,
     'num_skin_types': 6,
 
     'batch_size': 32,

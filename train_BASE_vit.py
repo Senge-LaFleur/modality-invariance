@@ -97,7 +97,7 @@ CFG = {
     'vit_model': 'vit_small_patch16_224',
     'embed_dim': 384,
     'img_size': 224,
-    'num_classes': 5,
+    'num_classes': 3,
     'num_skin_types': 6,
 
     'batch_size': 32,
