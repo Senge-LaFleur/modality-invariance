@@ -115,7 +115,7 @@ CFG = {
     'lambda_cls': 1.0,
     'lambda_conf':     0.2,
     'lambda_skin':     0.2,  
-    'lambda_con':      0.5,    #lambda contrastive
+    'lambda_con':      0.5,
     'temperature': 0.1,
 
     # Label smoothing for weighted CE
