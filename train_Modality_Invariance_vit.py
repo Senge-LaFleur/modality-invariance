@@ -109,7 +109,7 @@ IMAGE_ROOTS = {
     'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
     'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),             
     'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
 }
 
@@ -133,9 +133,6 @@ CFG = {
 
     'batch_size':      32,
     'num_epochs':      50,     # update as needed
-    # 'lr':              3e-5,
-    # 'min_lr':          1e-6,
-    # 'weight_decay':    0.05,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
@@ -214,13 +211,13 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 skin_type_loss(model.skin_clf(out["z"].detach()), skin_types)
                 if cfg.get("use_conf") else 0.0
             )
-            loss_con = 0.0
-            if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
-                paired_labels = labels[out["paired_mask"]]
-                loss_con = cross_modal_supcon_loss(
-                    out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
-                )
-            # loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
+            # loss_con = 0.0
+            # if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
+            #     paired_labels = labels[out["paired_mask"]]
+            #     loss_con = cross_modal_supcon_loss(
+            #         out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
+            #     )
+            loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
  
             # --- FIX: VICReg-based MI loss (collapse-resistant) ---
             loss_mi = 0.0
