@@ -87,7 +87,7 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------
 # Reproducibility
 # ------------------------------------------------------------
-SEED = 10
+SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
