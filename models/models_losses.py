@@ -24,11 +24,11 @@ from pathlib import Path
 # ------------------------------------------------------------
 # Shared constants and helpers
 # ------------------------------------------------------------
-_RESNET18_FEAT_DIM = 512
-_VIT_SMALL_FEAT_DIM = 384  # vit_small_patch16_224
+_RESNET18_FEAT_DIM = 384
+_VIT_SMALL_FEAT_DIM = 384  
 
 
-def compute_class_weights(csv_dir, num_classes=5):
+def compute_class_weights(csv_dir, num_classes=3):
     """Compute effective number class weights from all training CSVs."""
     try:
         csv_dir = Path(csv_dir)
@@ -75,7 +75,7 @@ def get_layer_wise_lr_params(model, base_lr=1e-4, lr_decay=0.85):
     return params
 
 
-def get_layer_wise_lr_params_vit(model, base_lr=3e-5, lr_decay=0.85):
+def get_layer_wise_lr_params_vit(model, base_lr=1e-4, lr_decay=0.85):
     """
     ViT-specific layer-wise LR decay.
     Backbone layers get base_lr * lr_decay; heads get full base_lr.
