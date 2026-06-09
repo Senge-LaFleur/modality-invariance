@@ -52,7 +52,7 @@ CFG = {
     'csv_dir':       CSV_DIR,
     'image_roots':   IMAGE_ROOTS,
     'vit_model':     'vit_small_patch16_224',
-    'embed_dim':     512,
+    'embed_dim':     512,            # MUST match training
     'img_size':      224,
     'num_classes':   3,
     'num_skin_types': 6,
@@ -126,13 +126,13 @@ def main():
         print("No test loader found. Ensure that test CSV files exist.")
         return
 
-    # Load model
+    # Load model with the same configuration used during training
     model = DualViT(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
         num_skin_types=CFG["num_skin_types"],
-        pretrained=True,   # architecture only; weights will be overwritten
-        use_projection=False,
+        pretrained=True,          # architecture only; weights will be overwritten
+        use_projection=True,      # MUST match training (projection head was used)
     ).to(DEVICE)
 
     ckpt_path = CKPT_DIR / "best_f1_model.pt"
