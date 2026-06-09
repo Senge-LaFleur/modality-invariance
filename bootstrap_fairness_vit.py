@@ -52,7 +52,7 @@ CFG = {
     'csv_dir':       CSV_DIR,
     'image_roots':   IMAGE_ROOTS,
     'vit_model':     'vit_small_patch16_224',
-    'embed_dim':     384,
+    'embed_dim':     512,
     'img_size':      224,
     'num_classes':   3,
     'num_skin_types': 6,
