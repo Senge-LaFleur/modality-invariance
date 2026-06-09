@@ -159,7 +159,7 @@ def main():
         print(f"{col:10} : {mean_vals[col]:.4f}  [{ci_low[col]:.4f}, {ci_high[col]:.4f}]")
 
     # Save results
-    results_dir = Path("bootstrap_results")
+    results_dir = WORK_ROOT / 'bootstrap_results'
     results_dir.mkdir(exist_ok=True)
     bootstrap_df.to_csv(results_dir / "bootstrap_samples.csv", index=False)
     summary = pd.DataFrame({
