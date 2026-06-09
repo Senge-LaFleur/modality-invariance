@@ -38,7 +38,7 @@ print(f"Device: {DEVICE}")
 
 WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
-CKPT_DIR = WORK_ROOT / 'checkpoints_bootstrap_vit'   # directory containing best_f1_model.pt
+CKPT_DIR = WORK_ROOT / 'checkpoints_Modality_Invariance_vit'   # directory containing best_f1_model.pt
 
 IMAGE_ROOTS = {
     'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
