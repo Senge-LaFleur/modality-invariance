@@ -179,14 +179,14 @@ def build_loaders(cfg, seed=42):
 
     # Load CSV files
     paired_train = _load_csv('paired_train.csv')
-    # clin_train   = _load_csv('clin_train.csv')
-    # derm_train   = _load_csv('derm_train.csv')
+    clin_train   = _load_csv('clin_train.csv')
+    derm_train   = _load_csv('derm_train.csv')
 
     paired_val = _load_csv('paired_val.csv')
-    # clin_val   = _load_csv('clin_val.csv')
-    # derm_val   = _load_csv('derm_val.csv')
+    clin_val   = _load_csv('clin_val.csv')
+    derm_val   = _load_csv('derm_val.csv')
 
-    # paired_test = _load_csv('paired_test.csv')
+    paired_test = _load_csv('paired_test.csv')
     clin_test   = _load_csv('clin_test.csv')
     derm_test   = _load_csv('derm_test.csv')
 
@@ -194,10 +194,10 @@ def build_loaders(cfg, seed=42):
     train_datasets = []
     if not paired_train.empty:
         train_datasets.append(PairedDataset(paired_train, image_maps, transform=train_transform))
-    # if not clin_train.empty:
-    #     train_datasets.append(UnpairedDataset(clin_train, image_maps, transform=train_transform, id_col='clinical'))
-    # if not derm_train.empty:
-    #     train_datasets.append(UnpairedDataset(derm_train, image_maps, transform=train_transform, id_col='derm'))
+    if not clin_train.empty:
+        train_datasets.append(UnpairedDataset(clin_train, image_maps, transform=train_transform, id_col='clinical'))
+    if not derm_train.empty:
+        train_datasets.append(UnpairedDataset(derm_train, image_maps, transform=train_transform, id_col='derm'))
     if not train_datasets:
         raise FileNotFoundError("No training data found. Check CSV files in " + str(csv_dir))
 
@@ -207,16 +207,16 @@ def build_loaders(cfg, seed=42):
     val_datasets = []
     if not paired_val.empty:
         val_datasets.append(PairedDataset(paired_val, image_maps, transform=val_transform))
-    # if not clin_val.empty:
-    #     val_datasets.append(UnpairedDataset(clin_val, image_maps, transform=val_transform, id_col='clinical'))
-    # if not derm_val.empty:
-    #     val_datasets.append(UnpairedDataset(derm_val, image_maps, transform=val_transform, id_col='derm'))
+    if not clin_val.empty:
+        val_datasets.append(UnpairedDataset(clin_val, image_maps, transform=val_transform, id_col='clinical'))
+    if not derm_val.empty:
+        val_datasets.append(UnpairedDataset(derm_val, image_maps, transform=val_transform, id_col='derm'))
     val_dataset = torch.utils.data.ConcatDataset(val_datasets) if val_datasets else None
 
     # Test datasets
     test_datasets = []
-    # if not paired_test.empty:
-    #     test_datasets.append(PairedDataset(paired_test, image_maps, transform=val_transform))
+    if not paired_test.empty:
+        test_datasets.append(PairedDataset(paired_test, image_maps, transform=val_transform))
     if not clin_test.empty:
         test_datasets.append(UnpairedDataset(clin_test, image_maps, transform=val_transform, id_col='clinical'))
     if not derm_test.empty:
