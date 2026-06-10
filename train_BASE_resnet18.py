@@ -4,7 +4,7 @@
 """
 Baseline Modality CNN (ResNet-18) for Skin Disease Classification
 Uses WEIGHTED cross-entropy loss + t-SNE (class+FST & modality) + KNN accuracy.
-Now includes binary fairness metrics (light vs dark skin).
+Includes binary fairness metrics (light vs dark skin).
 """
 
 import os
@@ -32,11 +32,13 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import transforms
 
 from sklearn.metrics import f1_score
-from models.models_losses import DualResNet18, compute_class_weights
+from sklearn.utils.class_weight import compute_class_weight   # <-- reliable
+
+from models.models_losses import DualResNet18   # import model only, not compute_class_weights
 from models.evaluation import (
     validate,
     fairness,
-    fairness_binary,               # NEW: binary fairness
+    fairness_binary,
     save_results_csv,
     plot_confusion_matrix,
     plot_per_class_metrics,
@@ -158,6 +160,21 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, criterion):
 
 
 # ------------------------------------------------------------
+# Helper to compute class weights from labels list
+# ------------------------------------------------------------
+def get_class_weights(labels_list, num_classes):
+    """
+    Compute normalized class weights using sklearn's compute_class_weight.
+    Returns a torch.FloatTensor.
+    """
+    labels_array = np.array(labels_list)
+    # Compute class weights (inverse frequency)
+    weights = compute_class_weight(class_weight='balanced', classes=np.arange(num_classes), y=labels_array)
+    # Convert to torch tensor
+    return torch.from_numpy(weights).float()
+
+
+# ------------------------------------------------------------
 # Main
 # ------------------------------------------------------------
 def main():
@@ -178,7 +195,7 @@ def main():
     all_train_labels = []
     for batch in train_loader:
         all_train_labels.extend(batch["label"].numpy())
-    class_weights = compute_class_weights(all_train_labels, num_classes=CFG["num_classes"])
+    class_weights = get_class_weights(all_train_labels, num_classes=CFG["num_classes"])
     class_weights = class_weights.to(DEVICE)
     print(f"Computed class weights: {class_weights.cpu().numpy()}")
     criterion = nn.CrossEntropyLoss(weight=class_weights)
@@ -315,6 +332,7 @@ def main():
         print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
         print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
+
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "auroc": res["auroc"],
