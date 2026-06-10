@@ -40,7 +40,7 @@ from torchvision import transforms
 
 from sklearn.metrics import f1_score
 from models.models_losses import (
-    DualResNet18,
+    DualViT,
     SupConLoss,
     confusion_loss,
     skin_type_loss,
@@ -84,12 +84,12 @@ WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('process_DisCo_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'fitzpatrick17k': Path('process_DisCo_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'ham10000':       Path('process_DisCo_resnet18/data/datasets/asosenge/ham10000/HAM10000'),
-    'derm7pt':        Path('process_DisCo_resnet18/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('process_DisCo_resnet18/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('process_DisCo_resnet18/data/datasets/sengenjih/isic2019'),                 # update path as needed
+    'hiba':           Path('process_DisCo_vit/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('process_DisCo_vit/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'ham10000':       Path('process_DisCo_vit/data/datasets/asosenge/ham10000/HAM10000'),
+    'derm7pt':        Path('process_DisCo_vit/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('process_DisCo_vit/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+    'isic2019':       Path('process_DisCo_vit/data/datasets/sengenjih/isic2019'),                 # update path as needed
 }
 
 print("Checking configured paths:")
@@ -101,10 +101,10 @@ for name, root in IMAGE_ROOTS.items():
 CFG = {
     'csv_dir':      CSV_DIR,
     'image_roots':  IMAGE_ROOTS,
-    'ckpt_dir':     WORK_ROOT / 'checkpoints_DisCo_resnet18',
-    'results_dir':  WORK_ROOT / 'results_DisCo_resnet18',
+    'ckpt_dir':     WORK_ROOT / 'checkpoints_DisCo_vit',
+    'results_dir':  WORK_ROOT / 'results_DisCo_vit',
 
-    'backbone': 'resnet18',
+    'backbone': 'vit_small_patch16_224',
     'embed_dim': 512,          # projection output dimension
     'img_size': 224,
     'num_classes': 3,
@@ -234,12 +234,12 @@ def main():
     print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
 
     # Instantiate DualResNet18 with projection head (required for contrastive loss)
-    model = DualResNet18(
+    model = DualViT(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
         num_skin_types=CFG["num_skin_types"],
         pretrained=True,
-        use_projection=True,   # enables projection head for contrastive learning
+        use_projection=True,
     ).to(DEVICE)
 
     # Layer‑wise learning rates (backbone lower, heads higher)

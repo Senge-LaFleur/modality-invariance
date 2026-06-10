@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modality-Invariant Dual-Encoder Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background: #ffffff;
+      font-family: 'Nunito', sans-serif;
+      padding: 30px 20px 40px;
+      min-width: 1400px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 24px;
+      font-weight: 900;
+      color: #0f172a;
+      margin-bottom: 6px;
+    }
+    .sub {
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: #4b5563;
+      margin-bottom: 28px;
+    }
+    .pipeline {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      width: 100%;
+      justify-content: center;
+    }
+    .col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+    .col-input { width: 175px; gap: 12px; justify-content: center; }
+    .col-arrow { width: 36px; justify-content: center; }
+    .col-encoder { width: 170px; gap: 14px; justify-content: center; }
+    .col-direct-branches { width: 280px; gap: 12px; justify-content: center; }
+    .col-proj-shared { width: 380px; gap: 12px; justify-content: center; }
+    .col-align-branches { width: 280px; gap: 12px; justify-content: center; }
+
+    .arr-svg { width: 36px; }
+    .stream-badge {
+      writing-mode: vertical-rl;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 8px 4px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      position: absolute;
+      left: -28px;
+      top: 50%;
+      transform: translateY(-50%) rotate(180deg);
+    }
+    .badge-clin { background: #dbeafe; color: #1d4ed8; }
+    .badge-derm { background: #dcfce7; color: #15803d; }
+
+    .input-card {
+      overflow: hidden;
+      border: 2.5px solid;
+      width: 155px;
+    }
+    .input-card-clin { border-color: #3b82f6; background: #eff6ff; }
+    .input-card-derm { border-color: #22c55e; background: #f0fdf4; }
+    .input-img-area { width: 100%; height: 120px; overflow: hidden; background: #e2e8f0; display: flex; align-items: center; justify-content: center; }
+    .img-label { padding: 5px 8px; text-align: center; font-size: 12px; font-weight: 700; }
+
+    .encoder-block {
+      border: 2.5px solid;
+      width: 155px;
+      padding: 10px;
+      text-align: center;
+    }
+    .enc-clin { border-color: #3b82f6; background: #dbeafe; }
+    .enc-derm { border-color: #22c55e; background: #dcfce7; }
+    .enc-title { font-size: 13px; font-weight: 800; }
+    .enc-sub { font-size: 11px; font-weight: 600; }
+    .enc-badge { font-size: 10px; background: #fff; border-radius: 20px; padding: 2px 6px; display: inline-block; margin-top: 5px; }
+
+    .branch-card {
+      border-radius: 18px;
+      border: 2px solid;
+      background: white;
+      padding: 12px 14px;
+      width: 260px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+    }
+    .branch-cls { border-color: #3b82f6; background: #eff6ff; }
+    .branch-sa { border-color: #ef4444; background: #fef2f2; }
+    .branch-contrast { border-color: #f97316; background: #fff7ed; }
+    .branch-mi { border-color: #14b8a6; background: #f0fdfa; }
+
+    .proj-block {
+      border: 2.5px dashed #7c3aed;
+      background: #ede9fe;
+      width: 160px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .shared-embed {
+      border: 2.5px solid #8b5cf6;
+      background: #f5f3ff;
+      width: 200px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .loss-formula {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      margin-top: 6px;
+    }
+    .align-tag {
+      display: inline-block;
+      background: #fef9c3;
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-size: 9px;
+      font-weight: 800;
+      margin-top: 5px;
+    }
+    .fst-strip {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .fst-chip {
+      border-radius: 8px;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .bypass-note {
+      font-size: 9px;
+      background: #f1f5f9;
+      border-radius: 12px;
+      padding: 2px 8px;
+      color: #1e293b;
+    }
+    .path-label {
+      font-size: 9px;
+      font-weight: 800;
+      background: #e2e8f0;
+      border-radius: 20px;
+      padding: 2px 8px;
+      margin-top: 4px;
+    }
+    .total-loss-row {
+      margin-top: 32px;
+      background: #0f172a;
+      border-radius: 20px;
+      padding: 12px 24px;
+      text-align: center;
+      color: white;
+      width: 90%;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .formula { font-family: 'Space Mono', monospace; font-size: 16px; }
+    .embed-svg-mini { width: 100%; margin: 5px 0; }
+  </style>
+</head>
+<body>
+<h1>Modality-Invariant Dual-Encoder Architecture</h1>
+<div class="sub">Encoders → two separate paths: <span style="background:#dbeafe; padding:2px 8px; border-radius:20px;">DIRECT to Target/SA</span> &nbsp;|&nbsp; <span style="background:#ede9fe; padding:2px 8px; border-radius:20px;">via Projection → Shared Space → Contrastive/MI</span></div>
+
+<div class="pipeline">
+  <!-- COL 1: INPUT IMAGES -->
+  <div class="col col-input" style="position:relative;">
+    <span class="stream-badge badge-clin" style="top:20%;">Clinical</span>
+    <span class="stream-badge badge-derm" style="top:72%;">Dermoscopic</span>
+    <div class="input-card input-card-clin">
+      <div class="input-img-area">Clinical</div>
+      <div class="img-label">Clinical Photo</div>
+    </div>
+    <div style="font-size:10px; font-weight:700; color:#64748b;">same lesion</div>
+    <div class="input-card input-card-derm">
+      <div class="input-img-area">Dermoscopic</div>
+      <div class="img-label">Dermoscopic Image</div>
+    </div>
+  </div>
+
+  <!-- ARROW 1 -->
+  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+    <svg viewBox="0 0 36 20" width="36"><defs><marker id="a1" markerWidth="5" markerHeight="5" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#a1)"/></svg>
+    <svg viewBox="0 0 36 20" width="36" style="margin-top:98px;"><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#a1)"/></svg>
+  </div>
+
+  <!-- COL 2: ENCODERS -->
+  <div class="col col-encoder" style="gap:14px; justify-content:center; padding-bottom:40px;">
+    <div class="encoder-block enc-clin">
+      <div class="enc-title">Encoder (Clinical)</div>
+      <div class="enc-sub">ResNet18 / ViT</div>
+      <div class="enc-badge">ImageNet</div>
+      <div style="font-size:9px;">→ 512-d</div>
+    </div>
+    <div class="encoder-block enc-derm">
+      <div class="enc-title">Encoder (Derm)</div>
+      <div class="enc-sub">ResNet18 / ViT</div>
+      <div class="enc-badge">ImageNet</div>
+      <div style="font-size:9px;">→ 512-d</div>
+    </div>
+    <div class="path-label">feature vectors</div>
+  </div>
+
+  <!-- ARROW 2 – split: one arrow going straight to target/SA, another arrow going to projection heads -->
+  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px; gap:30px;">
+    <svg viewBox="0 0 36 20" width="36"><line x1="2" y1="10" x2="30" y2="10" stroke="#3b82f6" stroke-width="2.5" marker-end="url(#a1)"/></svg>
+    <div style="font-size:8px; font-weight:800; background:#3b82f620; padding:2px 6px; border-radius:12px;">DIRECT path</div>
+    <svg viewBox="0 0 36 20" width="36"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="3,2" marker-end="url(#a1)"/></svg>
+    <div style="font-size:8px; font-weight:800; background:#8b5cf620; padding:2px 6px; border-radius:12px;">via PROJ</div>
+  </div>
+
+  <!-- COL 3: DIRECT BRANCHES (Target & SA) – receive raw concatenated features -->
+  <div class="col col-direct-branches" style="gap:14px; justify-content:center; padding-bottom:40px;">
+    <!-- TARGET -->
+    <div class="branch-card branch-cls">
+      <div style="font-size:15px; font-weight:800;">Target Branch</div>
+      <div class="loss-formula" style="background:#dbeafe; padding:2px; border-radius:12px;">DIRECT from encoders</div>
+      <div class="loss-type">Weighted Cross-Entropy Loss (L_cls)</div>
+      <div style="margin-top:4px;"><span class="align-tag">3-class output</span> Melanoma / Nevus / BCC</div>
+      <div class="loss-formula">Classifier on [z_clin, z_derm] (1024 → 3)</div>
+    </div>
+    <!-- SENSITIVE ATTRIBUTE -->
+    <div class="branch-card branch-sa">
+      <div style="font-size:15px; font-weight:800;">Sensitive Attribute (SA)</div>
+      <div class="loss-formula" style="background:#fee2e2; padding:2px; border-radius:12px;">DIRECT from encoders</div>
+      <div class="loss-type">Adversarial + Supervised (L_conf + L_s)</div>
+      <div><span class="align-tag" style="background:#fee2e2;">GRL on L_conf</span> <span class="align-tag">6 Fitzpatrick types</span></div>
+      <div class="fst-strip">
+        <div class="fst-chip" style="background:#FFDFC4;">I</div><div class="fst-chip" style="background:#F0C08A;">II</div>
+        <div class="fst-chip" style="background:#C68642; color:white;">III</div><div class="fst-chip" style="background:#8D5524; color:white;">IV</div>
+        <div class="fst-chip" style="background:#4A2511; color:white;">V</div><div class="fst-chip" style="background:#1F0D04; color:white;">VI</div>
+      </div>
+      <div class="loss-formula">shared f_s: Linear(1024→6)</div>
+    </div>
+  </div>
+
+  <!-- ARROW 3 – from encoders also continue to projection heads (but we already split; we just continue the dashed line) -->
+  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+    <svg viewBox="0 0 36 20" width="36"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="3,2" marker-end="url(#a1)"/></svg>
+    <svg viewBox="0 0 36 20" width="36" style="margin-top:98px;"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="3,2" marker-end="url(#a1)"/></svg>
+  </div>
+
+  <!-- COL 4: PROJECTION HEADS + SHARED SPACE (feeds contrastive & MI) -->
+  <div class="col col-proj-shared" style="gap:12px; justify-content:center; padding-bottom:40px;">
+    <div style="display: flex; gap: 12px;">
+      <div class="proj-block">
+        <div class="proj-title">Proj. Head (Clinical)</div>
+        <div>Linear→BN→GELU→Linear→L2Norm</div>
+        <div>512 → 512</div>
+      </div>
+      <div class="proj-block">
+        <div class="proj-title">Proj. Head (Derm)</div>
+        <div>Linear→BN→GELU→Linear→L2Norm</div>
+        <div>512 → 512</div>
+      </div>
+    </div>
+    <div class="shared-embed">
+      <div class="embed-title">Shared Embedding Space</div>
+      <svg viewBox="0 0 190 100" style="width:100%;">
+        <defs>
+          <radialGradient id="gA" cx="30%" cy="35%"><stop offset="0%" stop-color="#db2777" stop-opacity="0.2"/><stop offset="100%" stop-opacity="0"/></radialGradient>
+          <radialGradient id="gB" cx="70%" cy="35%"><stop offset="0%" stop-color="#d97706" stop-opacity="0.2"/><stop offset="100%" stop-opacity="0"/></radialGradient>
+          <radialGradient id="gC" cx="50%" cy="75%"><stop offset="0%" stop-color="#ef4444" stop-opacity="0.2"/><stop offset="100%" stop-opacity="0"/></radialGradient>
+        </defs>
+        <ellipse cx="50" cy="40" rx="40" ry="30" fill="url(#gA)"/>
+        <ellipse cx="140" cy="40" rx="40" ry="30" fill="url(#gB)"/>
+        <ellipse cx="95" cy="80" rx="40" ry="30" fill="url(#gC)"/>
+        <circle cx="42" cy="35" r="4" fill="#FFDFC4" stroke="#1e293b" stroke-width="1.5"/>
+        <circle cx="62" cy="48" r="4" fill="#F0C08A" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="2,1.5"/>
+        <circle cx="132" cy="32" r="4" fill="#C68642" stroke="#1e293b" stroke-width="1.5"/>
+        <polygon points="148,46 156,46 152,54" fill="#8D5524" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="2,1.5"/>
+        <rect x="88" y="74" width="6" height="6" fill="#4A2511" stroke="#1e293b" stroke-width="1.5"/>
+        <rect x="102" y="84" width="6" height="6" fill="#FFDFC4" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="2,1.5"/>
+        <line x1="50" y1="42" x2="56" y2="52" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#arrM)"/>
+        <line x1="138" y1="44" x2="132" y2="54" stroke="#14b8a6" stroke-width="1.2"/>
+        <defs><marker id="arrM" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4Z" fill="#14b8a6"/></marker></defs>
+        <text x="10" y="15" font-size="5">● clinical</text><text x="10" y="22" font-size="5">○ derm</text>
+        <text x="140" y="96" font-size="5" fill="#14b8a6">MI</text>
+        <text x="50" y="96" font-size="5" fill="#f97316">contrastive</text>
+      </svg>
+      <div class="bypass-note">L2-norm projected embeddings (512-d)</div>
+    </div>
+  </div>
+
+  <!-- ARROW 4 → to contrastive & MI branches -->
+  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+    <svg viewBox="0 0 36 20" width="36"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" marker-end="url(#a1)"/></svg>
+    <svg viewBox="0 0 36 20" width="36" style="margin-top:98px;"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" marker-end="url(#a1)"/></svg>
+  </div>
+
+  <!-- COL 5: CONTRASTIVE & MI BRANCHES (use shared space) -->
+  <div class="col col-align-branches" style="gap:14px; justify-content:center; padding-bottom:40px;">
+    <!-- CONTRASTIVE -->
+    <div class="branch-card branch-contrast">
+      <div style="font-size:15px; font-weight:800;">Contrastive Branch</div>
+      <div class="loss-formula" style="background:#fff3e0;">from Shared Space</div>
+      <div class="loss-type">Supervised Contrastive Loss (L_con)</div>
+      <div class="align-tag" style="background:#ffedd5;">ALIGNS BY DISEASE CLASS</div>
+      <div style="font-size:10px; margin:4px 0;">pull same class → push different classes</div>
+      <div class="loss-formula">-log(exp(sim/τ) / Σ exp(sim/τ)) , τ=0.07</div>
+    </div>
+    <!-- MI -->
+    <div class="branch-card branch-mi">
+      <div style="font-size:15px; font-weight:800;">Modality-Invariant (MI)</div>
+      <div class="loss-formula" style="background:#ccfbf1;">from Shared Space</div>
+      <div class="loss-type">Paired Modality Alignment Loss (L_MI)</div>
+      <div class="align-tag" style="background:#ccfbf1;">ALIGNS BY MODALITY (clinical ↔ derm)</div>
+      <div style="font-size:10px; margin:4px 0;">minimize distance between paired clinical & dermoscopic projections</div>
+      <div class="loss-formula">MSE(z_c_proj, z_d_proj)</div>
+    </div>
+  </div>
+</div>
+
+<!-- TOTAL LOSS (combined) -->
+<div class="total-loss-row">
+  <div class="formula">L_total = L_cls + λ_conf L_conf + λ_s L_s + β L_con + γ L_MI</div>
+  <div style="font-size:12px; margin-top:5px;">λ_conf=0.5, λ_s=0.3, β=1.0, γ=1.0 &nbsp;|&nbsp; temperature τ=0.07</div>
+  <div style="margin-top:8px; font-size:11px;">Target & SA: direct from encoders (concatenated features) &nbsp;|&nbsp; Contrastive & MI: projected embeddings from shared space</div>
+</div>
+
+<!-- legend and alignment info -->
+<div style="text-align:center; margin-top:24px; font-size:12px; background:#f8fafc; width:fit-content; margin-left:auto; margin-right:auto; padding:6px 18px; border-radius:40px;">
+  Contrastive branch aligns by disease class (pull same class regardless of modality/skin tone)<br>
+  MI branch aligns by modality (clinical ↔ dermoscopic paired lesions) → modality-invariant space
+</div>
+</body>
+</html>

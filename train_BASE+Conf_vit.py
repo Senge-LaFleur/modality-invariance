@@ -2,16 +2,16 @@
 # -*- coding: utf-8 -*-
 
 """
-FairDisCo (Disentanglement with Contrastive Learning) for skin lesion classification.
+Ablation study: Full model without MI
 Uses:
-- Standard cross‑entropy loss for disease classification (L_c)
+- Weighted label‑smoothed cross‑entropy loss for disease classification (L_c)
 - Confusion loss (L_conf) to remove skin‑type information from representations
 - Skin‑type predictive loss (L_s) that only updates the skin classifier (f_s)
 - Supervised contrastive loss (L_contr) to preserve discriminative features
 
 All outputs saved in:
-    - checkpoints_DisCo_resnet18/
-    - results_DisCo_resnet18/
+    - checkpoints_No_MI_vit/
+    - results_No_MI_vit/
 """
 
 import os
@@ -35,16 +35,19 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from sklearn.metrics import f1_score
 from models.models_losses import (
-    DualResNet18,
+    DualViT,
     SupConLoss,
     confusion_loss,
+    cross_modal_supcon_loss,
     skin_type_loss,
     get_layer_wise_lr_params,
+    cls_loss_fn,
+    compute_class_weights,
 )
 from models.evaluation import (
     validate,
@@ -75,53 +78,48 @@ torch.backends.cudnn.benchmark = False
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-# ============================================================
-# PATH CONFIGURATION – update for your environment
-# ============================================================
 # WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
-#WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
-WORK_ROOT = Path('outputs')
+#WORK_ROOT = Path('jobs/process_BASE+Conf_vit/outputs')
+WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('process_DisCo_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'fitzpatrick17k': Path('process_DisCo_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'ham10000':       Path('process_DisCo_resnet18/data/datasets/asosenge/ham10000/HAM10000'),
-    'derm7pt':        Path('process_DisCo_resnet18/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('process_DisCo_resnet18/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('process_DisCo_resnet18/data/datasets/sengenjih/isic2019'),                 # update path as needed
+    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
+    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
 }
-
-print("Checking configured paths:")
-print(f"  WORK_ROOT : {WORK_ROOT}  {'[OK]' if WORK_ROOT.exists() else '[MISSING]'}")
-print(f"  CSV_DIR   : {CSV_DIR}  {'[OK]' if CSV_DIR.exists() else '[MISSING]'}")
-for name, root in IMAGE_ROOTS.items():
-    print(f"  {name:<15}: {root}  {'[OK]' if root.exists() else '[MISSING — update IMAGE_ROOTS]'}")
 
 CFG = {
     'csv_dir':      CSV_DIR,
     'image_roots':  IMAGE_ROOTS,
-    'ckpt_dir':     WORK_ROOT / 'checkpoints_DisCo_resnet18',
-    'results_dir':  WORK_ROOT / 'results_DisCo_resnet18',
+    'ckpt_dir':     WORK_ROOT / 'checkpoints_BASE+Conf_vit',
+    'results_dir':  WORK_ROOT / 'results_BASE+Conf_vit',
 
-    'backbone': 'resnet18',
-    'embed_dim': 512,          # projection output dimension
+    'backbone': 'vit_small',
+    'embed_dim': 512,
     'img_size': 224,
     'num_classes': 3,
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 500,           # Update as needed
+    'num_epochs': 50,           # adjust as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 100,         # Update as needed
+    'warmup_epochs': 5,
     'aug_probability': 0.85,
 
-    # FairDisCo hyperparameters
-    'alpha': 1.0,              # weight for confusion loss
-    'beta': 0.8,               # weight for contrastive loss
-    'temperature': 0.1,        # temperature for SupConLoss
+    # hyperparameters
+    'lambda_cls': 1.0,
+    'lambda_conf': 0.2,
+    'lambda_skin': 0.2,  
+    'temperature': 0.1,
+
+    # Label smoothing for weighted CE
+    'label_smoothing': 0.01,
+
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -129,24 +127,21 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------------
-# Training function for FairDisCo
+# Training function for FairDisCo (with weighted CE)
 # ------------------------------------------------------------
-def train_epoch(model, loader, optimizer, epoch, scaler, device, alpha, beta, temperature):
+def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_tensor):
     model.train()
     total_loss = 0.0
     total_loss_c = 0.0
     total_loss_conf = 0.0
     total_loss_s = 0.0
-    total_loss_contr = 0.0
     all_preds, all_labels = [], []
     n_batches = 0
 
-    # Supervised contrastive loss criterion
-    contrast_criterion = SupConLoss(temperature=temperature)
+    # contrast_criterion = SupConLoss(temperature=cfg["temperature"])
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", unit="batch", dynamic_ncols=True, leave=False)
     for batch in pbar:
-        # Move data to device
         for k, v in batch.items():
             if isinstance(v, torch.Tensor):
                 batch[k] = v.to(device, non_blocking=True)
@@ -154,24 +149,19 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, alpha, beta, te
         optimizer.zero_grad(set_to_none=True)
 
         with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
-            out = model(batch)   # out contains: logits, skin_logits, z (projected embeddings)
+            out = model(batch)
+            labels = batch["label"]
+            skin_types = batch["skin_type"]
 
-            # L_c: disease classification loss
-            loss_c = F.cross_entropy(out["logits"], batch["label"])
+            # Weighted label‑smoothed CE
+            loss_c = cls_loss_fn(out["logits"], batch["label"],
+                                 weight_tensor=weight_tensor,
+                                 smoothing=cfg["label_smoothing"])
 
-            # L_conf: confusion loss on skin_logits (encourages uniform predictions)
             loss_conf = confusion_loss(out["skin_logits"])
-
-            # L_s: skin type cross‑entropy on detached logits (only updates skin_clf)
-            # skin type labels: batch["skin_type"] (assumed 0‑based)
             loss_s = skin_type_loss(out["skin_logits"].detach(), batch["skin_type"])
 
-            # L_contr: supervised contrastive loss on projected embeddings
-            # Use disease labels as targets (same class = positive pair)
-            loss_contr = contrast_criterion(out["z"], batch["label"])
-
-            # Total loss
-            loss = loss_c + alpha * loss_conf + loss_s + beta * loss_contr
+            loss = cfg["lambda_cls"] * loss_c + cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_s
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -183,7 +173,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, alpha, beta, te
         total_loss_c += loss_c.item()
         total_loss_conf += loss_conf.item()
         total_loss_s += loss_s.item()
-        total_loss_contr += loss_contr.item() if not torch.is_tensor(loss_contr) else loss_contr.item()
         n_batches += 1
 
         with torch.no_grad():
@@ -198,7 +187,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, alpha, beta, te
     avg_loss_c = total_loss_c / max(n_batches, 1)
     avg_loss_conf = total_loss_conf / max(n_batches, 1)
     avg_loss_s = total_loss_s / max(n_batches, 1)
-    avg_loss_contr = total_loss_contr / max(n_batches, 1)
 
     all_preds = np.concatenate(all_preds)
     all_labels = np.concatenate(all_labels)
@@ -210,7 +198,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, alpha, beta, te
         "loss_c": avg_loss_c,
         "loss_conf": avg_loss_conf,
         "loss_s": avg_loss_s,
-        "loss_contr": avg_loss_contr,
         "acc": acc,
         "macro_f1": macro_f1,
     }
@@ -227,24 +214,32 @@ def main():
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
+    # Compute class weights from training CSVs
+    class_weights = compute_class_weights(CFG["csv_dir"], CFG["num_classes"])
+    if class_weights:
+        weight_tensor = torch.tensor(class_weights, dtype=torch.float32, device=DEVICE)
+        print(f"Class weights: {np.round(class_weights, 3)}")
+    else:
+        weight_tensor = None
+        print("Class weights not computed; using uniform weights.")
+
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     if test_loader:
         print(f"Test batches: {len(test_loader)}")
     print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
 
-    # Instantiate DualResNet18 with projection head (required for contrastive loss)
-    model = DualResNet18(
+    model = DualViT(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
         num_skin_types=CFG["num_skin_types"],
         pretrained=True,
-        use_projection=True,   # enables projection head for contrastive learning
+        use_projection=True,
     ).to(DEVICE)
 
-    # Layer‑wise learning rates (backbone lower, heads higher)
     param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
-    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
+    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"],
+                                  betas=(0.9, 0.999), eps=1e-8)
 
     def lr_lambda(epoch):
         if epoch < CFG["warmup_epochs"]:
@@ -260,33 +255,17 @@ def main():
     start_epoch = 0
     best_auroc = 0.0
     best_f1 = 0.0
-    patience = 20
-    patience_counter = 0
     history = defaultdict(list)
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
-            model, train_loader, optimizer, epoch, scaler, DEVICE,
-            alpha=CFG["alpha"], beta=CFG["beta"], temperature=CFG["temperature"]
+            model, train_loader, optimizer, CFG, epoch, scaler, DEVICE,
+            weight_tensor=weight_tensor
         )
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
 
-        # ----- EARLY STOPPING (patience=20) -----
-        # current_f1 = val_metrics["macro_f1"]
-        # if current_f1 > best_f1:
-        #     best_f1 = current_f1
-        #     patience_counter = 0
-        # else:
-        #     patience_counter += 1
-
-        # if patience_counter >= patience:
-        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
-        #     break
-        # -----------------------------------------
-
-        # Record history
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
         for k in ["acc", "auroc", "macro_f1", "weighted_f1"]:
@@ -298,7 +277,6 @@ def main():
               f"val_acc={val_metrics['acc']:.4f}  val_auroc={val_metrics['auroc']:.4f}  "
               f"val_f1={val_metrics['macro_f1']:.4f}  lr={lr:.2e}")
 
-        # Save checkpoint
         ckpt_state = {
             "epoch": epoch,
             "model": model.state_dict(),
@@ -321,7 +299,7 @@ def main():
 
     print(f"Training complete. Best AUROC: {best_auroc:.4f}, Best F1: {best_f1:.4f}")
 
-    # Load best model (by F1)
+    # Load best model
     best_ckpt = CFG["ckpt_dir"] / "best_f1_model.pt"
     if not best_ckpt.exists():
         best_ckpt = CFG["ckpt_dir"] / "best_auroc_model.pt"
@@ -331,7 +309,7 @@ def main():
     model.load_state_dict(ckpt["model"])
     print(f"Loaded best model from {best_ckpt.name} (epoch {ckpt['epoch']+1})")
 
-    # --- Evaluation on validation set ---
+    # --- Evaluation ---
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
     save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
@@ -341,7 +319,6 @@ def main():
                            "Per-Class Metrics - Validation", CFG["results_dir"] / "val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"] / "val_fairness.png")
 
-    # --- Evaluation on test set (if available) ---
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
@@ -352,7 +329,7 @@ def main():
                                "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
 
-    # --- Cross‑dataset evaluation ---
+    # Cross-dataset evaluation
     cross_results = {}
     for ds_name, loader in eval_loaders.items():
         print(f"\nEvaluating on {ds_name}")
@@ -381,11 +358,9 @@ def main():
         cross_df.to_csv(CFG["results_dir"] / "cross_dataset_summary.csv")
         print("\nCross-dataset summary:\n", cross_df)
 
-    # --- Training curves ---
-    plot_training_curves(history, "Training History (FairDisCo ResNet-18)",
+    plot_training_curves(history, "Training History (FairDisCo ViT)",
                          CFG["results_dir"] / "training_curves.png")
 
-    # --- t‑SNE on test set projections ---
     if test_loader:
         model.eval()
         all_embs, all_labels_tsne = [], []
@@ -395,11 +370,11 @@ def main():
                     if isinstance(v, torch.Tensor):
                         batch[k] = v.to(DEVICE)
                 out = model(batch)
-                all_embs.append(out["z"].cpu().numpy())   # projected embeddings
+                all_embs.append(out["z"].cpu().numpy())
                 all_labels_tsne.append(batch["label"].cpu().numpy())
         embs = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
-        plot_tsne(embs, labels_tsne, "t-SNE - Test Set (FairDisCo)",
+        plot_tsne(embs, labels_tsne, "t-SNE - Test Set (FairDisCo ViT)",
                   CFG["results_dir"] / "tsne_test.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
