@@ -97,13 +97,13 @@ CFG = {
     'results_dir':   WORK_ROOT / 'results_BASE_vit',
 
     'vit_model': 'vit_small_patch16_224',
-    'embed_dim': 384,
+    'embed_dim': 512,
     'img_size': 224,
     'num_classes': 3,
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 50,       # Update as needed
+    'num_epochs': 5,       # Update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,

@@ -104,11 +104,11 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 50,           # adjust as needed
+    'num_epochs': 5,           # adjust as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 5,
+    'warmup_epochs': 1,
     'aug_probability': 0.85,
 
     # hyperparameters
@@ -121,7 +121,6 @@ CFG = {
     # Label smoothing for weighted CE
     'label_smoothing': 0.01,
 
-    'phase2_start': 60,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
