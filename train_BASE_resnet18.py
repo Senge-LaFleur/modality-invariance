@@ -3,7 +3,7 @@
 
 """
 Baseline Modality CNN (ResNet-18) for Skin Disease Classification
-Uses only standard cross-entropy loss, no modality invariance or auxiliary losses.
+Uses WEIGHTED cross-entropy loss (no modality invariance or auxiliary losses).
 
 All outputs (checkpoints, results) are saved in:
     - checkpoints_baseline_resnet18/
@@ -114,14 +114,13 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------------
-# Training function (baseline: only cross-entropy loss)
+# Training function (weighted cross-entropy loss)
 # ------------------------------------------------------------
-def train_epoch(model, loader, optimizer, epoch, scaler, device):
+def train_epoch(model, loader, optimizer, epoch, scaler, device, criterion):
     model.train()
     total_loss = 0.0
     all_preds, all_labels = [], []
     n_batches = 0
-    criterion = nn.CrossEntropyLoss()
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", unit="batch", dynamic_ncols=True, leave=False)
     for batch in pbar:
@@ -178,6 +177,17 @@ def main():
         print(f"Test batches: {len(test_loader)}")
     print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
 
+    # ---------- Compute class weights from training set ----------
+    # Collect all labels from training loader
+    all_train_labels = []
+    for batch in train_loader:
+        all_train_labels.extend(batch["label"].numpy())
+    class_weights = compute_class_weights(all_train_labels, num_classes=CFG["num_classes"])
+    class_weights = class_weights.to(DEVICE)
+    print(f"Computed class weights: {class_weights.cpu().numpy()}")
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    # -------------------------------------------------------------
+
     model = DualResNet18(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
@@ -209,7 +219,7 @@ def main():
     history = defaultdict(list)
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
-        train_metrics = train_epoch(model, train_loader, optimizer, epoch, scaler, DEVICE)
+        train_metrics = train_epoch(model, train_loader, optimizer, epoch, scaler, DEVICE, criterion)
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
@@ -221,7 +231,7 @@ def main():
         #     patience_counter = 0
         # else:
         #     patience_counter += 1
-
+        #
         # if patience_counter >= patience:
         #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
         #     break
@@ -319,7 +329,7 @@ def main():
         cross_df.to_csv(CFG["results_dir"] / "cross_dataset_summary.csv")
         print("\nCross-dataset summary:\n", cross_df)
 
-    plot_training_curves(history, "Training History (Baseline ResNet-18)",
+    plot_training_curves(history, "Training History (Baseline ResNet-18 - Weighted CE)",
                          CFG["results_dir"] / "training_curves.png")
 
     if test_loader:
