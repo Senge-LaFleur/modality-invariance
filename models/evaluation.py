@@ -557,7 +557,7 @@ def demographic_parity_diff(preds, labels, groups_binary):
         rate_light = (preds[mask_light] == cls).mean() if mask_light.sum() > 0 else np.nan
         rate_dark  = (preds[mask_dark]  == cls).mean() if mask_dark.sum()  > 0 else np.nan
         if not np.isnan(rate_light) and not np.isnan(rate_dark):
-            diffs.append(rate_light - rate_dark)
+            diffs.append(abs(rate_light - rate_dark))
     return float(np.mean(diffs)) if diffs else float('nan')
 
 def equal_opportunity_tpr(preds, labels, groups_binary):
@@ -573,7 +573,7 @@ def equal_opportunity_tpr(preds, labels, groups_binary):
         tpr_light = (preds[mask_light] == cls).mean() if mask_light.sum() > 0 else np.nan
         tpr_dark  = (preds[mask_dark]  == cls).mean() if mask_dark.sum()  > 0 else np.nan
         if not np.isnan(tpr_light) and not np.isnan(tpr_dark):
-            diffs.append(tpr_light - tpr_dark)
+            diffs.append(abs(tpr_light - tpr_dark))
     return float(np.mean(diffs)) if diffs else float('nan')
 
 def equal_opportunity_tnr(preds, labels, groups_binary):
@@ -592,7 +592,7 @@ def equal_opportunity_tnr(preds, labels, groups_binary):
         tnr_light = (preds[mask_light] != cls).mean() if mask_light.sum() > 0 else np.nan
         tnr_dark  = (preds[mask_dark]  != cls).mean() if mask_dark.sum()  > 0 else np.nan
         if not np.isnan(tnr_light) and not np.isnan(tnr_dark):
-            diffs.append(tnr_light - tnr_dark)
+            diffs.append(abs(tnr_light - tnr_dark))
     return float(np.mean(diffs)) if diffs else float('nan')
 
 def equalized_odds(preds, labels, groups_binary):
@@ -635,7 +635,7 @@ def fairness_binary(res):
     mask_dark  = groups == 1
     acc_light = (preds_known[mask_light] == labels_known[mask_light]).mean() if mask_light.sum() > 0 else np.nan
     acc_dark  = (preds_known[mask_dark]  == labels_known[mask_dark]).mean() if mask_dark.sum()  > 0 else np.nan
-    acc_gap = (acc_light - acc_dark) if (not np.isnan(acc_light) and not np.isnan(acc_dark)) else float('nan')
+    acc_gap = (abs(acc_light - acc_dark)) if (not np.isnan(acc_light) and not np.isnan(acc_dark)) else float('nan')
 
     return {
         'DP_diff': demographic_parity_diff(preds_known, labels_known, groups),
