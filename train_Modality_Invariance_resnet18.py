@@ -62,6 +62,7 @@ from models.evaluation import (
     plot_tsne_class_fst,
     plot_tsne_modality,
     plot_roc_curve,
+    compute_knn_accuracy,
     build_loaders,
     LABEL_NAMES,
 )
@@ -205,13 +206,6 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
             if cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 1:
                 loss_mi = mi_loss(out["z_c"], out["z_d"])
                 n_paired_batches += 1
-
-            # loss_con = sup_con(out["z"], labels) if cfg.get("use_con") else 0.0
-            # loss_mi = (
-            #     mi_loss(out["z_c"], out["z_d"])
-            #     if (cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 0)
-            #     else 0.0
-            # )
 
             total_loss = cfg["lambda_cls"] * loss_cls
             if cfg.get("use_conf"):
@@ -407,7 +401,45 @@ def main():
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES)
+
+        # ---- Compute KNN accuracy on test embeddings ----
+        model.eval()
+        all_embs = []
+        all_labels_tsne = []
+        all_skins_tsne = []
+        # For modality plot we need separate arrays for clinical/derm (unpaired only)
+        all_mods_tsne = []   # 0=clinical, 1=derm (paired excluded)
+        with torch.no_grad():
+            for batch in test_loader:
+                for k, v in batch.items():
+                    if isinstance(v, torch.Tensor):
+                        batch[k] = v.to(DEVICE)
+                out = model(batch)
+                b = out["z"].size(0)
+                all_embs.append(out["z"].cpu().numpy())
+                all_labels_tsne.append(batch["label"].cpu().numpy())
+                all_skins_tsne.append(batch["skin_type"].cpu().numpy())
+
+                # Modality mapping: skip paired samples for modality plot
+                mod_list = []
+                for m in batch.get("modality", ["clinical"] * b):
+                    if m == "clinical":
+                        mod_list.append(0)
+                    elif m == "derm":
+                        mod_list.append(1)
+                    else:   # paired samples – exclude from modality t-SNE
+                        mod_list.append(-1)   # marker to filter out
+                all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
+
+        embs        = np.concatenate(all_embs)
+        labels_tsne = np.concatenate(all_labels_tsne)
+        skins_tsne  = np.concatenate(all_skins_tsne)
+        mods_tsne   = np.concatenate(all_mods_tsne)
+
+        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
+        print(f"\n[Modality-Invariant ResNet-18] Test KNN (k=5) accuracy: {knn_acc:.4f}")
+
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc)
         plot_confusion_matrix(test_res["conf_mat"], class_names,
                               "Confusion Matrix - Test",
                               CFG["results_dir"] / "test_confusion.png")
@@ -419,6 +451,24 @@ def main():
         plot_roc_curve(test_res["labels"], test_res["probs"], class_names,
                        "ROC Curves - Test",
                        CFG["results_dir"] / "test_roc.png")
+
+        # t-SNE plots (class+FST)
+        plot_tsne_class_fst(
+            embs, labels_tsne, skins_tsne,
+            title="t-SNE — Shared Embedding Space  [Internal Test]",
+            save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
+        )
+
+        # Modality t-SNE: use only unpaired clinical/derm samples (mods_tsne >= 0)
+        mask_mod = mods_tsne >= 0
+        if mask_mod.sum() > 1:
+            plot_tsne_modality(
+                embs[mask_mod], skins_tsne[mask_mod], mods_tsne[mask_mod],
+                title="t-SNE — Modality-Invariance  [Internal Test]",
+                save_path=CFG["results_dir"] / "tsne_test_modality_invariance.png",
+            )
+        else:
+            print("[WARN] Not enough unpaired clinical/derm samples for modality t-SNE plot.")
 
     # ── Cross-dataset evaluation ────────────────────────────────────────────
     cross_results = {}
@@ -459,43 +509,6 @@ def main():
     # ── Training curves ─────────────────────────────────────────────────────
     plot_training_curves(history, "Training History (Modality-Invariant ResNet-18)",
                          CFG["results_dir"] / "training_curves.png")
-
-    # ── t-SNE visualisations (test set) ────────────────────────────────────
-    if test_loader:
-        model.eval()
-        all_embs, all_labels_tsne, all_skins_tsne, all_mods_tsne = [], [], [], []
-        with torch.no_grad():
-            for batch in test_loader:
-                for k, v in batch.items():
-                    if isinstance(v, torch.Tensor):
-                        batch[k] = v.to(DEVICE)
-                out = model(batch)
-                b = out["z"].size(0)
-                all_embs.append(out["z"].cpu().numpy())
-                all_labels_tsne.append(batch["label"].cpu().numpy())
-                all_skins_tsne.append(batch["skin_type"].cpu().numpy())
-                mod_int = np.array(
-                    [1 if m == "derm" else 0
-                     for m in batch.get("modality", ["clinical"] * b)],
-                    dtype=np.int64,
-                )
-                all_mods_tsne.append(mod_int)
-
-        embs        = np.concatenate(all_embs)
-        labels_tsne = np.concatenate(all_labels_tsne)
-        skins_tsne  = np.concatenate(all_skins_tsne)
-        mods_tsne   = np.concatenate(all_mods_tsne)
-
-        plot_tsne_class_fst(
-            embs, labels_tsne, skins_tsne,
-            title="t-SNE — Shared Embedding Space  [Internal Test]",
-            save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
-        )
-        plot_tsne_modality(
-            embs, skins_tsne, mods_tsne,
-            title="t-SNE — Modality-Invariance  [Internal Test]",
-            save_path=CFG["results_dir"] / "tsne_test_modality_invariance.png",
-        )
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")

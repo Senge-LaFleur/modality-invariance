@@ -300,7 +300,27 @@ def main():
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
         test_fair_binary = fairness_binary(test_res)
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, fair_binary=test_fair_binary)
+
+        # ---- Compute KNN accuracy on test embeddings ----
+        model.eval()
+        all_embs = []
+        all_labels_tsne = []
+        with torch.no_grad():
+            for batch in test_loader:
+                for k, v in batch.items():
+                    if isinstance(v, torch.Tensor):
+                        batch[k] = v.to(DEVICE)
+                out = model(batch)
+                all_embs.append(out["z"].cpu().numpy())
+                all_labels_tsne.append(batch["label"].cpu().numpy())
+        embs = np.concatenate(all_embs)
+        labels_tsne = np.concatenate(all_labels_tsne)
+        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
+        print(f"\n[Baseline ResNet-18] Test KNN (k=5) accuracy: {knn_acc:.4f}")
+        # ------------------------------------------------
+
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
+                         fair_binary=test_fair_binary, knn_acc=knn_acc)
         plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
         plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
@@ -312,6 +332,14 @@ def main():
         print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
         print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
+
+        # t-SNE and KNN plots (optional)
+        plot_tsne_class_fst(
+            embs, labels_tsne, test_res["skin"],
+            title="t-SNE — Baseline ResNet-18 (Test Set)",
+            save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
+        )
+        # For modality plot we need modality labels; baseline models don't separate, so skip or adapt.
 
     # ---------- CROSS-DATASET EVALUATION ----------
     cross_results = {}
@@ -352,57 +380,6 @@ def main():
 
     plot_training_curves(history, "Training History (Baseline ResNet-18 - Weighted CE)",
                          CFG["results_dir"] / "training_curves.png")
-
-    # --- t-SNE and KNN on test set ---
-    if test_loader:
-        model.eval()
-        all_embs = []
-        all_labels_tsne = []
-        all_skins_tsne = []
-        all_mods_tsne = []   # 0=clinical, 1=derm, 2=paired (ignored for modality plot)
-        with torch.no_grad():
-            for batch in test_loader:
-                for k, v in batch.items():
-                    if isinstance(v, torch.Tensor):
-                        batch[k] = v.to(DEVICE)
-                out = model(batch)
-                b = out["z"].size(0)
-                all_embs.append(out["z"].cpu().numpy())
-                all_labels_tsne.append(batch["label"].cpu().numpy())
-                all_skins_tsne.append(batch["skin_type"].cpu().numpy())
-                # Map modality string to int
-                mod_list = []
-                for m in batch.get("modality", ["clinical"] * b):
-                    if m == "clinical":
-                        mod_list.append(0)
-                    elif m == "derm":
-                        mod_list.append(1)
-                    else:
-                        mod_list.append(2)   # paired
-                all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
-
-        embs = np.concatenate(all_embs)
-        labels_tsne = np.concatenate(all_labels_tsne)
-        skins_tsne = np.concatenate(all_skins_tsne)
-        mods_tsne = np.concatenate(all_mods_tsne)
-
-        # KNN accuracy on embeddings
-        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
-        print(f"\n[Baseline ResNet-18] Test KNN (k=5) accuracy: {knn_acc:.4f}")
-        with open(CFG["results_dir"] / "knn_accuracy.txt", "w") as f:
-            f.write(f"knn_accuracy = {knn_acc:.6f}\n")
-
-        # t-SNE plots
-        plot_tsne_class_fst(
-            embs, labels_tsne, skins_tsne,
-            title="t-SNE — Baseline ResNet-18 (Test Set)",
-            save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
-        )
-        plot_tsne_modality(
-            embs, skins_tsne, mods_tsne,
-            title="t-SNE — Baseline ResNet-18 (Modality Distribution)",
-            save_path=CFG["results_dir"] / "tsne_test_modality.png",
-        )
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")

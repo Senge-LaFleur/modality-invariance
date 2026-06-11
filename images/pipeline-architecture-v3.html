@@ -788,78 +788,51 @@
       </div>
     </div>
 
-    <!-- ARROW 2 -->
+    <!-- ARROW 2 — two streams converge into the single shared projection head -->
     <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
-      <svg viewBox="0 0 36 20" class="arr-svg">
+      <svg viewBox="0 0 36 260" style="width:36px; height:260px;">
         <defs>
-          <marker id="ah2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <marker id="arrowBlack2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
             <path d="M0,0 L6,3 L0,6Z" fill="#4B72C4" />
           </marker>
         </defs>
-        <line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah2)" />
-      </svg>
-      <svg viewBox="0 0 36 20" class="arr-svg" style="margin-top:100px;">
-        <defs>
-          <marker id="ah2b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M0,0 L6,3 L0,6Z" fill="#4B72C4" />
-          </marker>
-        </defs>
-        <line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah2b)" />
+        <!-- Clinical stream: horizontal orthogonal arrow (starts at left, ends at right at y=68) -->
+        <line x1="2" y1="68" x2="30" y2="68" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#arrowBlack2)" />
+        <!-- Dermoscopic stream: horizontal orthogonal arrow (starts at left, ends at right at y=192) -->
+        <line x1="2" y1="192" x2="30" y2="192" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#arrowBlack2)" />
       </svg>
     </div>
 
-    <!-- ═══ COL 3 : PROJECTION HEADS ═══ -->
+    <!-- ═══ COL 3 : SHARED PROJECTION HEAD ═══ -->
     <div class="col col-proj" style="gap:8px; justify-content:center; padding-bottom:40px; position:relative;">
-      <div class="proj-block" style="align-items: center; justify-content: center;">
-        <svg width="32" height="32" viewBox="0 0 32 32" style="margin:0 auto 4px;">
-          <circle cx="16" cy="16" r="14" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5" />
-          <path d="M8,16 L24,16 M16,8 L24,16 L16,24" fill="none" stroke="#5b21b6" stroke-width="2"
-            stroke-linejoin="round" />
-          <circle cx="8" cy="16" r="3" fill="#7c3aed" />
-          <circle cx="24" cy="16" r="3" fill="#7c3aed" />
+      <div class="proj-block" style="align-items:center; justify-content:center;">
+        <svg width="36" height="36" viewBox="0 0 36 36" style="margin:0 auto 6px;">
+          <!-- two input nodes top and bottom converging to one output -->
+          <circle cx="6" cy="10" r="4" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5" />
+          <circle cx="6" cy="26" r="4" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5" />
+          <line x1="10" y1="10" x2="20" y2="18" stroke="#7c3aed" stroke-width="1.2" />
+          <line x1="10" y1="26" x2="20" y2="18" stroke="#7c3aed" stroke-width="1.2" />
+          <circle cx="24" cy="18" r="6" fill="#ede9fe" stroke="#5b21b6" stroke-width="1.8" />
+          <path d="M21,18 L27,18 M24,15 L27,18 L24,21" fill="none" stroke="#5b21b6" stroke-width="1.5" stroke-linejoin="round" />
+          <line x1="30" y1="18" x2="35" y2="18" stroke="#7c3aed" stroke-width="1.5" />
         </svg>
-        <div class="proj-title">Projection Head</div>
-        <div class="proj-sub">Clinical</div>
-        <div class="proj-arch">Linear→BN→GELU→Linear<br />→L2 Norm</div>
-        <div style="font-size:9.5px;color:#6d28d9;margin-top:3px;">512-d → 512-d embed</div>
-      </div>
-      <!-- <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-      <svg viewBox="0 0 10 24" width="10" height="24"><line x1="5" y1="0" x2="5" y2="24" stroke="#eab308" stroke-width="2" stroke-dasharray="3,2"/></svg>
-      <div class="mi-align-badge">ℒ<sub>MI</sub> align ↕</div>
-      <svg viewBox="0 0 10 24" width="10" height="24"><line x1="5" y1="0" x2="5" y2="24" stroke="#eab308" stroke-width="2" stroke-dasharray="3,2"/></svg>
-    </div> -->
-      <div class="proj-block" style="align-items: center; justify-content: center;">
-        <svg width="32" height="32" viewBox="0 0 32 32" style="margin:0 auto 4px;">
-          <circle cx="16" cy="16" r="14" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5" />
-          <path d="M8,16 L24,16 M16,8 L24,16 L16,24" fill="none" stroke="#5b21b6" stroke-width="2"
-            stroke-linejoin="round" />
-          <circle cx="8" cy="16" r="3" fill="#7c3aed" />
-          <circle cx="24" cy="16" r="3" fill="#7c3aed" />
-        </svg>
-        <div class="proj-title">Projection Head</div>
-        <div class="proj-sub">Dermoscopic</div>
-        <div class="proj-arch">Linear→BN→GELU→Linear<br />→L2 Norm</div>
-        <div style="font-size:9.5px;color:#6d28d9;margin-top:3px;">512-d → 512-d embed</div>
+        <div class="proj-title">Shared Projection Head</div>
+        <div class="proj-sub">Clinical &amp; Dermoscopic</div>
+        <div class="proj-arch">Linear→BN→GELU<br/>→Linear→BN→GELU<br/>→Linear→L2 Norm</div>
+        <div style="font-size:9.5px;color:#6d28d9;margin-top:4px;font-family:'Space Mono',monospace;">512d → 512d / 384-d → 512-d</div>
+        <!-- <div style="font-size:9px;background:#7c3aed;color:#fff;border-radius:10px;padding:2px 8px;margin-top:5px;font-weight:800;letter-spacing:0.4px;">shared weights</div> -->
       </div>
     </div>
 
-    <!-- ARROW 3 -->
+    <!-- ARROW 3 — single stream out of shared projection head -->
     <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
       <svg viewBox="0 0 36 20" class="arr-svg">
         <defs>
-          <marker id="ah3" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <marker id="ah3s" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
             <path d="M0,0 L6,3 L0,6Z" fill="#4B72C4" />
           </marker>
         </defs>
-        <line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah3)" />
-      </svg>
-      <svg viewBox="0 0 36 20" class="arr-svg" style="margin-top:100px;">
-        <defs>
-          <marker id="ah3b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M0,0 L6,3 L0,6Z" fill="#4B72C4" />
-          </marker>
-        </defs>
-        <line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah3b)" />
+        <line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#ah3s)" />
       </svg>
     </div>
 
@@ -1199,8 +1172,8 @@
             <path d="M 36 55 Q 52 85 70 85" fill="none" stroke="#ef4444" stroke-width="1.5"
               marker-end="url(#loss_arr_red)" />
 
-            <rect x="37" y="21" width="20" height="12" rx="3" fill="#fee2e2" stroke="#dc2626" stroke-width="0.8" />
-            <text x="47" y="30" fill="#dc2626" font-size="7" font-weight="800">GRL</text>
+            <!-- <rect x="37" y="21" width="20" height="12" rx="3" fill="#fee2e2" stroke="#dc2626" stroke-width="0.8" /> -->
+            <!-- <text x="47" y="30" fill="#dc2626" font-size="7" font-weight="800">GRL</text> -->
 
             <rect x="75" y="5" width="105" height="38" rx="6" fill="#ef4444" stroke="#dc2626" stroke-width="1.5" />
             <text x="127" y="22" fill="#ffffff" font-size="9.5" font-weight="800">Classifier f_s</text>

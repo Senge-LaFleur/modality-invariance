@@ -1,61 +1,114 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Modality-Invariant Dual-Encoder Architecture</title>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <title>Modality-Invariant Dual-Encoder Pipeline</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Space+Mono:wght@400;700&display=swap"
+    rel="stylesheet">
   <style>
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
+
     body {
       background: #ffffff;
       font-family: 'Nunito', sans-serif;
       padding: 30px 20px 40px;
-      min-width: 1400px;
+      min-width: 1610px;
     }
+
     h1 {
       text-align: center;
-      font-size: 24px;
+      font-size: 23.5px;
       font-weight: 900;
-      color: #0f172a;
-      margin-bottom: 6px;
+      color: #1a1a2e;
+      letter-spacing: -0.3px;
+      margin-bottom: 4px;
     }
-    .sub {
+
+    h2.sub {
       text-align: center;
-      font-size: 14px;
+      font-size: 14.5px;
       font-weight: 600;
-      color: #4b5563;
-      margin-bottom: 28px;
+      color: #5a6a8a;
+      margin-bottom: 22px;
+      font-style: italic;
     }
+
     .pipeline {
       display: flex;
       align-items: stretch;
-      gap: 8px;
+      gap: 10px;
       width: 100%;
-      justify-content: center;
     }
+
     .col {
       display: flex;
       flex-direction: column;
       align-items: center;
       position: relative;
     }
-    .col-input { width: 175px; gap: 12px; justify-content: center; }
-    .col-arrow { width: 36px; justify-content: center; }
-    .col-encoder { width: 170px; gap: 14px; justify-content: center; }
-    .col-direct-branches { width: 280px; gap: 12px; justify-content: center; }
-    .col-proj-shared { width: 380px; gap: 12px; justify-content: center; }
-    .col-align-branches { width: 280px; gap: 12px; justify-content: center; }
 
-    .arr-svg { width: 36px; }
+    .col-input {
+      width: 175px;
+      flex-shrink: 0;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .col-arrow {
+      width: 36px;
+      flex-shrink: 0;
+      justify-content: center;
+    }
+
+    .col-encoder {
+      width: 170px;
+      flex-shrink: 0;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .col-proj {
+      width: 155px;
+      flex-shrink: 0;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .col-embed {
+      width: 200px;
+      flex-shrink: 0;
+      justify-content: center;
+    }
+
+    .col-loss {
+      width: 380px;
+      flex-shrink: 0;
+      gap: 10px;
+      justify-content: flex-start;
+    }
+
+    .col-classes {
+      width: 155px;
+      flex-shrink: 0;
+      justify-content: flex-start;
+    }
+
+    .arr-svg {
+      width: 36px;
+    }
+
     .stream-badge {
       writing-mode: vertical-rl;
-      font-size: 11px;
+      font-size: 11.5px;
       font-weight: 800;
+      letter-spacing: 1px;
       padding: 8px 4px;
       border-radius: 6px;
       text-transform: uppercase;
@@ -64,280 +117,958 @@
       top: 50%;
       transform: translateY(-50%) rotate(180deg);
     }
-    .badge-clin { background: #dbeafe; color: #1d4ed8; }
-    .badge-derm { background: #dcfce7; color: #15803d; }
+
+    .badge-clin {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+
+    .badge-derm {
+      background: #dcfce7;
+      color: #15803d;
+    }
 
     .input-card {
+      /* border-radius: 14px; */
       overflow: hidden;
       border: 2.5px solid;
+      position: relative;
       width: 155px;
+      /* box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.08); */
     }
-    .input-card-clin { border-color: #3b82f6; background: #eff6ff; }
-    .input-card-derm { border-color: #22c55e; background: #f0fdf4; }
-    .input-img-area { width: 100%; height: 120px; overflow: hidden; background: #e2e8f0; display: flex; align-items: center; justify-content: center; }
-    .img-label { padding: 5px 8px; text-align: center; font-size: 12px; font-weight: 700; }
+
+    .input-card-clin {
+      border-color: #3b82f6;
+      background: #eff6ff;
+    }
+
+    .input-card-derm {
+      border-color: #22c55e;
+      background: #f0fdf4;
+    }
+
+    .input-img-area {
+      width: 100%;
+      height: 120px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .input-img-area img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .img-label {
+      padding: 5px 8px;
+      text-align: center;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #334155;
+      line-height: 1.3;
+    }
+
+    .img-sublabel {
+      font-size: 11.5px;
+      font-weight: 400;
+      color: #64748b;
+      display: block;
+    }
 
     .encoder-block {
+      /* border-radius: 14px; */
       border: 2.5px solid;
       width: 155px;
-      padding: 10px;
+      padding: 10px 10px 12px;
       text-align: center;
+      position: relative;
+      /* box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.08); */
     }
-    .enc-clin { border-color: #3b82f6; background: #dbeafe; }
-    .enc-derm { border-color: #22c55e; background: #dcfce7; }
-    .enc-title { font-size: 13px; font-weight: 800; }
-    .enc-sub { font-size: 11px; font-weight: 600; }
-    .enc-badge { font-size: 10px; background: #fff; border-radius: 20px; padding: 2px 6px; display: inline-block; margin-top: 5px; }
 
-    .branch-card {
-      border-radius: 18px;
-      border: 2px solid;
-      background: white;
-      padding: 12px 14px;
-      width: 260px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+    .enc-clin {
+      border-color: #3b82f6;
+      background: #dbeafe;
     }
-    .branch-cls { border-color: #3b82f6; background: #eff6ff; }
-    .branch-sa { border-color: #ef4444; background: #fef2f2; }
-    .branch-contrast { border-color: #f97316; background: #fff7ed; }
-    .branch-mi { border-color: #14b8a6; background: #f0fdfa; }
 
-    .proj-block {
-      border: 2.5px dashed #7c3aed;
-      background: #ede9fe;
-      width: 160px;
-      padding: 8px 10px;
-      text-align: center;
+    .enc-derm {
+      border-color: #22c55e;
+      background: #dcfce7;
     }
-    .shared-embed {
-      border: 2.5px solid #8b5cf6;
-      background: #f5f3ff;
-      width: 200px;
-      padding: 10px 8px;
-      text-align: center;
+
+    .enc-icon {
+      width: 44px;
+      height: 44px;
+      margin: 0 auto 6px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .loss-formula {
-      font-family: 'Space Mono', monospace;
+
+    .enc-icon-clin {
+      background: #bfdbfe;
+    }
+
+    .enc-icon-derm {
+      background: #bbf7d0;
+    }
+
+    .enc-title {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: #1e3a5f;
+      line-height: 1.2;
+    }
+
+    .enc-sub {
+      font-size: 11px;
+      font-weight: 600;
+      color: #475569;
+      margin-top: 2px;
+    }
+
+    .enc-badge {
       font-size: 10px;
       font-weight: 700;
-      margin-top: 6px;
-    }
-    .align-tag {
-      display: inline-block;
-      background: #fef9c3;
+      background: #fff;
       border-radius: 20px;
-      padding: 2px 8px;
+      padding: 2px 6px;
+      margin-top: 5px;
+      display: inline-block;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+    }
+
+    .proj-block {
+      /* border-radius: 14px; */
+      border: 2.5px dashed #7c3aed;
+      background: #ede9fe;
+      width: 138px;
+      padding: 8px 10px 10px;
+      text-align: center;
+      /* box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.07); */
+    }
+
+    .proj-title {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #4c1d95;
+    }
+
+    .proj-sub {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #6d28d9;
+      margin-top: 2px;
+    }
+
+    .proj-arch {
+      font-size: 10px;
+      color: #7c3aed;
+      margin-top: 4px;
+      font-family: 'Space Mono', monospace;
+    }
+
+    .mi-align-badge {
+      background: #fef9c3;
+      border: 2px solid #eab308;
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 11.5px;
+      font-weight: 800;
+      color: #713f12;
+      font-family: 'Space Mono', monospace;
+      box-shadow: 2px 2px 0 rgba(234, 179, 8, 0.25);
+      text-align: center;
+    }
+
+    /* ── EMBED BLOCK ── */
+    .embed-block {
+      /* border-radius: 16px; */
+      border: 2.5px solid #8b5cf6;
+      background: #f5f3ff;
+      width: 190px;
+      padding: 10px 8px;
+      text-align: center;
+      /* box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.08); */
+    }
+
+    .embed-title {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #4c1d95;
+      margin-bottom: 4px;
+    }
+
+    .embed-svg {
+      width: 100%;
+    }
+
+    /* legend strips */
+    .embed-legend-row {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    .leg-item {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 9.5px;
+      font-weight: 700;
+      color: #374151;
+    }
+
+    .leg-shape {
+      width: 11px;
+      height: 11px;
+      flex-shrink: 0;
+    }
+
+    /* ── LOSS ── */
+    .loss-block {
+      /* border-radius: 14px; */
+      border: 2.5px solid;
+      width: 400px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      /* gap: 8px; */
+      /* box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.08); */
+    }
+
+    .loss-icon-wrap {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .loss-text {
+      flex: 1;
+    }
+
+    .loss-name {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #1a1a2e;
+      line-height: 1.2;
+    }
+
+    .loss-type {
+      font-size: 10.5px;
+      font-weight: 700;
+      margin-top: 1px;
+    }
+
+    .loss-desc {
+      font-size: 10px;
+      font-weight: 500;
+      color: #475569;
+      line-height: 1.3;
+      margin-top: 2px;
+    }
+
+    .loss-formula {
+      font-family: 'Space Mono', monospace;
+      font-size: 10.5px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .branch-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      padding: 4px;
+      margin: 4px 0;
+    }
+
+    .branch-svg text {
+      font-family: 'Nunito', sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      fill: #1e293b;
+      text-anchor: middle;
+    }
+
+    .loss-cls {
+      border-color: #3b82f6;
+      background: #eff6ff;
+    }
+
+    .loss-conf {
+      border-color: #ef4444;
+      background: #fef2f2;
+    }
+
+    .loss-con {
+      border-color: #f97316;
+      background: #fff7ed;
+    }
+
+    .loss-mi {
+      border-color: #14b8a6;
+      background: #f0fdfa;
+    }
+
+    .loss-cls .loss-icon-wrap {
+      background: #dbeafe;
+    }
+
+    .loss-conf .loss-icon-wrap {
+      background: #fee2e2;
+    }
+
+    .loss-con .loss-icon-wrap {
+      background: #ffedd5;
+    }
+
+    .loss-mi .loss-icon-wrap {
+      background: #ccfbf1;
+    }
+
+    .loss-cls .loss-type {
+      color: #1d4ed8;
+    }
+
+    .loss-conf .loss-type {
+      color: #dc2626;
+    }
+
+    .loss-con .loss-type {
+      color: #c2410c;
+    }
+
+    .loss-mi .loss-type {
+      color: #0f766e;
+    }
+
+    .loss-cls .loss-formula {
+      color: #1d4ed8;
+    }
+
+    .loss-conf .loss-formula {
+      color: #dc2626;
+    }
+
+    .loss-con .loss-formula {
+      color: #c2410c;
+    }
+
+    .loss-mi .loss-formula {
+      color: #0f766e;
+    }
+
+    .novel-badge {
+      display: inline-block;
+      background: #14b8a6;
+      color: #fff;
       font-size: 9px;
       font-weight: 800;
-      margin-top: 5px;
+      border-radius: 10px;
+      padding: 1px 5px;
+      vertical-align: middle;
+      margin-left: 3px;
+      letter-spacing: 0.5px;
     }
+
+    /* ── CLASSES ── */
+    .classes-block {
+      border-radius: 14px;
+      border: 2.5px solid #6366f1;
+      background: #eef2ff;
+      width: 145px;
+      padding: 10px 8px;
+      box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.07);
+    }
+
+    .classes-title {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #3730a3;
+      text-align: center;
+      margin-bottom: 7px;
+    }
+
+    .class-chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 6px;
+      border-radius: 7px;
+      margin-bottom: 3px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .class-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .class-id {
+      font-family: 'Space Mono', monospace;
+      font-size: 9.5px;
+      color: #64748b;
+      width: 12px;
+    }
+
+    .fst-title {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #374151;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
     .fst-strip {
       display: flex;
       gap: 4px;
       justify-content: center;
       flex-wrap: wrap;
-      margin-top: 6px;
     }
+
     .fst-chip {
       border-radius: 8px;
-      padding: 2px 6px;
-      font-size: 10px;
+      padding: 4px 4px;
+      font-size: 10.5px;
       font-weight: 800;
+      text-align: center;
+      border: 2px solid rgba(0, 0, 0, 0.1);
+      line-height: 1.3;
+      min-width: 36px;
     }
-    .bypass-note {
-      font-size: 9px;
-      background: #f1f5f9;
-      border-radius: 12px;
-      padding: 2px 8px;
-      color: #1e293b;
-    }
-    .path-label {
-      font-size: 9px;
-      font-weight: 800;
-      background: #e2e8f0;
-      border-radius: 20px;
-      padding: 2px 8px;
-      margin-top: 4px;
-    }
+
+    /* ── TOTAL LOSS ── */
     .total-loss-row {
-      margin-top: 32px;
-      background: #0f172a;
-      border-radius: 20px;
+      margin-top: 22px;
+      background: #ffffff;
+      border-radius: 14px;
       padding: 12px 24px;
       text-align: center;
-      color: white;
-      width: 90%;
-      margin-left: auto;
-      margin-right: auto;
+      box-shadow: 4px 5px 0 rgba(0, 0, 0, 0.15);
     }
-    .formula { font-family: 'Space Mono', monospace; font-size: 16px; }
-    .embed-svg-mini { width: 100%; margin: 5px 0; }
+
+    .total-loss-row .formula {
+      font-family: 'Space Mono', monospace;
+      font-size: 16.5px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .total-loss-row .formula span {
+      display: inline-block;
+      margin: 0 2px;
+    }
+
+    .cls-c {
+      color: #60a5fa;
+    }
+
+    .conf-c {
+      color: #f87171;
+    }
+
+    .con-c {
+      color: #fb923c;
+    }
+
+    .mi-c {
+      color: #2dd4bf;
+    }
+
+    .total-loss-row .sub-formula {
+      font-size: 11.5px;
+      color: #758091;
+      margin-top: 4px;
+      font-family: 'Space Mono', monospace;
+    }
+
+    /* ── BOTTOM ── */
+    .bottom-row {
+      display: flex;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .info-panel {
+      flex: 1;
+      border-radius: 14px;
+      border: 2px solid;
+      padding: 12px 16px;
+      box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.06);
+    }
+
+    .info-panel-title {
+      font-size: 13.5px;
+      font-weight: 800;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .info-panel ul {
+      list-style: none;
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      line-height: 1.7;
+    }
+
+    .info-panel ul li::before {
+      content: "→ ";
+      color: #94a3b8;
+      font-weight: 700;
+    }
+
+    /* step circles */
+    .step-circle {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12.5px;
+      font-weight: 900;
+      color: #fff;
+      font-family: 'Space Mono', monospace;
+      margin-bottom: 3px;
+    }
+
+    .step-text {
+      text-align: center;
+      max-width: 80px;
+      color: #374155;
+      line-height: 1.2;
+      font-size: 10.5px;
+    }
+
+    .step-connector {
+      height: 2px;
+      background: #cbd5e1;
+      flex: 1;
+      margin-bottom: 13px;
+      min-width: 10px;
+    }
+
+    .dataset-tag {
+      display: inline-block;
+      background: #f1f5f9;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 5px;
+      font-size: 9.5px;
+      font-weight: 700;
+      color: #475569;
+      padding: 1px 5px;
+      margin: 1px 1px 0;
+      font-family: 'Space Mono', monospace;
+    }
   </style>
 </head>
+
 <body>
-<h1>Modality-Invariant Dual-Encoder Architecture</h1>
-<div class="sub">Encoders → two separate paths: <span style="background:#dbeafe; padding:2px 8px; border-radius:20px;">DIRECT to Target/SA</span> &nbsp;|&nbsp; <span style="background:#ede9fe; padding:2px 8px; border-radius:20px;">via Projection → Shared Space → Contrastive/MI</span></div>
 
-<div class="pipeline">
-  <!-- COL 1: INPUT IMAGES -->
-  <div class="col col-input" style="position:relative;">
-    <span class="stream-badge badge-clin" style="top:20%;">Clinical</span>
-    <span class="stream-badge badge-derm" style="top:72%;">Dermoscopic</span>
-    <div class="input-card input-card-clin">
-      <div class="input-img-area">Clinical</div>
-      <div class="img-label">Clinical Photo</div>
-    </div>
-    <div style="font-size:10px; font-weight:700; color:#64748b;">same lesion</div>
-    <div class="input-card input-card-derm">
-      <div class="input-img-area">Dermoscopic</div>
-      <div class="img-label">Dermoscopic Image</div>
-    </div>
-  </div>
+  <h1 style="margin-bottom: 30px;">Modality-Invariant Dual-Encoder Architecture</h1>
 
-  <!-- ARROW 1 -->
-  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
-    <svg viewBox="0 0 36 20" width="36"><defs><marker id="a1" markerWidth="5" markerHeight="5" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#4B72C4"/></marker></defs><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#a1)"/></svg>
-    <svg viewBox="0 0 36 20" width="36" style="margin-top:98px;"><line x1="2" y1="10" x2="30" y2="10" stroke="#4B72C4" stroke-width="2.5" marker-end="url(#a1)"/></svg>
-  </div>
+  <!-- MAIN PIPELINE -->
+  <div class="pipeline" style="align-items:center; justify-content:center;">
 
-  <!-- COL 2: ENCODERS -->
-  <div class="col col-encoder" style="gap:14px; justify-content:center; padding-bottom:40px;">
-    <div class="encoder-block enc-clin">
-      <div class="enc-title">Encoder (Clinical)</div>
-      <div class="enc-sub">ResNet18 / ViT</div>
-      <div class="enc-badge">ImageNet</div>
-      <div style="font-size:9px;">→ 512-d</div>
-    </div>
-    <div class="encoder-block enc-derm">
-      <div class="enc-title">Encoder (Derm)</div>
-      <div class="enc-sub">ResNet18 / ViT</div>
-      <div class="enc-badge">ImageNet</div>
-      <div style="font-size:9px;">→ 512-d</div>
-    </div>
-    <div class="path-label">feature vectors</div>
-  </div>
+    <!-- ═══ COL 1 : INPUT IMAGES ═══ -->
+    <div class="col col-input" style="gap:12px; position:relative;">
+      <span class="stream-badge badge-clin" style="top:18%;">Clinical</span>
+      <span class="stream-badge badge-derm" style="top:74%;">Dermoscopic</span>
 
-  <!-- ARROW 2 – split: one arrow going straight to target/SA, another arrow going to projection heads -->
-  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px; gap:30px;">
-    <svg viewBox="0 0 36 20" width="36"><line x1="2" y1="10" x2="30" y2="10" stroke="#3b82f6" stroke-width="2.5" marker-end="url(#a1)"/></svg>
-    <div style="font-size:8px; font-weight:800; background:#3b82f620; padding:2px 6px; border-radius:12px;">DIRECT path</div>
-    <svg viewBox="0 0 36 20" width="36"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="3,2" marker-end="url(#a1)"/></svg>
-    <div style="font-size:8px; font-weight:800; background:#8b5cf620; padding:2px 6px; border-radius:12px;">via PROJ</div>
-  </div>
-
-  <!-- COL 3: DIRECT BRANCHES (Target & SA) – receive raw concatenated features -->
-  <div class="col col-direct-branches" style="gap:14px; justify-content:center; padding-bottom:40px;">
-    <!-- TARGET -->
-    <div class="branch-card branch-cls">
-      <div style="font-size:15px; font-weight:800;">Target Branch</div>
-      <div class="loss-formula" style="background:#dbeafe; padding:2px; border-radius:12px;">DIRECT from encoders</div>
-      <div class="loss-type">Weighted Cross-Entropy Loss (L_cls)</div>
-      <div style="margin-top:4px;"><span class="align-tag">3-class output</span> Melanoma / Nevus / BCC</div>
-      <div class="loss-formula">Classifier on [z_clin, z_derm] (1024 → 3)</div>
-    </div>
-    <!-- SENSITIVE ATTRIBUTE -->
-    <div class="branch-card branch-sa">
-      <div style="font-size:15px; font-weight:800;">Sensitive Attribute (SA)</div>
-      <div class="loss-formula" style="background:#fee2e2; padding:2px; border-radius:12px;">DIRECT from encoders</div>
-      <div class="loss-type">Adversarial + Supervised (L_conf + L_s)</div>
-      <div><span class="align-tag" style="background:#fee2e2;">GRL on L_conf</span> <span class="align-tag">6 Fitzpatrick types</span></div>
-      <div class="fst-strip">
-        <div class="fst-chip" style="background:#FFDFC4;">I</div><div class="fst-chip" style="background:#F0C08A;">II</div>
-        <div class="fst-chip" style="background:#C68642; color:white;">III</div><div class="fst-chip" style="background:#8D5524; color:white;">IV</div>
-        <div class="fst-chip" style="background:#4A2511; color:white;">V</div><div class="fst-chip" style="background:#1F0D04; color:white;">VI</div>
+      <div class="input-card input-card-clin">
+        <div class="input-img-area">
+          <img src="clin.png" alt="Clinical Photo">
+        </div>
+        <div class="img-label">Clinical Photo<span class="img-sublabel">Surface / macroscopic view</span></div>
       </div>
-      <div class="loss-formula">shared f_s: Linear(1024→6)</div>
-    </div>
-  </div>
 
-  <!-- ARROW 3 – from encoders also continue to projection heads (but we already split; we just continue the dashed line) -->
-  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
-    <svg viewBox="0 0 36 20" width="36"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="3,2" marker-end="url(#a1)"/></svg>
-    <svg viewBox="0 0 36 20" width="36" style="margin-top:98px;"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="3,2" marker-end="url(#a1)"/></svg>
-  </div>
-
-  <!-- COL 4: PROJECTION HEADS + SHARED SPACE (feeds contrastive & MI) -->
-  <div class="col col-proj-shared" style="gap:12px; justify-content:center; padding-bottom:40px;">
-    <div style="display: flex; gap: 12px;">
-      <div class="proj-block">
-        <div class="proj-title">Proj. Head (Clinical)</div>
-        <div>Linear→BN→GELU→Linear→L2Norm</div>
-        <div>512 → 512</div>
+      <div
+        style="text-align:center; font-size:10.5px; font-weight:700; color:#64748b; font-style:italic; display:flex; align-items:center; gap:6px;">
+        <div style="height:1px; width:30px; border-top:1.5px dashed #94a3b8;"></div>
+        Same Lesion
+        <div style="height:1px; width:30px; border-top:1.5px dashed #94a3b8;"></div>
       </div>
-      <div class="proj-block">
-        <div class="proj-title">Proj. Head (Derm)</div>
-        <div>Linear→BN→GELU→Linear→L2Norm</div>
-        <div>512 → 512</div>
+
+      <div class="input-card input-card-derm">
+        <div class="input-img-area">
+          <img src="derm.png" alt="Dermoscopic Image">
+        </div>
+        <div class="img-label">Dermoscopic Image<span class="img-sublabel">Sub-surface / dermatoscope view</span></div>
       </div>
     </div>
-    <div class="shared-embed">
-      <div class="embed-title">Shared Embedding Space</div>
-      <svg viewBox="0 0 190 100" style="width:100%;">
+
+    <!-- ARROW 1 : INPUT → ENCODER (orthogonal black arrows) -->
+    <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+      <svg viewBox="0 0 36 20" class="arr-svg">
         <defs>
-          <radialGradient id="gA" cx="30%" cy="35%"><stop offset="0%" stop-color="#db2777" stop-opacity="0.2"/><stop offset="100%" stop-opacity="0"/></radialGradient>
-          <radialGradient id="gB" cx="70%" cy="35%"><stop offset="0%" stop-color="#d97706" stop-opacity="0.2"/><stop offset="100%" stop-opacity="0"/></radialGradient>
-          <radialGradient id="gC" cx="50%" cy="75%"><stop offset="0%" stop-color="#ef4444" stop-opacity="0.2"/><stop offset="100%" stop-opacity="0"/></radialGradient>
+          <marker id="arrowBlack1" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6Z" fill="#000000" />
+          </marker>
         </defs>
-        <ellipse cx="50" cy="40" rx="40" ry="30" fill="url(#gA)"/>
-        <ellipse cx="140" cy="40" rx="40" ry="30" fill="url(#gB)"/>
-        <ellipse cx="95" cy="80" rx="40" ry="30" fill="url(#gC)"/>
-        <circle cx="42" cy="35" r="4" fill="#FFDFC4" stroke="#1e293b" stroke-width="1.5"/>
-        <circle cx="62" cy="48" r="4" fill="#F0C08A" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="2,1.5"/>
-        <circle cx="132" cy="32" r="4" fill="#C68642" stroke="#1e293b" stroke-width="1.5"/>
-        <polygon points="148,46 156,46 152,54" fill="#8D5524" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="2,1.5"/>
-        <rect x="88" y="74" width="6" height="6" fill="#4A2511" stroke="#1e293b" stroke-width="1.5"/>
-        <rect x="102" y="84" width="6" height="6" fill="#FFDFC4" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="2,1.5"/>
-        <line x1="50" y1="42" x2="56" y2="52" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#arrM)"/>
-        <line x1="138" y1="44" x2="132" y2="54" stroke="#14b8a6" stroke-width="1.2"/>
-        <defs><marker id="arrM" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4Z" fill="#14b8a6"/></marker></defs>
-        <text x="10" y="15" font-size="5">● clinical</text><text x="10" y="22" font-size="5">○ derm</text>
-        <text x="140" y="96" font-size="5" fill="#14b8a6">MI</text>
-        <text x="50" y="96" font-size="5" fill="#f97316">contrastive</text>
+        <line x1="2" y1="10" x2="30" y2="10" stroke="#000000" stroke-width="2.5" marker-end="url(#arrowBlack1)" />
       </svg>
-      <div class="bypass-note">L2-norm projected embeddings (512-d)</div>
+      <svg viewBox="0 0 36 20" class="arr-svg" style="margin-top:100px;">
+        <defs>
+          <marker id="arrowBlack1b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6Z" fill="#000000" />
+          </marker>
+        </defs>
+        <line x1="2" y1="10" x2="30" y2="10" stroke="#000000" stroke-width="2.5" marker-end="url(#arrowBlack1b)" />
+      </svg>
     </div>
-  </div>
 
-  <!-- ARROW 4 → to contrastive & MI branches -->
-  <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
-    <svg viewBox="0 0 36 20" width="36"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" marker-end="url(#a1)"/></svg>
-    <svg viewBox="0 0 36 20" width="36" style="margin-top:98px;"><line x1="2" y1="10" x2="30" y2="10" stroke="#8b5cf6" stroke-width="2.5" marker-end="url(#a1)"/></svg>
-  </div>
-
-  <!-- COL 5: CONTRASTIVE & MI BRANCHES (use shared space) -->
-  <div class="col col-align-branches" style="gap:14px; justify-content:center; padding-bottom:40px;">
-    <!-- CONTRASTIVE -->
-    <div class="branch-card branch-contrast">
-      <div style="font-size:15px; font-weight:800;">Contrastive Branch</div>
-      <div class="loss-formula" style="background:#fff3e0;">from Shared Space</div>
-      <div class="loss-type">Supervised Contrastive Loss (L_con)</div>
-      <div class="align-tag" style="background:#ffedd5;">ALIGNS BY DISEASE CLASS</div>
-      <div style="font-size:10px; margin:4px 0;">pull same class → push different classes</div>
-      <div class="loss-formula">-log(exp(sim/τ) / Σ exp(sim/τ)) , τ=0.07</div>
+    <!-- ═══ COL 2 : ENCODERS ═══ -->
+    <div class="col col-encoder" style="gap:14px; justify-content:center; padding-bottom:40px;">
+      <div class="encoder-block enc-clin">
+        <div class="enc-icon enc-icon-clin">
+          <svg viewBox="0 0 40 40" width="32" height="32">
+            <rect x="4" y="4" width="32" height="32" rx="5" fill="#3b82f6" opacity="0.15" />
+            <g fill="none" stroke="#1d4ed8" stroke-width="1.5">
+              <rect x="7" y="7" width="8" height="8" rx="2" />
+              <rect x="17" y="7" width="8" height="8" rx="2" />
+              <rect x="27" y="7" width="8" height="8" rx="2" />
+              <rect x="7" y="17" width="8" height="8" rx="2" />
+              <rect x="17" y="17" width="8" height="8" rx="2" />
+              <rect x="27" y="17" width="8" height="8" rx="2" />
+              <rect x="7" y="27" width="8" height="8" rx="2" />
+              <rect x="17" y="27" width="8" height="8" rx="2" />
+              <rect x="27" y="27" width="8" height="8" rx="2" />
+            </g>
+          </svg>
+        </div>
+        <div class="enc-title">Encoder</div>
+        <div class="enc-sub">Clinical Stream</div>
+        <div class="enc-badge">resnet18 / vit_small_patch16_224</div>
+        <div style="font-size:9.5px;color:#64748b;margin-top:3px;">Pre-trained ImageNet</div>
+      </div>
+      <div style="font-size:10px;color:#475569;font-style:italic;font-weight:600;text-align:center;">— Pre-trained
+        ImageNet —</div>
+      <div class="encoder-block enc-derm">
+        <div class="enc-icon enc-icon-derm">
+          <svg viewBox="0 0 40 40" width="32" height="32">
+            <rect x="4" y="4" width="32" height="32" rx="5" fill="#22c55e" opacity="0.15" />
+            <g fill="none" stroke="#15803d" stroke-width="1.5">
+              <rect x="7" y="7" width="8" height="8" rx="2" />
+              <rect x="17" y="7" width="8" height="8" rx="2" />
+              <rect x="27" y="7" width="8" height="8" rx="2" />
+              <rect x="7" y="17" width="8" height="8" rx="2" />
+              <rect x="17" y="17" width="8" height="8" rx="2" />
+              <rect x="27" y="17" width="8" height="8" rx="2" />
+              <rect x="7" y="27" width="8" height="8" rx="2" />
+              <rect x="17" y="27" width="8" height="8" rx="2" />
+              <rect x="27" y="27" width="8" height="8" rx="2" />
+            </g>
+          </svg>
+        </div>
+        <div class="enc-title">Encoder</div>
+        <div class="enc-sub">Dermoscopic Stream</div>
+        <div class="enc-badge">resnet18 / vit_small_patch16_224</div>
+        <div style="font-size:9.5px;color:#64748b;margin-top:3px;">Pre-trained ImageNet</div>
+      </div>
     </div>
-    <!-- MI -->
-    <div class="branch-card branch-mi">
-      <div style="font-size:15px; font-weight:800;">Modality-Invariant (MI)</div>
-      <div class="loss-formula" style="background:#ccfbf1;">from Shared Space</div>
-      <div class="loss-type">Paired Modality Alignment Loss (L_MI)</div>
-      <div class="align-tag" style="background:#ccfbf1;">ALIGNS BY MODALITY (clinical ↔ derm)</div>
-      <div style="font-size:10px; margin:4px 0;">minimize distance between paired clinical & dermoscopic projections</div>
-      <div class="loss-formula">MSE(z_c_proj, z_d_proj)</div>
+
+    <!-- ARROW 2 : ENCODER → SHARED PROJECTION HEAD (orthogonal fan-out, black) -->
+    <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+      <svg viewBox="0 0 36 260" style="width:36px; height:260px;">
+        <defs>
+          <marker id="arrowBlack2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6Z" fill="#000000" />
+          </marker>
+        </defs>
+        <!-- Clinical stream: horizontal orthogonal arrow (starts at left, ends at right at y=68) -->
+        <line x1="2" y1="68" x2="30" y2="68" stroke="#000000" stroke-width="2.5" marker-end="url(#arrowBlack2)" />
+        <!-- Dermoscopic stream: horizontal orthogonal arrow (starts at left, ends at right at y=192) -->
+        <line x1="2" y1="192" x2="30" y2="192" stroke="#000000" stroke-width="2.5" marker-end="url(#arrowBlack2)" />
+      </svg>
     </div>
-  </div>
-</div>
 
-<!-- TOTAL LOSS (combined) -->
-<div class="total-loss-row">
-  <div class="formula">L_total = L_cls + λ_conf L_conf + λ_s L_s + β L_con + γ L_MI</div>
-  <div style="font-size:12px; margin-top:5px;">λ_conf=0.5, λ_s=0.3, β=1.0, γ=1.0 &nbsp;|&nbsp; temperature τ=0.07</div>
-  <div style="margin-top:8px; font-size:11px;">Target & SA: direct from encoders (concatenated features) &nbsp;|&nbsp; Contrastive & MI: projected embeddings from shared space</div>
-</div>
+    <!-- ═══ COL 3 : SHARED PROJECTION HEAD ═══ -->
+    <div class="col col-proj" style="gap:8px; justify-content:center; padding-bottom:40px; position:relative;">
+      <div class="proj-block" style="align-items:center; justify-content:center;">
+        <svg width="36" height="36" viewBox="0 0 36 36" style="margin:0 auto 6px;">
+          <circle cx="6" cy="10" r="4" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5" />
+          <circle cx="6" cy="26" r="4" fill="#ddd6fe" stroke="#7c3aed" stroke-width="1.5" />
+          <line x1="10" y1="10" x2="20" y2="18" stroke="#7c3aed" stroke-width="1.2" />
+          <line x1="10" y1="26" x2="20" y2="18" stroke="#7c3aed" stroke-width="1.2" />
+          <circle cx="24" cy="18" r="6" fill="#ede9fe" stroke="#5b21b6" stroke-width="1.8" />
+          <path d="M21,18 L27,18 M24,15 L27,18 L24,21" fill="none" stroke="#5b21b6" stroke-width="1.5" stroke-linejoin="round" />
+          <line x1="30" y1="18" x2="35" y2="18" stroke="#7c3aed" stroke-width="1.5" />
+        </svg>
+        <div class="proj-title">Shared Projection Head</div>
+        <div class="proj-sub">Clinical &amp; Dermoscopic</div>
+        <div class="proj-arch">Linear→BN→GELU<br/>→Linear→BN→GELU<br/>→Linear→L2 Norm</div>
+        <div style="font-size:9.5px;color:#6d28d9;margin-top:4px;font-family:'Space Mono',monospace;">384-d → 512-d</div>
+        <div style="font-size:9px;background:#7c3aed;color:#fff;border-radius:10px;padding:2px 8px;margin-top:5px;font-weight:800;letter-spacing:0.4px;">shared weights</div>
+      </div>
+    </div>
 
-<!-- legend and alignment info -->
-<div style="text-align:center; margin-top:24px; font-size:12px; background:#f8fafc; width:fit-content; margin-left:auto; margin-right:auto; padding:6px 18px; border-radius:40px;">
-  Contrastive branch aligns by disease class (pull same class regardless of modality/skin tone)<br>
-  MI branch aligns by modality (clinical ↔ dermoscopic paired lesions) → modality-invariant space
-</div>
+    <!-- ARROW 3 : PROJECTION HEAD → SHARED EMBEDDING SPACE (orthogonal black) -->
+    <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+      <svg viewBox="0 0 36 20" class="arr-svg">
+        <defs>
+          <marker id="arrowBlack3" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6Z" fill="#000000" />
+          </marker>
+        </defs>
+        <line x1="2" y1="10" x2="30" y2="10" stroke="#000000" stroke-width="2.5" marker-end="url(#arrowBlack3)" />
+      </svg>
+    </div>
+
+    <!-- ═══ COL 4 : EMBEDDING SPACE ═══ -->
+    <div class="col col-embed" style="justify-content:center; padding-bottom:40px;">
+      <div class="embed-block">
+        <div class="embed-title">Shared Embedding Space</div>
+        <svg viewBox="0 0 190 155" class="embed-svg">
+          <defs>
+            <radialGradient id="h0" cx="50%" cy="50%">
+              <stop offset="0%" stop-color="#db2777" stop-opacity="0.18" />
+              <stop offset="100%" stop-color="#db2777" stop-opacity="0" />
+            </radialGradient>
+            <radialGradient id="h1" cx="50%" cy="50%">
+              <stop offset="0%" stop-color="#d97706" stop-opacity="0.18" />
+              <stop offset="100%" stop-color="#d97706" stop-opacity="0" />
+            </radialGradient>
+            <radialGradient id="h2" cx="50%" cy="50%">
+              <stop offset="0%" stop-color="#ef4444" stop-opacity="0.18" />
+              <stop offset="100%" stop-color="#ef4444" stop-opacity="0" />
+            </radialGradient>
+            <radialGradient id="h3" cx="50%" cy="50%">
+              <stop offset="0%" stop-color="#f97316" stop-opacity="0.18" />
+              <stop offset="100%" stop-color="#f97316" stop-opacity="0" />
+            </radialGradient>
+            <radialGradient id="h4" cx="50%" cy="50%">
+              <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.18" />
+              <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
+            </radialGradient>
+            <marker id="emb_arr" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+              <path d="M0,0 L5,2.5 L0,5Z" fill="#6366f1" opacity="0.7" />
+            </marker>
+            <marker id="emb_arr2" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+              <path d="M0,0 L5,2.5 L0,5Z" fill="#6366f1" opacity="0.55" />
+            </marker>
+          </defs>
+
+          <ellipse cx="42" cy="50" rx="42" ry="42" fill="url(#h0)" />
+          <ellipse cx="148" cy="50" rx="42" ry="40" fill="url(#h1)" />
+          <ellipse cx="95" cy="102" rx="42" ry="42" fill="url(#h2)" />
+
+          <!-- cluster points (unchanged) -->
+          <circle cx="23.4" cy="27.7" r="5.5" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" />
+          <circle cx="39.0" cy="17.3" r="5.5" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" />
+          <circle cx="44.2" cy="38.1" r="5" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" />
+          <circle cx="33.8" cy="51.1" r="5.5" fill="#F0C08A" stroke="#1e293b" stroke-width="2" />
+          <circle cx="52.0" cy="53.7" r="5.5" fill="#F0C08A" stroke="#1e293b" stroke-width="2" />
+          <circle cx="28.6" cy="69.3" r="5.5" fill="#C68642" stroke="#1e293b" stroke-width="2" />
+          <circle cx="57.2" cy="74.5" r="5" fill="#8D5524" stroke="#1e293b" stroke-width="2" />
+          <circle cx="36.4" cy="77.1" r="5.5" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <circle cx="54.6" cy="14.7" r="5.5" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <circle cx="26.0" cy="51.1" r="5.5" fill="#F0C08A" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <circle cx="46.8" cy="82.3" r="5.5" fill="#C68642" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <circle cx="62.4" cy="43.3" r="5" fill="#4A2511" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <line x1="33.8" y1="30.3" x2="39.0" y2="47.2" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65" />
+          <line x1="44.2" y1="40.7" x2="52.0" y2="56.3" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65" />
+          <line x1="54.6" y1="58.9" x2="39.0" y2="74.5" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65" />
+
+          <polygon points="122.5,16.8 132.9,35.0 112.1,35.0" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" />
+          <polygon points="145.9,11.6 156.3,29.8 135.5,29.8" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" />
+          <polygon points="169.3,19.4 179.7,37.6 158.9,37.6" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" />
+          <polygon points="132.9,45.4 143.3,63.6 122.5,63.6" fill="#F0C08A" stroke="#1e293b" stroke-width="2" />
+          <polygon points="161.5,48.0 171.9,66.2 151.1,66.2" fill="#F0C08A" stroke="#1e293b" stroke-width="2" />
+          <polygon points="153.7,63.6 164.1,81.8 143.3,81.8" fill="#8D5524" stroke="#1e293b" stroke-width="2" />
+          <polygon points="138.1,22.0 148.5,40.2 127.7,40.2" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <polygon points="164.1,27.2 174.5,45.4 153.7,45.4" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <polygon points="143.3,55.8 153.7,74.0 132.9,74.0" fill="#F0C08A" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <polygon points="127.7,37.6 138.1,55.8 117.3,55.8" fill="#C68642" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <polygon points="169.3,68.8 179.7,87.0 158.9,87.0" fill="#8D5524" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <line x1="145.9" y1="32.4" x2="143.3" y2="55.8" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65" />
+          <line x1="164.1" y1="29.8" x2="164.1" y2="48.0" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65" />
+          <line x1="153.7" y1="40.2" x2="143.3" y2="63.6" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65" />
+
+          <rect x="69.2" y="68.4" width="10.0" height="10.0" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" />
+          <rect x="90.0" y="58.0" width="10.0" height="10.0" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" />
+          <rect x="100.4" y="81.4" width="10.0" height="10.0" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" />
+          <rect x="79.6" y="97.0" width="10.0" height="10.0" fill="#F0C08A" stroke="#1e293b" stroke-width="2" />
+          <rect x="103.0" y="102.2" width="10.0" height="10.0" fill="#F0C08A" stroke="#1e293b" stroke-width="2" />
+          <rect x="90.0" y="120.4" width="10.0" height="10.0" fill="#C68642" stroke="#1e293b" stroke-width="2" />
+          <rect x="71.8" y="125.6" width="10.0" height="10.0" fill="#8D5524" stroke="#1e293b" stroke-width="2" />
+          <rect x="84.8" y="81.4" width="10.0" height="10.0" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <rect x="110.8" y="68.4" width="10.0" height="10.0" fill="#FFDFC4" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <rect x="74.4" y="112.6" width="10.0" height="10.0" fill="#F0C08A" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <rect x="97.8" y="133.4" width="10.0" height="10.0" fill="#C68642" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <rect x="108.2" y="115.2" width="10.0" height="10.0" fill="#8D5524" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" />
+          <line x1="91.1" y1="79.9" x2="91.1" y2="95.5" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65" />
+          <line x1="101.5" y1="92.9" x2="101.5" y2="100.7" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65" />
+          <line x1="96.3" y1="111.1" x2="93.7" y2="121.5" stroke="#6366f1" stroke-width="1.3" stroke-dasharray="2,1.5" marker-end="url(#emb_arr2)" opacity="0.65" />
+          <line x1="78" y1="45" x2="112" y2="45" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2" opacity="0.35" />
+          <line x1="128" y1="72" x2="112" y2="84" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2" opacity="0.35" />
+          <line x1="62" y1="72" x2="78" y2="84" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2" opacity="0.35" />
+        </svg>
+
+        <div style="font-size:9.5px;font-weight:800;color:#4c1d95;margin:4px 0 2px;text-align:left;padding-left:4px;">Shape = Disease Class</div>
+        <div class="embed-legend-row">
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><circle cx="5.5" cy="5.5" r="4.5" fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5" /></svg>Melanoma</div>
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><polygon points="5.5,1 10,10 1,10" fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5" /></svg>Nevus</div>
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect x="1" y="1" width="9" height="9" fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5" /></svg>Basal Cell Carcinoma</div>
+        </div>
+        <div style="font-size:9.5px;font-weight:800;color:#4c1d95;margin:5px 0 2px;text-align:left;padding-left:4px;">Fill = Fitzpatrick Skin Type</div>
+        <div class="embed-legend-row">
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#FFDFC4" stroke="#aaa" stroke-width="0.5" /></svg>I</div>
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#F0C08A" stroke="#aaa" stroke-width="0.5" /></svg>II</div>
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#C68642" stroke="#aaa" stroke-width="0.5" /></svg>III</div>
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#8D5524" stroke="#aaa" stroke-width="0.5" /></svg>IV</div>
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#4A2511" stroke="#aaa" stroke-width="0.5" /></svg>V</div>
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 11 11"><rect width="11" height="11" rx="2" fill="#1F0D04" stroke="#aaa" stroke-width="0.5" /></svg>VI</div>
+        </div>
+        <div style="font-size:9.5px;font-weight:800;color:#4c1d95;margin:5px 0 2px;text-align:left;padding-left:4px;">Stroke = Modality</div>
+        <div class="embed-legend-row">
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 22 11"><circle cx="11" cy="5.5" r="4.5" fill="none" stroke="#1e293b" stroke-width="2" /></svg>Clinical</div>
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 22 11"><circle cx="11" cy="5.5" r="4.5" fill="none" stroke="#1e293b" stroke-width="2" stroke-dasharray="3,2" /></svg>Dermoscopic</div>
+          <div class="leg-item"><svg class="leg-shape" viewBox="0 0 22 11"><line x1="1" y1="5.5" x2="21" y2="5.5" stroke="#6366f1" stroke-width="1.5" stroke-dasharray="2,1.5" marker-end="url(#emb_arr)" /></svg>ℒ<sub>MI</sub> align</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ARROW 4 : SHARED EMBEDDING SPACE → LOSS BRANCHES (orthogonal black) -->
+    <div class="col col-arrow" style="justify-content:center; padding-bottom:40px;">
+      <svg viewBox="0 0 36 20" class="arr-svg">
+        <defs>
+          <marker id="arrowBlack4" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6Z" fill="#000000" />
+          </marker>
+        </defs>
+        <line x1="2" y1="10" x2="30" y2="10" stroke="#000000" stroke-width="2.5" marker-end="url(#arrowBlack4)" />
+      </svg>
+    </div>
+
+    <!-- ═══ COL 5 : LOSS FUNCTIONS (unchanged internally) ═══ -->
+    <div class="col col-loss" style="gap:0; justify-content:center; padding-bottom:40px;">
+
+      <!-- BRANCH 1: TARGET (CLASSIFICATION) -->
+      <div class="loss-block loss-cls">
+        <div class="loss-text">
+          <div class="loss-name">Target Branch: Classification</div>
+          <div class="loss-type">Weighted Cross-Entropy Loss (ℒ<sub>cls</sub>)</div>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <svg class="branch-svg" viewBox="0 0 330 70">
+            <defs><marker id="loss_arr_blue" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#1d4ed8" /></marker></defs>
+            <circle cx="25" cy="35" r="14" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" /><text x="25" y="38" fill="#1d4ed8" font-size="10.5" font-weight="800">z</text><text x="25" y="62" fill="#64748b" font-size="7.5" font-weight="600">Embedding</text>
+            <line x1="39" y1="35" x2="68" y2="35" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#loss_arr_blue)" />
+            <rect x="73" y="15" width="112" height="40" rx="6" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5" /><text x="129" y="33" fill="#ffffff" font-size="10" font-weight="800">Classifier f_c</text><text x="129" y="47" fill="#eff6ff" font-size="8" font-weight="600">Linear(512 → 3)</text>
+            <line x1="185" y1="35" x2="212" y2="35" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#loss_arr_blue)" />
+            <line x1="218" y1="50" x2="252" y2="50" stroke="#334155" stroke-width="1" /><rect x="222" y="28" width="5" height="22" fill="#db2777" rx="1" /><rect x="231" y="38" width="5" height="12" fill="#d97706" rx="1" /><rect x="240" y="18" width="5" height="32" fill="#ef4444" rx="1" /><text x="236" y="10" fill="#1d4ed8" font-size="8.5" font-weight="800" font-style="italic">p^c</text>
+            <line x1="258" y1="35" x2="278" y2="35" stroke="#1d4ed8" stroke-width="1.5" />
+            <rect x="283" y="20" width="41" height="30" rx="5" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5" /><text x="303" y="39" fill="#1d4ed8" font-family="'Space Mono', monospace" font-size="11" font-weight="800">ℒ_cls</text>
+          </svg>
+          <div class="classes-block">
+            <div class="classes-title">3-Class Output</div>
+            <div class="class-chip" style="background:#fce7f3;"><div class="class-dot" style="background:#db2777;"></div><div class="class-id">0</div>Melanoma</div>
+            <div class="class-chip" style="background:#fef3c7;"><div class="class-dot" style="background:#d97706;"></div><div class="class-id">1</div>Nevus</div>
+            <div class="class-chip" style="background:#fee2e2;"><div class="class-dot" style="background:#ef4444;"></div><div class="class-id">2</div>Basal Cell Carc.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BRANCH 2: SENSITIVE ATTRIBUTE -->
+      <div class="loss-block loss-conf">
+        <div class="loss-text">
+          <div class="loss-name" style="color:#c2410c;">Sensitive Attribute (SA) Branch</div>
+          <div class="loss-type">Adversarial &amp; Supervised Skin-Tone Loss</div>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <svg class="branch-svg" viewBox="0 0 330 110">
+            <defs><marker id="loss_arr_red" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#dc2626" /></marker></defs>
+            <circle cx="22" cy="55" r="14" fill="#fef2f2" stroke="#ef4444" stroke-width="1.5" /><text x="22" y="58" fill="#dc2626" font-size="10.5" font-weight="800">z</text>
+            <path d="M 36 55 Q 52 25 68 25" fill="none" stroke="#ef4444" stroke-width="1.5" marker-end="url(#loss_arr_red)" /><path d="M 36 55 Q 52 85 70 85" fill="none" stroke="#ef4444" stroke-width="1.5" marker-end="url(#loss_arr_red)" />
+            <rect x="37" y="21" width="20" height="12" rx="3" fill="#fee2e2" stroke="#dc2626" stroke-width="0.8" /><text x="47" y="30" fill="#dc2626" font-size="7" font-weight="800">GRL</text>
+            <rect x="75" y="5" width="105" height="38" rx="6" fill="#ef4444" stroke="#dc2626" stroke-width="1.5" /><text x="127" y="22" fill="#ffffff" font-size="9.5" font-weight="800">Classifier f_s</text><text x="127" y="34" fill="#fee2e2" font-size="7.5" font-weight="600">Linear(512 → 6)</text>
+            <rect x="75" y="67" width="105" height="38" rx="6" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5" /><text x="127" y="84" fill="#dc2626" font-size="9.5" font-weight="800">Classifier f_s</text><text x="127" y="96" fill="#7f1d1d" font-size="7.5" font-weight="600">Linear(512 → 6)</text>
+            <line x1="127" y1="43" x2="127" y2="67" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="2,2" /><rect x="110" y="49" width="34" height="12" rx="3" fill="#ffffff" stroke="#991b1b" stroke-width="0.8" /><text x="127" y="58" fill="#991b1b" font-size="7" font-weight="800">shared</text>
+            <line x1="180" y1="24" x2="204" y2="24" stroke="#ef4444" stroke-width="1.5" marker-end="url(#loss_arr_red)" /><line x1="180" y1="86" x2="204" y2="86" stroke="#ef4444" stroke-width="1.5" marker-end="url(#loss_arr_red)" />
+            <line x1="210" y1="35" x2="242" y2="35" stroke="#334155" stroke-width="1" /><rect x="213" y="23" width="3" height="12" fill="#FFDFC4" rx="0.5" /><rect x="218" y="17" width="3" height="18" fill="#F0C08A" rx="0.5" /><rect x="223" y="20" width="3" height="15" fill="#C68642" rx="0.5" /><rect x="228" y="25" width="3" height="10" fill="#8D5524" rx="0.5" /><rect x="233" y="15" width="3" height="20" fill="#4A2511" rx="0.5" /><rect x="238" y="27" width="3" height="8" fill="#1F0D04" rx="0.5" /><text x="226" y="10" fill="#dc2626" font-size="7" font-weight="800">p^s_adv</text>
+            <line x1="210" y1="97" x2="242" y2="97" stroke="#334155" stroke-width="1" /><rect x="213" y="85" width="3" height="12" fill="#FFDFC4" rx="0.5" /><rect x="218" y="79" width="3" height="18" fill="#F0C08A" rx="0.5" /><rect x="223" y="82" width="3" height="15" fill="#C68642" rx="0.5" /><rect x="228" y="87" width="3" height="10" fill="#8D5524" rx="0.5" /><rect x="233" y="77" width="3" height="20" fill="#4A2511" rx="0.5" /><rect x="238" y="89" width="3" height="8" fill="#1F0D04" rx="0.5" /><text x="226" y="72" fill="#991b1b" font-size="7" font-weight="800">p^s_sup</text>
+            <line x1="248" y1="24" x2="274" y2="24" stroke="#ef4444" stroke-width="1.5" marker-end="url(#loss_arr_red)" /><line x1="248" y1="86" x2="274" y2="86" stroke="#ef4444" stroke-width="1.5" marker-end="url(#loss_arr_red)" />
+            <rect x="279" y="9" width="45" height="30" rx="5" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5" /><text x="301" y="28" fill="#dc2626" font-family="'Space Mono', monospace" font-size="9.5" font-weight="800">ℒ_conf</text>
+            <rect x="279" y="71" width="45" height="30" rx="5" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.5" /><text x="301" y="90" fill="#b91c1c" font-family="'Space Mono', monospace" font-size="10" font-weight="800">ℒ_s</text>
+          </svg>
+          <div style="margin-top:12px;">
+            <div class="fst-title">6 Fitzpatrick Skin Types</div>
+            <div class="fst-strip">
+              <div class="fst-chip" style="background:#FFDFC4; color:#78350f; border-color:#FFDFC4;">I<br><span style="font-weight:400;font-size:9.5px;">Very fair</span></div>
+              <div class="fst-chip" style="background:#F0C08A; color:#7c3a00; border-color:#F0C08A;">II<br><span style="font-weight:400;font-size:9.5px;">Fair</span></div>
+              <div class="fst-chip" style="background:#C68642; color:#fff; border-color:#C68642;">III<br><span style="font-weight:400;font-size:9.5px;">Medium</span></div>
+              <div class="fst-chip" style="background:#8D5524; color:#fff; border-color:#8D5524;">IV<br><span style="font-weight:400;font-size:9.5px;">Olive</span></div>
+              <div class="fst-chip" style="background:#4A2511; color:#fde8d0; border-color:#4A2511;">V<br><span style="font-weight:400;font-size:9.5px;">Brown</span></div>
+            <div class="fst-chip" style="background:#1F0D04; color:#fde8d0; border-color:#1F0D04;">VI<br><span style="font-weight:400;font-size:9.5px;">Dark</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BRANCH 3: CONTRASTIVE -->
+      <div class="loss-block loss-con">
+        <div class="loss-text">
+          <div class="loss-name">Contrastive Branch</div>
+          <div class="loss-type">Supervised Contrastive Loss (ℒ<sub>con</sub>)</div>
+        </div>
+        <svg class="branch-svg" viewBox="0 0 330 75">
+          <defs><marker id="loss_arr_orange" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#ea580c" /></marker></defs>
+          <circle cx="20" cy="22" r="10" fill="#fff7ed" stroke="#f97316" stroke-width="1.2" /><text x="20" y="25" fill="#ea580c" font-size="8.5" font-weight="800">z_i</text>
+          <circle cx="20" cy="52" r="10" fill="#fff7ed" stroke="#f97316" stroke-width="1.2" /><text x="20" y="55" fill="#ea580c" font-size="8.5" font-weight="800">z_j</text>
+          <path d="M 31 22 Q 48 22 62 31" fill="none" stroke="#f97316" stroke-width="1.2" marker-end="url(#loss_arr_orange)" />
+          <path d="M 31 52 Q 48 52 62 43" fill="none" stroke="#f97316" stroke-width="1.2" marker-end="url(#loss_arr_orange)" />
+          <rect x="67" y="15" width="118" height="44" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.5" /><text x="126" y="32" fill="#7c2d12" font-size="9.5" font-weight="800">Contrastive Module</text><text x="126" y="46" fill="#ea580c" font-size="8" font-weight="600">Pull/Push (τ=0.07)</text>
+          <line x1="185" y1="37" x2="208" y2="37" stroke="#ea580c" stroke-width="1.5" marker-end="url(#loss_arr_orange)" />
+          <circle cx="220" cy="22" r="3.5" fill="#C68642" stroke="#1e293b" stroke-width="0.8" /><circle cx="236" cy="22" r="3.5" fill="#C68642" stroke="#1e293b" stroke-width="0.8" /><line x1="224" y1="22" x2="232" y2="22" stroke="#16a34a" stroke-width="1" /><polygon points="227,20 224,22 227,24" fill="#16a34a" /><polygon points="229,20 232,22 229,24" fill="#16a34a" /><text x="228" y="13" fill="#16a34a" font-size="7" font-weight="800">Same: Pull</text>
+          <circle cx="220" cy="54" r="3.5" fill="#C68642" stroke="#1e293b" stroke-width="0.8" /><rect x="233" y="50.5" width="7" height="7" fill="#FFDFC4" stroke="#1e293b" stroke-width="0.8" /><line x1="224" y1="54" x2="232" y2="54" stroke="#dc2626" stroke-width="1" /><polygon points="224,52 221,54 224,56" fill="#dc2626" /><polygon points="232,52 235,54 232,56" fill="#dc2626" /><text x="228" y="65" fill="#dc2626" font-size="7" font-weight="800">Diff: Push</text>
+          <line x1="250" y1="37" x2="278" y2="37" stroke="#ea580c" stroke-width="1.5" marker-end="url(#loss_arr_orange)" />
+          <rect x="283" y="22" width="41" height="30" rx="5" fill="#ffedd5" stroke="#ea580c" stroke-width="1.5" /><text x="303" y="41" fill="#ea580c" font-family="'Space Mono', monospace" font-size="11" font-weight="800">ℒ_con</text>
+        </svg>
+      </div>
+
+      <!-- BRANCH 4: MODALITY INVARIANT -->
+      <div class="loss-block loss-mi">
+        <div class="loss-text">
+          <div class="loss-name">Modality-Invariant (MI) Branch</div>
+          <div class="loss-type">Paired Modality Alignment (ℒ<sub>MI</sub>)</div>
+        </div>
+        <svg class="branch-svg" viewBox="0 0 330 75">
+          <defs><marker id="loss_arr_teal" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6Z" fill="#0d9488" /></marker></defs>
+          <circle cx="20" cy="22" r="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2" /><text x="20" y="25" fill="#1d4ed8" font-size="8.5" font-weight="800">z_c</text>
+          <circle cx="20" cy="52" r="10" fill="#f0fdf4" stroke="#22c55e" stroke-dasharray="2,1.5" stroke-width="1.2" /><text x="20" y="55" fill="#15803d" font-size="8.5" font-weight="800">z_d</text>
+          <path d="M 31 22 Q 48 22 62 31" fill="none" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#loss_arr_teal)" /><path d="M 31 52 Q 48 52 62 43" fill="none" stroke="#14b8a6" stroke-width="1.2" marker-end="url(#loss_arr_teal)" />
+          <rect x="67" y="15" width="118" height="44" rx="6" fill="#ccfbf1" stroke="#14b8a6" stroke-width="1.5" /><text x="126" y="32" fill="#0f766e" font-size="9.5" font-weight="800">Modality Alignment</text><text x="126" y="46" fill="#0d9488" font-size="8" font-weight="600">Paired Lesions</text>
+          <line x1="185" y1="37" x2="208" y2="37" stroke="#14b8a6" stroke-width="1.5" marker-end="url(#loss_arr_teal)" />
+          <circle cx="221" cy="37" r="4" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2" /><circle cx="239" cy="37" r="4" fill="#f0fdf4" stroke="#22c55e" stroke-dasharray="2,1.5" stroke-width="1.2" /><line x1="226" y1="37" x2="234" y2="37" stroke="#14b8a6" stroke-width="1" /><polygon points="228,35 225,37 228,39" fill="#14b8a6" /><polygon points="232,35 235,37 232,39" fill="#14b8a6" /><text x="230" y="23" fill="#0f766e" font-size="8" font-weight="800">Align</text><text x="230" y="53" fill="#0d9488" font-size="7" font-weight="600">Modality</text>
+          <line x1="250" y1="37" x2="278" y2="37" stroke="#14b8a6" stroke-width="1.5" marker-end="url(#loss_arr_teal)" />
+          <rect x="283" y="22" width="41" height="30" rx="5" fill="#ccfbf1" stroke="#14b8a6" stroke-width="1.5" /><text x="303" y="41" fill="#0f766e" font-family="'Space Mono', monospace" font-size="11" font-weight="800">ℒ_MI</text>
+        </svg>
+      </div>
+    </div>
+
+  </div><!-- end pipeline -->
+
 </body>
+
 </html>

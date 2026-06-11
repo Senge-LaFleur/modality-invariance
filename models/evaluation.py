@@ -647,13 +647,13 @@ def fairness_binary(res):
 
 
 # ------------------------------------------------------------
-# CSV saving functions
+# CSV saving functions (updated with optional knn_acc)
 # ------------------------------------------------------------
-def save_results_csv(res, fair, split_name, results_dir, label_names, fair_binary=None):
+def save_results_csv(res, fair, split_name, results_dir, label_names, fair_binary=None, knn_acc=None):
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    # Overall (original fairness metrics)
+    # Overall (original fairness metrics + optional KNN accuracy)
     overall = {
         "split": split_name,
         "accuracy": res["acc"],
@@ -667,6 +667,8 @@ def save_results_csv(res, fair, split_name, results_dir, label_names, fair_binar
         "PQD": fair["PQD"],
         "DPM": fair["DPM"],
     }
+    if knn_acc is not None:
+        overall["knn_accuracy"] = knn_acc
     pd.DataFrame([overall]).to_csv(results_dir / f"{split_name}_overall.csv", index=False)
 
     # Binary fairness metrics (if provided)
@@ -950,9 +952,8 @@ def plot_tsne_class_fst(embeddings, labels, skins, title, save_path,
 def plot_tsne_modality(embeddings, skins, modalities, title, save_path,
                        perplexity=40, seed=42):
     """
-    modalities: array of ints, 0=clinical, 1=dermoscopic, 2=paired (ignored)
-    For modality invariance, paired samples should be split into two entries:
-        one clinical, one dermoscopic, with same label and skin type.
+    modalities: array of ints, 0=clinical, 1=dermoscopic
+    (paired samples are filtered out before calling this function)
     """
     from matplotlib.colors import ListedColormap as _LC
     from matplotlib.lines import Line2D
