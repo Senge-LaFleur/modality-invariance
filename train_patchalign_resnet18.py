@@ -37,7 +37,7 @@ from models.models_losses import get_layer_wise_lr_params, confusion_loss, skin_
 from models.evaluation import (
     validate, fairness, save_results_csv, plot_confusion_matrix,
     plot_per_class_metrics, plot_fairness_metrics, plot_training_curves,
-    plot_tsne, build_loaders, LABEL_NAMES,
+    plot_tsne, compute_knn_accuracy, build_loaders, LABEL_NAMES,   # added compute_knn_accuracy
 )
 from models.Masked_GOT_NewSinkhorn import (
     cost_matrix_batch_torch,
@@ -477,12 +477,38 @@ def main():
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES)
+
+        # ---- Compute KNN accuracy on test embeddings ----
+        model.eval()
+        all_embs, all_labels_tsne = [], []
+        with torch.no_grad():
+            for batch in test_loader:
+                for k,v in batch.items():
+                    if isinstance(v, torch.Tensor):
+                        batch[k] = v.to(DEVICE)
+                out = model(batch)
+                all_embs.append(out["z"].cpu().numpy())
+                all_labels_tsne.append(batch["label"].cpu().numpy())
+        if all_embs:
+            embs = np.concatenate(all_embs)
+            labels_tsne = np.concatenate(all_labels_tsne)
+            knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
+            print(f"\n[PatchAlign ResNet-18] Test KNN (k=5) accuracy: {knn_acc:.4f}")
+        else:
+            knn_acc = float('nan')
+            print("[WARN] No test embeddings collected for KNN.")
+        # ---------------------------------------------------
+
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc)
         plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test", CFG["results_dir"]/"test_confusion.png")
         plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                "Per-Class Metrics - Test", CFG["results_dir"]/"test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"]/"test_fairness.png")
+
+        # t-SNE plot (existing)
+        if all_embs:
+            plot_tsne(embs, labels_tsne, "t-SNE - Test Set (PatchAlign ResNet-18)", CFG["results_dir"]/"tsne_test.png")
 
     cross_results = {}
     for ds_name, loader in eval_loaders.items():
@@ -512,21 +538,6 @@ def main():
         print("\nCross-dataset summary:\n", pd.DataFrame(cross_results).T)
 
     plot_training_curves(history, "Training History (PatchAlign ResNet-18)", CFG["results_dir"]/"training_curves.png")
-
-    if test_loader:
-        model.eval()
-        all_embs, all_labels_tsne = [], []
-        with torch.no_grad():
-            for batch in test_loader:
-                for k,v in batch.items():
-                    if isinstance(v, torch.Tensor):
-                        batch[k] = v.to(DEVICE)
-                out = model(batch)
-                all_embs.append(out["z"].cpu().numpy())
-                all_labels_tsne.append(batch["label"].cpu().numpy())
-        embs = np.concatenate(all_embs)
-        labels_tsne = np.concatenate(all_labels_tsne)
-        plot_tsne(embs, labels_tsne, "t-SNE - Test Set (PatchAlign ResNet-18)", CFG["results_dir"]/"tsne_test.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")

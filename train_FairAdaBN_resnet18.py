@@ -42,6 +42,7 @@ from models.evaluation import (
     plot_fairness_metrics,
     plot_training_curves,
     plot_tsne,
+    compute_knn_accuracy,          # <-- added
     build_loaders,
     LABEL_NAMES,
 )
@@ -643,12 +644,61 @@ def main():
         test_res = validate_fair(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         if test_res:
             test_fair = fairness(test_res)
-            save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES)
+
+            # ---- Compute KNN accuracy on test embeddings (group‑aware) ----
+            model.eval()
+            all_embs = []
+            all_labels_tsne = []
+            with torch.no_grad():
+                for batch in test_loader:
+                    for k, v in batch.items():
+                        if isinstance(v, torch.Tensor):
+                            batch[k] = v.to(DEVICE)
+                    sens = batch['skin_type']
+                    if sens.max() > 1:
+                        task_idx = (sens >= 3).long()
+                    else:
+                        task_idx = sens.long()
+                    # Process each subgroup and collect embeddings
+                    idx_list = []
+                    emb_list = []
+                    for t in [0, 1]:
+                        mask = (task_idx == t)
+                        if mask.sum() == 0:
+                            continue
+                        orig_idx = mask.nonzero(as_tuple=True)[0]
+                        batch_t = {k: v[orig_idx] for k, v in batch.items() if isinstance(v, torch.Tensor)}
+                        model.current_task_idx = t
+                        out_t = model(batch_t)
+                        idx_list.append(orig_idx.cpu())
+                        emb_list.append(out_t["z"].cpu())
+                    if emb_list:
+                        gathered_idx = torch.cat(idx_list, dim=0)
+                        restore = gathered_idx.argsort()
+                        embs_ordered = torch.cat(emb_list, dim=0)[restore].numpy()
+                        all_embs.append(embs_ordered)
+                        all_labels_tsne.append(batch['label'][gathered_idx[restore]].cpu().numpy())
+            if all_embs:
+                embs = np.concatenate(all_embs)
+                labels_tsne = np.concatenate(all_labels_tsne)
+                knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
+                print(f"\n[FairAdaBN ResNet-18] Test KNN (k=5) accuracy: {knn_acc:.4f}")
+            else:
+                knn_acc = float('nan')
+                print("[WARN] No test embeddings collected for KNN.")
+            # ------------------------------------------------
+
+            save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
+                             knn_acc=knn_acc)
             plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                   "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
             plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                    "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
             plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
+
+            # t-SNE on test set (using embeddings collected above)
+            if all_embs:
+                plot_tsne(embs, labels_tsne, "t-SNE - Test Set (FairAdaBN)", CFG["results_dir"] / "tsne_test.png")
 
     # Cross-dataset evaluation
     cross_results = {}
@@ -683,43 +733,6 @@ def main():
     # Training curves
     plot_training_curves(history, "Training History (FairAdaBN ResNet-18)",
                          CFG["results_dir"] / "training_curves.png")
-
-    # t-SNE on test set
-    if test_loader:
-        model.eval()
-        all_embs, all_labels_tsne = [], []
-        with torch.no_grad():
-            for batch in test_loader:
-                for k, v in batch.items():
-                    if isinstance(v, torch.Tensor):
-                        batch[k] = v.to(DEVICE)
-                sens = batch['skin_type']
-                if sens.max() > 1:
-                    task_idx = (sens >= 3).long()
-                else:
-                    task_idx = sens.long()
-                idx_list  = []
-                emb_list  = []
-                for t in [0, 1]:
-                    mask = (task_idx == t)
-                    if mask.sum() == 0:
-                        continue
-                    orig_idx = mask.nonzero(as_tuple=True)[0]
-                    batch_t  = {k: v[orig_idx] for k, v in batch.items() if isinstance(v, torch.Tensor)}
-                    model.current_task_idx = t
-                    out_t = model(batch_t)
-                    idx_list.append(orig_idx.cpu())
-                    emb_list.append(out_t["z"].cpu())
-                if emb_list:
-                    gathered_idx = torch.cat(idx_list, dim=0)
-                    restore      = gathered_idx.argsort()
-                    embs_ordered = torch.cat(emb_list, dim=0)[restore].numpy()
-                    all_embs.append(embs_ordered)
-                    all_labels_tsne.append(batch['label'][gathered_idx[restore]].cpu().numpy())
-        if all_embs:
-            embs = np.concatenate(all_embs)
-            labels_tsne = np.concatenate(all_labels_tsne)
-            plot_tsne(embs, labels_tsne, "t-SNE - Test Set (FairAdaBN)", CFG["results_dir"] / "tsne_test.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")
