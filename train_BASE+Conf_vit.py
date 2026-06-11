@@ -58,6 +58,7 @@ from models.evaluation import (
     plot_fairness_metrics,
     plot_training_curves,
     plot_tsne,
+    compute_knn_accuracy,          # <-- added
     build_loaders,
     LABEL_NAMES,
 )
@@ -79,7 +80,7 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
 # WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
-#WORK_ROOT = Path('jobs/process_BASE+Conf_vit/outputs')
+#WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
 WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
@@ -94,8 +95,8 @@ IMAGE_ROOTS = {
 CFG = {
     'csv_dir':      CSV_DIR,
     'image_roots':  IMAGE_ROOTS,
-    'ckpt_dir':     WORK_ROOT / 'checkpoints_BASE+Conf_vit',
-    'results_dir':  WORK_ROOT / 'results_BASE+Conf_vit',
+    'ckpt_dir':     WORK_ROOT / 'checkpoints_No_MI_vit',
+    'results_dir':  WORK_ROOT / 'results_No_MI_vit',
 
     'backbone': 'vit_small',
     'embed_dim': 512,
@@ -113,8 +114,9 @@ CFG = {
 
     # hyperparameters
     'lambda_cls': 1.0,
-    'lambda_conf': 0.2,
-    'lambda_skin': 0.2,  
+    'lambda_conf':     0.2,
+    'lambda_skin':     0.2,  
+    'lambda_con':      0.5,
     'temperature': 0.1,
 
     # Label smoothing for weighted CE
@@ -135,6 +137,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_ten
     total_loss_c = 0.0
     total_loss_conf = 0.0
     total_loss_s = 0.0
+    total_loss_con = 0.0
     all_preds, all_labels = [], []
     n_batches = 0
 
@@ -160,8 +163,15 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_ten
 
             loss_conf = confusion_loss(out["skin_logits"])
             loss_s = skin_type_loss(out["skin_logits"].detach(), batch["skin_type"])
+            # loss_con = contrast_criterion(out["z"], batch["label"])
+            loss_con = 0.0
+            if "z_c" in out and out["z_c"].size(0) > 1:
+                paired_labels = labels[out["paired_mask"]]
+                loss_con = cross_modal_supcon_loss(
+                    out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
+                )
 
-            loss = cfg["lambda_cls"] * loss_c + cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_s
+            loss = cfg["lambda_cls"] * loss_c + cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_s + cfg["lambda_con"] * loss_con
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -173,6 +183,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_ten
         total_loss_c += loss_c.item()
         total_loss_conf += loss_conf.item()
         total_loss_s += loss_s.item()
+        total_loss_con += loss_con.item() if not torch.is_tensor(loss_con) else loss_con.item()
         n_batches += 1
 
         with torch.no_grad():
@@ -187,6 +198,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_ten
     avg_loss_c = total_loss_c / max(n_batches, 1)
     avg_loss_conf = total_loss_conf / max(n_batches, 1)
     avg_loss_s = total_loss_s / max(n_batches, 1)
+    avg_loss_con = total_loss_con / max(n_batches, 1)
 
     all_preds = np.concatenate(all_preds)
     all_labels = np.concatenate(all_labels)
@@ -198,6 +210,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_ten
         "loss_c": avg_loss_c,
         "loss_conf": avg_loss_conf,
         "loss_s": avg_loss_s,
+        "loss_con": avg_loss_con,
         "acc": acc,
         "macro_f1": macro_f1,
     }
@@ -255,6 +268,8 @@ def main():
     start_epoch = 0
     best_auroc = 0.0
     best_f1 = 0.0
+    # patience = 20
+    # patience_counter = 0
     history = defaultdict(list)
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
@@ -265,6 +280,19 @@ def main():
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
+
+        # ----- EARLY STOPPING (patience=20) -----
+        # current_f1 = val_metrics["macro_f1"]
+        # if current_f1 > best_f1:
+        #     best_f1 = current_f1
+        #     patience_counter = 0
+        # else:
+        #     patience_counter += 1
+
+        # if patience_counter >= patience:
+        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
+        #     break
+        # -----------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -322,12 +350,36 @@ def main():
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES)
+
+        # ---- Compute KNN accuracy on test embeddings ----
+        model.eval()
+        all_embs = []
+        all_labels_tsne = []
+        with torch.no_grad():
+            for batch in test_loader:
+                for k, v in batch.items():
+                    if isinstance(v, torch.Tensor):
+                        batch[k] = v.to(DEVICE)
+                out = model(batch)
+                all_embs.append(out["z"].cpu().numpy())
+                all_labels_tsne.append(batch["label"].cpu().numpy())
+        embs = np.concatenate(all_embs)
+        labels_tsne = np.concatenate(all_labels_tsne)
+        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
+        print(f"\n[Baseline+Conf ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
+        # ------------------------------------------------
+
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
+                         knn_acc=knn_acc)  # <-- added knn_acc
         plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
         plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
+
+        # t-SNE plot (class only)
+        plot_tsne(embs, labels_tsne, "t-SNE - Test Set (Baseline+Conf ViT)",
+                  CFG["results_dir"] / "tsne_test.png")
 
     # Cross-dataset evaluation
     cross_results = {}
@@ -358,24 +410,8 @@ def main():
         cross_df.to_csv(CFG["results_dir"] / "cross_dataset_summary.csv")
         print("\nCross-dataset summary:\n", cross_df)
 
-    plot_training_curves(history, "Training History (FairDisCo ViT)",
+    plot_training_curves(history, "Training History (Baseline+Conf ViT)",
                          CFG["results_dir"] / "training_curves.png")
-
-    if test_loader:
-        model.eval()
-        all_embs, all_labels_tsne = [], []
-        with torch.no_grad():
-            for batch in test_loader:
-                for k, v in batch.items():
-                    if isinstance(v, torch.Tensor):
-                        batch[k] = v.to(DEVICE)
-                out = model(batch)
-                all_embs.append(out["z"].cpu().numpy())
-                all_labels_tsne.append(batch["label"].cpu().numpy())
-        embs = np.concatenate(all_embs)
-        labels_tsne = np.concatenate(all_labels_tsne)
-        plot_tsne(embs, labels_tsne, "t-SNE - Test Set (FairDisCo ViT)",
-                  CFG["results_dir"] / "tsne_test.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")

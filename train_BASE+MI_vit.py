@@ -53,6 +53,8 @@ from models.evaluation import (
     plot_fairness_metrics,
     plot_training_curves,
     plot_tsne,
+    plot_tsne_modality,          # <-- added for modality plot
+    compute_knn_accuracy,        # <-- added for KNN
     build_loaders,
     LABEL_NAMES,
 )
@@ -146,15 +148,10 @@ def train_epoch(model, loader, optimizer, epoch, cfg, scaler, device, weight_ten
                                  weight_tensor=weight_tensor,
                                  smoothing=cfg["label_smoothing"])
 
-            # --- FIX: VICReg-based MI loss (collapse-resistant) ---
+            # VICReg-based MI loss
             loss_mi = 0.0
             if "z_c" in out and out["z_c"].size(0) > 1:
                 loss_mi = mi_loss(out["z_c"], out["z_d"])
-
-            # # MI loss only for paired samples
-            # loss_mi = 0.0
-            # if "z_c" in out and "z_d" in out:
-            #     loss_mi = mi_loss(out["z_c"], out["z_d"])
 
             loss = cfg["lambda_cls"] * loss_c + cfg["lambda_mi"] * loss_mi
 
@@ -329,12 +326,66 @@ def main():
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES)
+
+        # ---- Compute KNN accuracy and collect for t-SNE modality ----
+        model.eval()
+        all_embs = []
+        all_labels_tsne = []
+        all_skins_tsne = []
+        all_mods_tsne = []   # 0=clinical, 1=derm, -1=paired (excluded)
+        with torch.no_grad():
+            for batch in test_loader:
+                for k, v in batch.items():
+                    if isinstance(v, torch.Tensor):
+                        batch[k] = v.to(DEVICE)
+                out = model(batch)
+                b = out["z"].size(0)
+                all_embs.append(out["z"].cpu().numpy())
+                all_labels_tsne.append(batch["label"].cpu().numpy())
+                all_skins_tsne.append(batch["skin_type"].cpu().numpy())
+
+                # Modality mapping: skip paired samples
+                mod_list = []
+                for m in batch.get("modality", ["clinical"] * b):
+                    if m == "clinical":
+                        mod_list.append(0)
+                    elif m == "derm":
+                        mod_list.append(1)
+                    else:   # paired
+                        mod_list.append(-1)
+                all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
+
+        embs        = np.concatenate(all_embs)
+        labels_tsne = np.concatenate(all_labels_tsne)
+        skins_tsne  = np.concatenate(all_skins_tsne)
+        mods_tsne   = np.concatenate(all_mods_tsne)
+
+        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
+        print(f"\n[Baseline+MI ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
+        # ------------------------------------------------
+
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
+                         knn_acc=knn_acc)   # <-- added knn_acc
         plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
         plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
+
+        # t-SNE: class + FST
+        plot_tsne(embs, labels_tsne, "t-SNE - Test Set (Baseline+MI ViT)",
+                  CFG["results_dir"] / "tsne_test.png")
+
+        # Modality t-SNE: use only unpaired clinical/derm (mods_tsne >= 0)
+        mask_mod = mods_tsne >= 0
+        if mask_mod.sum() > 1:
+            plot_tsne_modality(
+                embs[mask_mod], skins_tsne[mask_mod], mods_tsne[mask_mod],
+                title="t-SNE — Modality (Clinical vs Dermoscopic)  [Test]",
+                save_path=CFG["results_dir"] / "tsne_test_modality.png",
+            )
+        else:
+            print("[WARN] Not enough unpaired clinical/derm samples for modality t-SNE plot.")
 
     # Cross-dataset evaluation
     cross_results = {}
@@ -367,21 +418,6 @@ def main():
 
     plot_training_curves(history, "Training History (Baseline+MI ViT)",
                          CFG["results_dir"] / "training_curves.png")
-
-    if test_loader:
-        model.eval()
-        all_embs, all_labels_tsne = [], []
-        with torch.no_grad():
-            for batch in test_loader:
-                for k, v in batch.items():
-                    if isinstance(v, torch.Tensor):
-                        batch[k] = v.to(DEVICE)
-                out = model(batch)
-                all_embs.append(out["z"].cpu().numpy())
-                all_labels_tsne.append(batch["label"].cpu().numpy())
-        embs = np.concatenate(all_embs)
-        labels_tsne = np.concatenate(all_labels_tsne)
-        plot_tsne(embs, labels_tsne, "t-SNE - Test Set", CFG["results_dir"] / "tsne_test.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
     print(f"Checkpoints saved to {CFG['ckpt_dir']}")
