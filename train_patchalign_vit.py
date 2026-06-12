@@ -38,13 +38,14 @@ from models.models_losses import confusion_loss, skin_type_loss
 from models.evaluation import (
     validate,
     fairness,
+    fairness_binary,
     save_results_csv,
     plot_confusion_matrix,
     plot_per_class_metrics,
     plot_fairness_metrics,
     plot_training_curves,
     plot_tsne,
-    compute_knn_accuracy,          # <-- added for KNN
+    compute_knn_accuracy,
     build_loaders,
     LABEL_NAMES,
 )
@@ -80,7 +81,6 @@ def got_loss(p, q, mask, lamb=0.9):
 
 
 # ----------------------------- Original label list (115 items) --------------
-# Copied from train_PatchAlign_FitzPatrick_InDomain.py
 ORIGINAL_LABELS = [
     'drug induced pigmentary changes', 'photodermatoses',
     'dermatofibroma', 'psoriasis', 'kaposi sarcoma',
@@ -127,7 +127,6 @@ ORIGINAL_LABELS = [
     'ehlers danlos syndrome', 'tungiasis', 'eudermic'
 ]
 
-# Mapping from our class names to the exact strings in ORIGINAL_LABELS
 CLASS_MAPPING = {
     "melanoma":                 "melanoma",
     "nevus":                    "nevocytic nevus",
@@ -141,8 +140,7 @@ CLASS_MAPPING = {
 # PatchAlign Dual ViT model
 # ─────────────────────────────────────────────────────────────────────────────
 
-_VIT_SMALL_FEAT_DIM = 384   # vit_small_patch16_224  (paper uses ViT-base = 768)
-
+_VIT_SMALL_FEAT_DIM = 384   # vit_small_patch16_224
 
 class ProjectionHead(nn.Module):
     def __init__(self, in_dim: int, hidden_dim: int = 1024, out_dim: int = 384):
@@ -166,32 +164,20 @@ class ProjectionHead(nn.Module):
 class PatchAlignViT(nn.Module):
     """
     Dual ViT-small encoder with PatchAlign MGOT alignment.
-
-    ViT naturally provides per-patch token embeddings from last_hidden_state.
-    For vit_small (D=384) we project patches to text_embed_dim (768) via
-    patch_proj.  If you switch to vit_base (D=768) you can set
-    text_embed_dim=768 and the projection becomes an identity.
-
-    Number of patch tokens = (224/16)² = 196.  For paired samples, the global
-    embedding is the average of clinical and derm CLS tokens, but patch
-    embeddings are taken from the clinical modality only (to keep shape
-    consistent across the batch).
     """
-
     def __init__(
         self,
         embed_dim: int = 384,
         num_classes: int = 5,
         num_skin_types: int = 6,
-        num_text_labels: int = 6,       # disease classes + eudermic
-        text_embed_dim: int = 768,      # dimensionality of saved text embeddings
+        num_text_labels: int = 6,
+        text_embed_dim: int = 768,
         pretrained: bool = True,
         use_projection: bool = False,
         vit_model_name: str = "vit_small_patch16_224",
     ):
         super().__init__()
 
-        # ── ViT backbones (output: last_hidden_state) ────────────────────────
         self.clinical_vit = timm.create_model(
             vit_model_name, pretrained=pretrained, num_classes=0
         )
@@ -199,9 +185,8 @@ class PatchAlignViT(nn.Module):
             vit_model_name, pretrained=pretrained, num_classes=0
         )
 
-        vit_feat_dim = _VIT_SMALL_FEAT_DIM   # 384 for vit_small
+        vit_feat_dim = _VIT_SMALL_FEAT_DIM
 
-        # ── Projection head (CLS token → embed_dim) ──────────────────────────
         self.use_projection = use_projection
         if use_projection:
             self.proj_head = ProjectionHead(vit_feat_dim, 1024, embed_dim)
@@ -209,21 +194,17 @@ class PatchAlignViT(nn.Module):
             self.proj_head = nn.Identity()
             embed_dim = vit_feat_dim
 
-        # ── Disease classifier & skin-type classifier ────────────────────────
         self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
         self.skin_clf   = nn.Sequential(
             nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.2),
             nn.Linear(256, num_skin_types),
         )
 
-        # ── PatchAlign additions ─────────────────────────────────────────────
-        # Project ViT patch tokens (384-d) to text embedding space (768-d)
         self.patch_proj = nn.Sequential(
             nn.Linear(vit_feat_dim, text_embed_dim),
             nn.LayerNorm(text_embed_dim),
         )
 
-        # Mask generator: flattened patch embeddings → soft mask (B, N_p, N_text)
         n_patches = 196
         self.num_text_labels = num_text_labels
         self.mask_net = nn.Sequential(
@@ -235,35 +216,26 @@ class PatchAlignViT(nn.Module):
         self._n_patches      = n_patches
         self._text_embed_dim = text_embed_dim
 
-    # ── Low-level helpers ────────────────────────────────────────────────────
     def _extract_features(self, x: torch.Tensor, modality: str):
-        """
-        Returns
-          z       : (B, embed_dim)           CLS-derived global embedding
-          patches : (B, 196, text_embed_dim) projected patch tokens
-          mask    : (B, 196, num_text_labels) learnable MGOT mask
-        """
         vit = self.clinical_vit if modality == "clinical" else self.derm_vit
         hidden = vit.forward_features(x)           # (B, 197, 384)
 
-        cls_token    = hidden[:, 0, :]             # (B, 384)  — CLS
-        patch_tokens = hidden[:, 1:, :]            # (B, 196, 384) — patch tokens
+        cls_token    = hidden[:, 0, :]             # (B, 384)
+        patch_tokens = hidden[:, 1:, :]            # (B, 196, 384)
 
         z       = self.proj_head(cls_token)        # (B, embed_dim)
         patches = self.patch_proj(patch_tokens)    # (B, 196, 768)
 
         B = x.size(0)
-        mask_flat = self.mask_net(patches.view(B, -1))        # (B, 196*num_text)
-        mask = mask_flat.view(B, self._n_patches, self.num_text_labels)  # (B, 196, 6)
+        mask_flat = self.mask_net(patches.view(B, -1))
+        mask = mask_flat.view(B, self._n_patches, self.num_text_labels)
 
         return z, patches, mask
 
-    # ── Forward ─────────────────────────────────────────────────────────────
     def forward(self, batch: dict) -> dict:
         device = batch["label"].device
         batch_size = len(batch["label"])
 
-        # Always use clinical modality for patches (consistent 196 patches)
         if "clinical" in batch:
             clinical_t = batch["clinical"].to(device)
             z_clin, patches, mask = self._extract_features(clinical_t, "clinical")
@@ -271,25 +243,21 @@ class PatchAlignViT(nn.Module):
             out_patches = patches
             out_masks = mask
         else:
-            # Fallback: use any available image (should not happen)
             img_t = batch["image"].to(device)
             z, patches, mask = self._extract_features(img_t, "clinical")
             embeddings = z
             out_patches = patches
             out_masks = mask
 
-        # Enhance global embedding if paired samples exist (clinical + derm average)
         paired_mask = torch.tensor(batch.get("paired", torch.zeros(batch_size, dtype=torch.bool)), dtype=torch.bool, device=device)
         if paired_mask.any() and "clinical" in batch and "derm" in batch:
             clin_t = batch["clinical"][paired_mask].to(device)
             derm_t = batch["derm"][paired_mask].to(device)
-            z_c, _, _ = self._extract_features(clin_t, "clinical")   # ignore patches & mask
+            z_c, _, _ = self._extract_features(clin_t, "clinical")
             z_d, _, _ = self._extract_features(derm_t, "derm")
             z_paired = (z_c + z_d) / 2
-            # embeddings is a tensor from the clinical branch, we can update it
             embeddings[paired_mask] = z_paired
 
-        # Safety fallback
         if embeddings is None:
             embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
 
@@ -320,27 +288,16 @@ print(f"Device: {DEVICE}")
 # ─────────────────────────────────────────────────────────────────────────────
 # Path configuration — update for each environment
 # ─────────────────────────────────────────────────────────────────────────────
-# WORK_ROOT = Path('outputs')
-# CSV_DIR = WORK_ROOT / 'csvs'
-
-# IMAGE_ROOTS = {
-#     'hiba':           Path('process_patchalign_vit/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-#     'fitzpatrick17k': Path('process_patchalign_vit/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-#     'ham10000':       Path('process_patchalign_vit/data/datasets/asosenge/ham10000/HAM10000'),
-#     'derm7pt':        Path('process_patchalign_vit/data/datasets/asosenge/derm7pt/release_v0/images'),
-#     'padufes20':      Path('process_patchalign_vit/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-#     'isic2019':       Path('process_patchalign_vit/data/datasets/sengenjih/isic2019'),                 # update path as needed
-# }
-
-WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
+WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
-    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),
-    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
+    'hiba':           Path('process_patchalign_vit/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('process_patchalign_vit/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'ham10000':       Path('process_patchalign_vit/data/datasets/asosenge/ham10000/HAM10000'),
+    'derm7pt':        Path('process_patchalign_vit/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('process_patchalign_vit/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('process_patchalign_vit/data/datasets/sengenjih/isic2019'),
 }
 
 FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
@@ -360,11 +317,11 @@ CFG = {
     'text_embed_dim':   768,
 
     'batch_size':    32,
-    'num_epochs':    500,          # Update as needed
+    'num_epochs':    500,
     'lr':            3e-5,
     'min_lr':        1e-6,
     'weight_decay':  0.05,
-    'warmup_epochs': 100,           # Update as needed
+    'warmup_epochs': 100,
     'aug_probability': 0.85,
 
     'alpha_conf': 0.5,
@@ -379,7 +336,6 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 # ─────────────────────────────────────────────────────────────────────────────
 # Training epoch
 # ─────────────────────────────────────────────────────────────────────────────
-
 def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
     model.train()
     total_loss    = 0.0
@@ -405,10 +361,8 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
         with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
             out = model(batch)
 
-            # L_c
             loss_c = criterion_cls(out["logits"], batch["label"])
 
-            # ── Extract skin labels from possible column names ─────────────────
             skin_labels = batch.get("fitzpatrick", None)
             if skin_labels is None:
                 skin_labels = batch.get("skin_type", None)
@@ -416,7 +370,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
                 skin_labels = batch.get("fitzpatrick_scale", None)
             if skin_labels is not None:
                 skin_labels = skin_labels.long()
-                # Convert from 1..6 to 0..5 if needed
                 if skin_labels.max() > 5:
                     skin_labels = skin_labels - 1
                 skin_labels = torch.clamp(skin_labels, 0, 5)
@@ -426,9 +379,8 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
                 loss_conf = out["skin_logits"].new_tensor(0.)
                 loss_s    = out["skin_logits"].new_tensor(0.)
                 if epoch == 0 and n_batches == 0:
-                    print("[WARN] No skin type column ('fitzpatrick'/'skin_type'/'fitzpatrick_scale') found in batch. L_conf and L_s are zero.")
+                    print("[WARN] No skin type column found. L_conf and L_s are zero.")
 
-            # L_got
             loss_got = out["logits"].new_tensor(0.)
             if "patches" in out and text_emb is not None:
                 B = out["patches"].size(0)
@@ -488,7 +440,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
-
 def main():
     print(f"CSV dir      : {CFG['csv_dir']}")
     print(f"Checkpoints  : {CFG['ckpt_dir']}")
@@ -497,12 +448,11 @@ def main():
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
-    # ── Load text embeddings and extract the 6 relevant classes ───────────────
+    # ── Load text embeddings ───────────────────────────────────────────────
     if FULL_EMBEDDINGS_PATH.exists():
-        full_emb = np.load(FULL_EMBEDDINGS_PATH)   # shape (115, 768)
+        full_emb = np.load(FULL_EMBEDDINGS_PATH)
         print(f"Loaded full embedding matrix: {full_emb.shape}")
 
-        # Build index mapping from label string to row number
         label_to_idx = {label: idx for idx, label in enumerate(ORIGINAL_LABELS)}
         selected_indices = []
         for our_name, orig_name in CLASS_MAPPING.items():
@@ -510,8 +460,7 @@ def main():
                 raise ValueError(f"Label '{orig_name}' not found in original label list")
             selected_indices.append(label_to_idx[orig_name])
 
-        # Extract the 6 embeddings (melanoma, nevus, BCC, AK, SCC, eudermic)
-        text_emb_np = full_emb[selected_indices]   # (6, 768)
+        text_emb_np = full_emb[selected_indices]
         print(f"Selected embeddings: {text_emb_np.shape}")
         text_emb = torch.tensor(text_emb_np, dtype=torch.float32).to(DEVICE)
     else:
@@ -555,8 +504,6 @@ def main():
     start_epoch = 0
     best_auroc  = 0.0
     best_f1     = 0.0
-    patience    = 20
-    patience_counter = 0
     history     = defaultdict(list)
 
     # ── Training loop ────────────────────────────────────────────────────────
@@ -567,19 +514,6 @@ def main():
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
-
-        # ----- EARLY STOPPING (patience=20) -----
-        # current_f1 = val_metrics["macro_f1"]
-        # if current_f1 > best_f1:
-        #     best_f1 = current_f1
-        #     patience_counter = 0
-        # else:
-        #     patience_counter += 1
-
-        # if patience_counter >= patience:
-        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
-        #     break
-        # -----------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -638,7 +572,8 @@ def main():
     # ── Evaluation ───────────────────────────────────────────────────────────
     val_res  = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
-    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
+    val_fair_binary = fairness_binary(val_res)
+    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES, fair_binary=val_fair_binary)
     plot_confusion_matrix(val_res["conf_mat"],
                           [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                           "Confusion Matrix - Validation",
@@ -649,10 +584,17 @@ def main():
                            CFG["results_dir"] / "val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation",
                           CFG["results_dir"] / "val_fairness.png")
+    print("\nBinary fairness (Validation):")
+    print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
+    print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
+    print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
+    print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
+    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
 
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
+        test_fair_binary = fairness_binary(test_res)
 
         # ---- Compute KNN accuracy on test embeddings ----
         model.eval()
@@ -670,10 +612,9 @@ def main():
         labels_tsne = np.concatenate(all_labels_tsne)
         knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
         print(f"\n[PatchAlign ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
-        # ------------------------------------------------
 
         save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
-                         knn_acc=knn_acc)   # <-- added
+                         knn_acc=knn_acc, fair_binary=test_fair_binary)
         plot_confusion_matrix(test_res["conf_mat"],
                               [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test",
@@ -684,8 +625,14 @@ def main():
                                CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test",
                               CFG["results_dir"] / "test_fairness.png")
+        print("\nBinary fairness (Test):")
+        print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
 
-        # t-SNE plot (class only)
+        # t-SNE plot
         plot_tsne(embs, labels_tsne, "t-SNE — Test Set (PatchAlign ViT)",
                   CFG["results_dir"] / "tsne_test.png")
 
@@ -696,7 +643,8 @@ def main():
         res  = validate(model, loader, DEVICE, CFG["num_classes"],
                         desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
-        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
+        fair_binary = fairness_binary(res)
+        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES, fair_binary=fair_binary)
         plot_confusion_matrix(res["conf_mat"],
                               [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               f"Confusion Matrix - {ds_name}",
@@ -707,6 +655,13 @@ def main():
                                CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}",
                               CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
+        print(f"\nBinary fairness ({ds_name}):")
+        print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
+
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "auroc": res["auroc"],

@@ -52,13 +52,14 @@ from models.models_losses import (
 from models.evaluation import (
     validate,
     fairness,
+    fairness_binary,
     save_results_csv,
     plot_confusion_matrix,
     plot_per_class_metrics,
     plot_fairness_metrics,
     plot_training_curves,
     plot_tsne,
-    compute_knn_accuracy,          # <-- added for KNN
+    compute_knn_accuracy,
     build_loaders,
     LABEL_NAMES,
 )
@@ -79,8 +80,6 @@ torch.backends.cudnn.benchmark = False
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
-#WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
 WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
@@ -105,23 +104,19 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 5,           # adjust as needed
+    'num_epochs': 5,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
     'warmup_epochs': 1,
     'aug_probability': 0.85,
 
-    # hyperparameters
     'lambda_cls': 1.0,
     'lambda_conf':     0.2,
-    'lambda_skin':     0.2,  
+    'lambda_skin':     0.2,
     'lambda_con':      0.5,
     'temperature': 0.1,
-
-    # Label smoothing for weighted CE
     'label_smoothing': 0.01,
-
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -129,7 +124,7 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------------
-# Training function for FairDisCo (with weighted CE)
+# Training function (without MI)
 # ------------------------------------------------------------
 def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_tensor):
     model.train()
@@ -140,8 +135,6 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_ten
     total_loss_con = 0.0
     all_preds, all_labels = [], []
     n_batches = 0
-
-    # contrast_criterion = SupConLoss(temperature=cfg["temperature"])
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", unit="batch", dynamic_ncols=True, leave=False)
     for batch in pbar:
@@ -156,14 +149,12 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_ten
             labels = batch["label"]
             skin_types = batch["skin_type"]
 
-            # Weighted label‑smoothed CE
             loss_c = cls_loss_fn(out["logits"], batch["label"],
                                  weight_tensor=weight_tensor,
                                  smoothing=cfg["label_smoothing"])
 
             loss_conf = confusion_loss(out["skin_logits"])
             loss_s = skin_type_loss(out["skin_logits"].detach(), batch["skin_type"])
-            # loss_con = contrast_criterion(out["z"], batch["label"])
             loss_con = 0.0
             if "z_c" in out and out["z_c"].size(0) > 1:
                 paired_labels = labels[out["paired_mask"]]
@@ -227,7 +218,6 @@ def main():
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
-    # Compute class weights from training CSVs
     class_weights = compute_class_weights(CFG["csv_dir"], CFG["num_classes"])
     if class_weights:
         weight_tensor = torch.tensor(class_weights, dtype=torch.float32, device=DEVICE)
@@ -268,8 +258,6 @@ def main():
     start_epoch = 0
     best_auroc = 0.0
     best_f1 = 0.0
-    # patience = 20
-    # patience_counter = 0
     history = defaultdict(list)
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
@@ -280,19 +268,6 @@ def main():
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
-
-        # ----- EARLY STOPPING (patience=20) -----
-        # current_f1 = val_metrics["macro_f1"]
-        # if current_f1 > best_f1:
-        #     best_f1 = current_f1
-        #     patience_counter = 0
-        # else:
-        #     patience_counter += 1
-
-        # if patience_counter >= patience:
-        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
-        #     break
-        # -----------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -340,16 +315,24 @@ def main():
     # --- Evaluation ---
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
-    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
+    val_fair_binary = fairness_binary(val_res)
+    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES, fair_binary=val_fair_binary)
     plot_confusion_matrix(val_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                           "Confusion Matrix - Validation", CFG["results_dir"] / "val_confusion.png")
     plot_per_class_metrics(val_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                            "Per-Class Metrics - Validation", CFG["results_dir"] / "val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"] / "val_fairness.png")
+    print("\nBinary fairness (Validation):")
+    print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
+    print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
+    print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
+    print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
+    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
 
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
+        test_fair_binary = fairness_binary(test_res)
 
         # ---- Compute KNN accuracy on test embeddings ----
         model.eval()
@@ -367,15 +350,20 @@ def main():
         labels_tsne = np.concatenate(all_labels_tsne)
         knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
         print(f"\n[No_MI ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
-        # ------------------------------------------------
 
         save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
-                         knn_acc=knn_acc)
+                         knn_acc=knn_acc, fair_binary=test_fair_binary)
         plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
         plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
+        print("\nBinary fairness (Test):")
+        print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
 
         # t-SNE plot
         plot_tsne(embs, labels_tsne, "t-SNE - Test Set (No_MI ViT)",
@@ -387,12 +375,20 @@ def main():
         print(f"\nEvaluating on {ds_name}")
         res = validate(model, loader, DEVICE, CFG["num_classes"], desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
-        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
+        fair_binary = fairness_binary(res)
+        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES, fair_binary=fair_binary)
         plot_confusion_matrix(res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               f"Confusion Matrix - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
         plot_per_class_metrics(res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                f"Per-Class Metrics - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
+        print(f"\nBinary fairness ({ds_name}):")
+        print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
+
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "auroc": res["auroc"],

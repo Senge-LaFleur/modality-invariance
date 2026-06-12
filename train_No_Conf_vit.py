@@ -7,7 +7,7 @@ Modality-Invariant ViT (vit_small_patch16_224) for Skin Disease Classification
 Training data: HIBA (paired) + Derm7pt (paired)
 Cross-eval:    Fitzpatrick17k (clinical) · PAD-UFES-20 (clinical) · ISIC2019 (derm)
 
-Uses multi-objective losses: Lcls, Lconf, Lcon, LMI.
+Uses multi-objective losses: Lcls, Lcon, LMI. (No L_conf, L_skin)
 
 All outputs (checkpoints, results, logs) are saved in:
     - checkpoints_Modality_Invariance_vit/
@@ -48,8 +48,7 @@ from models.models_losses import (
     compute_class_weights,
 )
 
-
-# Local ViT layer-wise LR helper (keeps backbone LR lower than heads)
+# Local ViT layer-wise LR helper
 def get_layer_wise_lr_params_vit(model, base_lr=3e-5, lr_decay=0.85):
     backbone_params = []
     head_params = []
@@ -63,10 +62,10 @@ def get_layer_wise_lr_params_vit(model, base_lr=3e-5, lr_decay=0.85):
         {'params': head_params,     'lr': base_lr},
     ]
 
-
 from models.evaluation import (
     validate,
     fairness,
+    fairness_binary,
     save_results_csv,
     plot_confusion_matrix,
     plot_per_class_metrics,
@@ -108,7 +107,7 @@ IMAGE_ROOTS = {
     'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
     'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),             
+    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),
     'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
 }
 
@@ -127,18 +126,18 @@ CFG = {
     'backbone':        'vit_small_patch16_224',
     'embed_dim':       512,
     'img_size':        224,
-    'num_classes':     3,      # melanoma / nevus / basal cell carcinoma
+    'num_classes':     3,
     'num_skin_types':  6,
 
     'batch_size':      32,
-    'num_epochs':      5,     # update as needed
+    'num_epochs':      5,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 1,      # update as needed
+    'warmup_epochs': 1,
     'aug_probability': 0.85,
 
-    'lambda_cls':      1.0,  
+    'lambda_cls':      1.0,
     'lambda_con':      0.5,
     'lambda_mi':       0.15,
     'temperature':     0.1,
@@ -148,7 +147,6 @@ CFG = {
     'use_con':   True,
     'use_mi':    True,
     'use_mixup': False,
-
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -163,8 +161,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     totals = dict(total=0., cls=0., con=0., mi=0.)
     all_preds, all_labels = [], []
     n_batches = 0
-    n_paired_batches = 0   # FIX: track how often MI actually fires
-
+    n_paired_batches = 0
 
     sup_con = SupConLoss(cfg["temperature"]).to(device)
     weight_tensor = (
@@ -184,7 +181,6 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
         with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
             out = model(batch)
             labels = batch["label"]
-            skin_types = batch["skin_type"]
 
             use_mixup = cfg.get("use_mixup", True)
             if use_mixup and out["z"].requires_grad:
@@ -200,14 +196,14 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 loss_cls = cls_loss_fn(
                     out["logits"], labels, weight_tensor, cfg["label_smoothing"]
                 )
+
             loss_con = 0.0
             if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
                 paired_labels = labels[out["paired_mask"]]
                 loss_con = cross_modal_supcon_loss(
                     out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
                 )
- 
-            # --- FIX: VICReg-based MI loss (collapse-resistant) ---
+
             loss_mi = 0.0
             if cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 1:
                 loss_mi = mi_loss(out["z_c"], out["z_d"])
@@ -245,8 +241,6 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     all_labels = np.concatenate(all_labels)
     totals["acc"] = (all_preds == all_labels).mean()
     totals["macro_f1"] = f1_score(all_labels, all_preds, average="macro", zero_division=0)
-    
-    # FIX: report paired-batch rate so you can verify MI is actually training
     totals["paired_rate"] = n_paired_batches / max(n_batches, 1)
 
     return totals
@@ -307,11 +301,6 @@ def main():
     best_f1 = 0.0
     history = defaultdict(list)
 
-    # ----- EARLY STOPPING (patience=20) — uncomment to enable -----
-    # patience = 20
-    # patience_counter = 0
-    # ---------------------------------------------------------------
-
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
             model, train_loader, optimizer, CFG, epoch, scaler, class_weights, DEVICE
@@ -321,18 +310,6 @@ def main():
             model, val_loader, DEVICE, CFG["num_classes"], desc="Validation"
         )
         lr = optimizer.param_groups[0]["lr"]
-
-        # ----- EARLY STOPPING (uncomment block to enable) ----------
-        # current_f1 = val_metrics["macro_f1"]
-        # if current_f1 > best_f1:
-        #     best_f1 = current_f1
-        #     patience_counter = 0
-        # else:
-        #     patience_counter += 1
-        # if patience_counter >= patience:
-        #     print(f"Early stopping after {epoch+1} epochs.")
-        #     break
-        # -----------------------------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -390,7 +367,8 @@ def main():
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"],
                        desc="Validation (final)")
     val_fair = fairness(val_res)
-    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
+    val_fair_binary = fairness_binary(val_res)
+    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES, fair_binary=val_fair_binary)
     plot_confusion_matrix(val_res["conf_mat"], class_names,
                           "Confusion Matrix - Validation",
                           CFG["results_dir"] / "val_confusion.png")
@@ -402,18 +380,25 @@ def main():
     plot_roc_curve(val_res["labels"], val_res["probs"], class_names,
                    "ROC Curves - Validation",
                    CFG["results_dir"] / "val_roc.png")
+    print("\nBinary fairness (Validation):")
+    print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
+    print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
+    print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
+    print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
+    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
 
     # ── Internal test split ─────────────────────────────────────────────────
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
+        test_fair_binary = fairness_binary(test_res)
 
         # ---- Compute KNN accuracy on test embeddings ----
         model.eval()
         all_embs = []
         all_labels_tsne = []
         all_skins_tsne = []
-        all_mods_tsne = []   # 0=clinical, 1=derm, paired excluded
+        all_mods_tsne = []
         with torch.no_grad():
             for batch in test_loader:
                 for k, v in batch.items():
@@ -432,7 +417,7 @@ def main():
                     elif m == "derm":
                         mod_list.append(1)
                     else:
-                        mod_list.append(-1)   # paired – exclude
+                        mod_list.append(-1)
                 all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
 
         embs        = np.concatenate(all_embs)
@@ -443,7 +428,7 @@ def main():
         knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
         print(f"\n[Modality-Invariant ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
 
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc)
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc, fair_binary=test_fair_binary)
         plot_confusion_matrix(test_res["conf_mat"], class_names,
                               "Confusion Matrix - Test",
                               CFG["results_dir"] / "test_confusion.png")
@@ -455,6 +440,12 @@ def main():
         plot_roc_curve(test_res["labels"], test_res["probs"], class_names,
                        "ROC Curves - Test",
                        CFG["results_dir"] / "test_roc.png")
+        print("\nBinary fairness (Test):")
+        print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
 
         # t-SNE plots
         plot_tsne_class_fst(
@@ -480,7 +471,8 @@ def main():
         res = validate(model, loader, DEVICE, CFG["num_classes"],
                        desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
-        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
+        fair_binary = fairness_binary(res)
+        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES, fair_binary=fair_binary)
         plot_confusion_matrix(res["conf_mat"], class_names,
                               f"Confusion Matrix - {ds_name}",
                               CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
@@ -492,6 +484,13 @@ def main():
         plot_roc_curve(res["labels"], res["probs"], class_names,
                        f"ROC Curves - {ds_name}",
                        CFG["results_dir"] / f"cross_{ds_name}_roc.png")
+        print(f"\nBinary fairness ({ds_name}):")
+        print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
+
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "auroc": res["auroc"],

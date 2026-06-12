@@ -69,6 +69,7 @@ def get_layer_wise_lr_params_vit(model, base_lr=3e-5, lr_decay=0.85):
 from models.evaluation import (
     validate,
     fairness,
+    fairness_binary,
     save_results_csv,
     plot_confusion_matrix,
     plot_per_class_metrics,
@@ -322,10 +323,6 @@ def main():
     best_f1 = 0.0
     history = defaultdict(list)
 
-    # ----- EARLY STOPPING (patience=20) — uncomment to enable -----
-    # patience = 20
-    # patience_counter = 0
-    # ---------------------------------------------------------------
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
@@ -336,18 +333,6 @@ def main():
             model, val_loader, DEVICE, CFG["num_classes"], desc="Validation"
         )
         lr = optimizer.param_groups[0]["lr"]
-
-        # ----- EARLY STOPPING (uncomment block to enable) ----------
-        # current_f1 = val_metrics["macro_f1"]
-        # if current_f1 > best_f1:
-        #     best_f1 = current_f1
-        #     patience_counter = 0
-        # else:
-        #     patience_counter += 1
-        # if patience_counter >= patience:
-        #     print(f"Early stopping after {epoch+1} epochs.")
-        #     break
-        # -----------------------------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -405,6 +390,7 @@ def main():
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"],
                        desc="Validation (final)")
     val_fair = fairness(val_res)
+    val_fair_binary = fairness_binary(val_res)
     save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
     plot_confusion_matrix(val_res["conf_mat"], class_names,
                           "Confusion Matrix - Validation",
@@ -414,6 +400,12 @@ def main():
                            CFG["results_dir"] / "val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation",
                           CFG["results_dir"] / "val_fairness.png")
+    print("\nBinary fairness (Validation):")
+    print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
+    print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
+    print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
+    print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
+    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
     plot_roc_curve(val_res["labels"], val_res["probs"], class_names,
                    "ROC Curves - Validation",
                    CFG["results_dir"] / "val_roc.png")
@@ -422,6 +414,7 @@ def main():
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
+        test_fair_binary = fairness_binary(test_res)
 
         # ---- Compute KNN accuracy on test embeddings ----
         model.eval()
@@ -467,6 +460,12 @@ def main():
                                CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test",
                               CFG["results_dir"] / "test_fairness.png")
+        print("\nBinary fairness (Test):")
+        print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
         plot_roc_curve(test_res["labels"], test_res["probs"], class_names,
                        "ROC Curves - Test",
                        CFG["results_dir"] / "test_roc.png")
@@ -495,6 +494,7 @@ def main():
         res = validate(model, loader, DEVICE, CFG["num_classes"],
                        desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
+        fair_binary = fairness_binary(res)
         save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
         plot_confusion_matrix(res["conf_mat"], class_names,
                               f"Confusion Matrix - {ds_name}",
@@ -504,6 +504,12 @@ def main():
                                CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}",
                               CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
+        print(f"\nBinary fairness ({ds_name}):")
+        print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
         plot_roc_curve(res["labels"], res["probs"], class_names,
                        f"ROC Curves - {ds_name}",
                        CFG["results_dir"] / f"cross_{ds_name}_roc.png")
