@@ -40,13 +40,14 @@ from models.models_losses import DualResNet18, compute_class_weights, get_layer_
 from models.evaluation import (
     validate,
     fairness,
+    fairness_binary,
     save_results_csv,
     plot_confusion_matrix,
     plot_per_class_metrics,
     plot_fairness_metrics,
     plot_training_curves,
     plot_tsne,
-    compute_knn_accuracy,          # <-- added
+    compute_knn_accuracy,
     build_loaders,
     LABEL_NAMES,
 )
@@ -67,8 +68,6 @@ torch.backends.cudnn.benchmark = False
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
-#WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
 WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
@@ -77,8 +76,8 @@ IMAGE_ROOTS = {
     'fitzpatrick17k': Path('process_RESM_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
     'ham10000':       Path('process_RESM_resnet18/data/datasets/asosenge/ham10000/HAM10000'),
     'derm7pt':        Path('process_RESM_resnet18/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('process_RESM_resnet18/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('process_RESM_resnet18/data/datasets/sengenjih/isic2019'),                 # update path as needed
+    'padufes20':      Path('process_RESM_resnet18/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('process_RESM_resnet18/data/datasets/sengenjih/isic2019'),
 }
 
 CFG = {
@@ -94,11 +93,11 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 500,          # Update as needed
+    'num_epochs': 500,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 100,       # Update as needed
+    'warmup_epochs': 100,
     'aug_probability': 0.85,
 }
 
@@ -110,29 +109,20 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 # Helper: Build train loader with group‑based resampling (fixed)
 # ------------------------------------------------------------
 def build_resampled_train_loader(cfg, seed):
-    """
-    Creates train loader using WeightedRandomSampler where weights are
-    inverse frequency of (skin_type, condition) groups.
-    Converts tensor keys to scalars to avoid zero‑division.
-    """
-    # First get default loaders to access the train dataset
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(cfg, seed=seed)
     train_dataset = train_loader.dataset
 
-    # Count group frequencies (skin_type, label)
     group_counts = defaultdict(int)
     for idx in range(len(train_dataset)):
         sample = train_dataset[idx]
         s = sample['skin_type']
         y = sample['label']
-        # Convert tensor to scalar if needed
         if torch.is_tensor(s):
             s = s.item()
         if torch.is_tensor(y):
             y = y.item()
         group_counts[(s, y)] += 1
 
-    # Build sample weights (inverse frequency)
     sample_weights = []
     for idx in range(len(train_dataset)):
         sample = train_dataset[idx]
@@ -143,12 +133,10 @@ def build_resampled_train_loader(cfg, seed):
         if torch.is_tensor(y):
             y = y.item()
         freq = group_counts[(s, y)]
-        # Safety guard (should never happen)
         if freq == 0:
             freq = 1
         sample_weights.append(1.0 / freq)
 
-    # Normalize weights to have mean 1 (helps with learning rate stability)
     sample_weights = np.array(sample_weights)
     sample_weights = sample_weights / np.mean(sample_weights)
 
@@ -223,7 +211,6 @@ def main():
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
-    # Build loaders with resampling for training
     train_loader, val_loader, test_loader, eval_loaders = build_resampled_train_loader(CFG, seed=SEED)
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     if test_loader:
@@ -235,7 +222,7 @@ def main():
         num_classes=CFG["num_classes"],
         num_skin_types=CFG["num_skin_types"],
         pretrained=True,
-        use_projection=False,   # RESM uses standard features, no contrastive projection
+        use_projection=False,
     ).to(DEVICE)
 
     param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
@@ -264,19 +251,6 @@ def main():
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
-
-        # ----- EARLY STOPPING (patience=20) -----
-        # current_f1 = val_metrics["macro_f1"]
-        # if current_f1 > best_f1:
-        #     best_f1 = current_f1
-        #     patience_counter = 0
-        # else:
-        #     patience_counter += 1
-
-        # if patience_counter >= patience:
-        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
-        #     break
-        # -----------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -311,7 +285,6 @@ def main():
 
     print(f"Training complete. Best AUROC: {best_auroc:.4f}, Best F1: {best_f1:.4f}")
 
-    # Load best model
     best_ckpt = CFG["ckpt_dir"] / "best_f1_model.pt"
     if not best_ckpt.exists():
         best_ckpt = CFG["ckpt_dir"] / "best_auroc_model.pt"
@@ -321,21 +294,28 @@ def main():
     model.load_state_dict(ckpt["model"])
     print(f"Loaded best model from {best_ckpt.name} (epoch {ckpt['epoch']+1})")
 
-    # Evaluation (same as baseline)
+    # Validation
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
-    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
+    val_fair_binary = fairness_binary(val_res)
+    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES, fair_binary=val_fair_binary)
     plot_confusion_matrix(val_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                           "Confusion Matrix - Validation", CFG["results_dir"] / "val_confusion.png")
     plot_per_class_metrics(val_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                            "Per-Class Metrics - Validation", CFG["results_dir"] / "val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"] / "val_fairness.png")
+    print("\nBinary fairness (Validation):")
+    print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
+    print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
+    print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
+    print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
+    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
 
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
+        test_fair_binary = fairness_binary(test_res)
 
-        # ---- Compute KNN accuracy on test embeddings ----
         model.eval()
         all_embs, all_labels_tsne = [], []
         with torch.no_grad():
@@ -350,16 +330,20 @@ def main():
         labels_tsne = np.concatenate(all_labels_tsne)
         knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
         print(f"\n[RESM ResNet-18] Test KNN (k=5) accuracy: {knn_acc:.4f}")
-        # ------------------------------------------------
 
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc)
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc, fair_binary=test_fair_binary)
         plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
         plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
+        print("\nBinary fairness (Test):")
+        print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
 
-        # t-SNE plot (existing)
         plot_tsne(embs, labels_tsne, "t-SNE - Test Set (RESM ResNet-18)", CFG["results_dir"] / "tsne_test.png")
 
     # Cross-dataset evaluation
@@ -368,12 +352,20 @@ def main():
         print(f"\nEvaluating on {ds_name}")
         res = validate(model, loader, DEVICE, CFG["num_classes"], desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
-        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
+        fair_binary = fairness_binary(res)
+        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES, fair_binary=fair_binary)
         plot_confusion_matrix(res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               f"Confusion Matrix - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
         plot_per_class_metrics(res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                f"Per-Class Metrics - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
+        print(f"\nBinary fairness ({ds_name}):")
+        print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
+
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "auroc": res["auroc"],

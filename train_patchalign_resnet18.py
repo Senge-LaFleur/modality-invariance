@@ -35,9 +35,9 @@ from torchvision.models import resnet18, ResNet18_Weights
 from sklearn.metrics import f1_score
 from models.models_losses import get_layer_wise_lr_params, confusion_loss, skin_type_loss
 from models.evaluation import (
-    validate, fairness, save_results_csv, plot_confusion_matrix,
+    validate, fairness, fairness_binary, save_results_csv, plot_confusion_matrix,
     plot_per_class_metrics, plot_fairness_metrics, plot_training_curves,
-    plot_tsne, compute_knn_accuracy, build_loaders, LABEL_NAMES,   # added compute_knn_accuracy
+    plot_tsne, compute_knn_accuracy, build_loaders, LABEL_NAMES,
 )
 from models.Masked_GOT_NewSinkhorn import (
     cost_matrix_batch_torch,
@@ -75,8 +75,6 @@ torch.cuda.manual_seed_all(SEED); torch.backends.cudnn.deterministic = True
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
-#WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
 WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
@@ -85,30 +83,30 @@ IMAGE_ROOTS = {
     'fitzpatrick17k': Path('process_patchalign_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
     'ham10000':       Path('process_patchalign_resnet18/data/datasets/asosenge/ham10000/HAM10000'),
     'derm7pt':        Path('process_patchalign_resnet18/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('process_patchalign_resnet18/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('process_patchalign_resnet18/data/datasets/sengenjih/isic2019'),                 # update path as needed
+    'padufes20':      Path('process_patchalign_resnet18/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('process_patchalign_resnet18/data/datasets/sengenjih/isic2019'),
 }
 
 FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
 
 CFG = {
-    'csv_dir': CSV_DIR, 
+    'csv_dir': CSV_DIR,
     'image_roots': IMAGE_ROOTS,
     'ckpt_dir': WORK_ROOT / 'checkpoints_PatchAlign_resnet18',
     'results_dir': WORK_ROOT / 'results_PatchAlign_resnet18',
-    'backbone': 'resnet18', 
-    'embed_dim': 512, 
+    'backbone': 'resnet18',
+    'embed_dim': 512,
     'img_size': 224,
-    'num_classes': 5, 
-    'num_skin_types': 6, 
+    'num_classes': 5,
+    'num_skin_types': 6,
     'num_text_labels': 6,
     'text_embed_dim': 768,
-    'batch_size': 32, 
-    'num_epochs': 500,        # Update as needed
-    'lr': 1e-4, 
-    'min_lr': 1e-6, 
-    'weight_decay': 1e-4, 
-    'warmup_epochs': 100,      # Update as needed
+    'batch_size': 32,
+    'num_epochs': 500,
+    'lr': 1e-4,
+    'min_lr': 1e-6,
+    'weight_decay': 1e-4,
+    'warmup_epochs': 100,
     'aug_probability': 0.85,
     'alpha_conf': 0.5, 'beta_got': 1.0, 'lamb_got': 0.9,
 }
@@ -239,8 +237,8 @@ class PatchAlignResNet18(nn.Module):
 
     def _patch_embeddings(self, feat):
         B, C, H, W = feat.shape
-        patches_raw = feat.view(B, C, H*W).permute(0,2,1)   # (B,49,512)
-        patches = self.patch_proj(patches_raw)              # (B,49,768)
+        patches_raw = feat.view(B, C, H*W).permute(0,2,1)
+        patches = self.patch_proj(patches_raw)
         mask_flat = self.mask_net(patches.view(B, -1))
         mask = mask_flat.view(B, self._n_patches, self.num_text_labels)
         return patches, mask
@@ -248,7 +246,6 @@ class PatchAlignResNet18(nn.Module):
     def forward(self, batch):
         device = batch["label"].device
         batch_size = len(batch["label"])
-        # Always use clinical modality for patches (ignore derm to keep shape consistent)
         if "clinical" in batch:
             clinical_t = batch["clinical"].to(device)
             z, feat = self._extract_features(clinical_t, "clinical")
@@ -295,7 +292,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
             out = model(batch)
             loss_c = criterion_cls(out["logits"], batch["label"])
 
-            # ── Extract skin labels from possible column names ─────────────────
             skin_labels = batch.get("fitzpatrick", None)
             if skin_labels is None:
                 skin_labels = batch.get("skin_type", None)
@@ -303,10 +299,8 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
                 skin_labels = batch.get("fitzpatrick_scale", None)
             if skin_labels is not None:
                 skin_labels = skin_labels.long()
-                # Convert from 1..6 to 0..5 if needed
                 if skin_labels.max() > 5:
                     skin_labels = skin_labels - 1
-                # Ensure values are within 0..5
                 skin_labels = torch.clamp(skin_labels, 0, 5)
                 loss_conf = confusion_loss(out["skin_logits"])
                 loss_s    = skin_type_loss(out["skin_logits"].detach(), skin_labels)
@@ -316,7 +310,6 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, text_emb, cfg):
                 if epoch == 0 and n_batches == 0:
                     print("[WARN] No skin type column ('fitzpatrick'/'skin_type'/'fitzpatrick_scale') found in batch. L_conf and L_s are zero.")
 
-            # MGOT loss
             loss_got = out["logits"].new_tensor(0.)
             if out["patches"] is not None and text_emb is not None:
                 B = out["patches"].size(0)
@@ -363,7 +356,6 @@ def main():
     print(f"Checkpoints: {CFG['ckpt_dir']}")
     print(f"Results: {CFG['results_dir']}")
 
-    # Load text embeddings
     if FULL_EMBEDDINGS_PATH.exists():
         full_emb = np.load(FULL_EMBEDDINGS_PATH)
         print(f"Loaded full embedding matrix: {full_emb.shape}")
@@ -405,8 +397,6 @@ def main():
 
     best_auroc = 0.0
     best_f1 = 0.0
-    patience = 20
-    patience_counter = 0
     history = defaultdict(list)
 
     for epoch in range(CFG["num_epochs"]):
@@ -414,19 +404,6 @@ def main():
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
-
-        # ----- EARLY STOPPING (patience=20) -----
-        # current_f1 = val_metrics["macro_f1"]
-        # if current_f1 > best_f1:
-        #     best_f1 = current_f1
-        #     patience_counter = 0
-        # else:
-        #     patience_counter += 1
-
-        # if patience_counter >= patience:
-        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
-        #     break
-        # -----------------------------------------
 
         for k,v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -455,7 +432,6 @@ def main():
 
     print(f"Training complete. Best AUROC: {best_auroc:.4f}, Best F1: {best_f1:.4f}")
 
-    # Load best model and evaluate
     best_ckpt = CFG["ckpt_dir"]/"best_f1_model.pt"
     if not best_ckpt.exists():
         best_ckpt = CFG["ckpt_dir"]/"best_auroc_model.pt"
@@ -467,18 +443,25 @@ def main():
 
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
-    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
+    val_fair_binary = fairness_binary(val_res)
+    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES, fair_binary=val_fair_binary)
     plot_confusion_matrix(val_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                           "Confusion Matrix - Validation", CFG["results_dir"]/"val_confusion.png")
     plot_per_class_metrics(val_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                            "Per-Class Metrics - Validation", CFG["results_dir"]/"val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"]/"val_fairness.png")
+    print("\nBinary fairness (Validation):")
+    print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
+    print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
+    print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
+    print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
+    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
 
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
+        test_fair_binary = fairness_binary(test_res)
 
-        # ---- Compute KNN accuracy on test embeddings ----
         model.eval()
         all_embs, all_labels_tsne = [], []
         with torch.no_grad():
@@ -497,16 +480,20 @@ def main():
         else:
             knn_acc = float('nan')
             print("[WARN] No test embeddings collected for KNN.")
-        # ---------------------------------------------------
 
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc)
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc, fair_binary=test_fair_binary)
         plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test", CFG["results_dir"]/"test_confusion.png")
         plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                "Per-Class Metrics - Test", CFG["results_dir"]/"test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"]/"test_fairness.png")
+        print("\nBinary fairness (Test):")
+        print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
 
-        # t-SNE plot (existing)
         if all_embs:
             plot_tsne(embs, labels_tsne, "t-SNE - Test Set (PatchAlign ResNet-18)", CFG["results_dir"]/"tsne_test.png")
 
@@ -515,12 +502,20 @@ def main():
         print(f"\nEvaluating on {ds_name}")
         res = validate(model, loader, DEVICE, CFG["num_classes"], desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
-        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
+        fair_binary = fairness_binary(res)
+        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES, fair_binary=fair_binary)
         plot_confusion_matrix(res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               f"Confusion Matrix - {ds_name}", CFG["results_dir"]/f"cross_{ds_name}_confusion.png")
         plot_per_class_metrics(res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                f"Per-Class Metrics - {ds_name}", CFG["results_dir"]/f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"]/f"cross_{ds_name}_fairness.png")
+        print(f"\nBinary fairness ({ds_name}):")
+        print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
+
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "auroc": res["auroc"],

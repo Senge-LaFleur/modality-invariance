@@ -47,6 +47,7 @@ from models.models_losses import (
 from models.evaluation import (
     validate,
     fairness,
+    fairness_binary,
     save_results_csv,
     plot_confusion_matrix,
     plot_per_class_metrics,
@@ -316,16 +317,24 @@ def main():
     # Evaluation
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
-    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
+    val_fair_binary = fairness_binary(val_res)
+    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES, fair_binary=val_fair_binary)
     plot_confusion_matrix(val_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                           "Confusion Matrix - Validation", CFG["results_dir"] / "val_confusion.png")
     plot_per_class_metrics(val_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                            "Per-Class Metrics - Validation", CFG["results_dir"] / "val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"] / "val_fairness.png")
+    print("\nBinary fairness (Validation):")
+    print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
+    print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
+    print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
+    print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
+    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
 
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
+        test_fair_binary = fairness_binary(test_res)
 
         # ---- Compute KNN accuracy and collect for t-SNE modality ----
         model.eval()
@@ -365,12 +374,18 @@ def main():
         # ------------------------------------------------
 
         save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
-                         knn_acc=knn_acc)   # <-- added knn_acc
+                         fair_binary=test_fair_binary, knn_acc=knn_acc)   # <-- added knn_acc
         plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
         plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
+        print("\nBinary fairness (Test):")
+        print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
 
         # t-SNE: class + FST
         plot_tsne(embs, labels_tsne, "t-SNE - Test Set (Baseline+MI ViT)",
@@ -393,12 +408,19 @@ def main():
         print(f"\nEvaluating on {ds_name}")
         res = validate(model, loader, DEVICE, CFG["num_classes"], desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
-        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
+        fair_binary = fairness_binary(res)
+        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES, fair_binary=fair_binary)
         plot_confusion_matrix(res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               f"Confusion Matrix - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
         plot_per_class_metrics(res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                f"Per-Class Metrics - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
+        print(f"\nBinary fairness ({ds_name}):")
+        print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "auroc": res["auroc"],

@@ -36,13 +36,14 @@ from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from models.models_losses import DualResNet18, get_layer_wise_lr_params
 from models.evaluation import (
     fairness,
+    fairness_binary,
     save_results_csv,
     plot_confusion_matrix,
     plot_per_class_metrics,
     plot_fairness_metrics,
     plot_training_curves,
     plot_tsne,
-    compute_knn_accuracy,          # <-- added
+    compute_knn_accuracy,
     build_loaders,
     LABEL_NAMES,
 )
@@ -68,7 +69,7 @@ class FairAdaptiveBatchNorm2d(nn.Module):
         self.momentum = momentum
         self.affine = affine
         self.track_running_stats = track_running_stats
-        self._root_ref = None  # set after conversion via set_root()
+        self._root_ref = None
 
         if self.affine:
             self.weight = nn.Parameter(torch.zeros(num_groups, num_features))
@@ -88,13 +89,10 @@ class FairAdaptiveBatchNorm2d(nn.Module):
             self.register_parameter('running_var', None)
 
     def set_root(self, root):
-        """Store a (non-parameter) reference to the root model so forward() can
-        read current_task_idx without any parent traversal hacks."""
         import weakref
         self._root_ref = weakref.ref(root)
 
     def forward(self, x):
-        # Resolve task_idx from root model reference
         task_idx = None
         if self._root_ref is not None:
             root = self._root_ref()
@@ -127,7 +125,6 @@ class FairAdaptiveBatchNorm2d(nn.Module):
 
 
 def convert_module_to_fair_adanbn(module, num_groups=2, skip_names=None):
-    """Recursively replace nn.BatchNorm2d with FairAdaptiveBatchNorm2d."""
     if skip_names is None:
         skip_names = []
     for name, child in module.named_children():
@@ -142,7 +139,6 @@ def convert_module_to_fair_adanbn(module, num_groups=2, skip_names=None):
                 affine=child.affine,
                 track_running_stats=child.track_running_stats
             )
-            # Initialize with default values
             if child.affine:
                 fair_bn.weight.data.fill_(1.0)
                 fair_bn.bias.data.fill_(0.0)
@@ -155,10 +151,6 @@ def convert_module_to_fair_adanbn(module, num_groups=2, skip_names=None):
 
 
 class FairDualResNet18(DualResNet18):
-    """
-    Extension of DualResNet18 where all BatchNorm layers are replaced with FairAdaptiveBatchNorm2d.
-    Adds a `current_task_idx` attribute that is used by the adaptive BN layers.
-    """
     def __init__(self, embed_dim=512, num_classes=5, num_skin_types=6,
                  pretrained=True, use_projection=False, num_groups=2):
         super(FairDualResNet18, self).__init__(
@@ -169,44 +161,26 @@ class FairDualResNet18(DualResNet18):
             use_projection=use_projection
         )
         self.num_groups = num_groups
-        self.current_task_idx = None  # will be set before forward
+        self.current_task_idx = None
 
-        # Replace all BatchNorm2d across the entire model.
-        # We skip the classifier and projection heads (Linear layers have no BN,
-        # but being explicit avoids any future issues). We discover backbone
-        # sub-modules dynamically so we are robust to whatever attribute names
-        # DualResNet18 uses internally (e.g. clinical_encoder, derm_encoder, etc.)
         _SKIP = ['classifier', 'projection', 'fc', 'skin_type_head']
         for name, child in self.named_children():
             if any(skip in name for skip in _SKIP):
                 continue
-            # Only recurse into modules that actually contain BatchNorm2d
             has_bn = any(isinstance(m, nn.BatchNorm2d) for m in child.modules())
             if has_bn:
                 convert_module_to_fair_adanbn(child, num_groups=num_groups, skip_names=[])
 
-        # After all BN layers are replaced, wire each one back to this root model
-        # so they can read self.current_task_idx during forward.
         self._wire_bn_roots()
 
     def _wire_bn_roots(self):
-        """Give every FairAdaptiveBatchNorm2d a weak-ref back to this root model."""
         for m in self.modules():
             if isinstance(m, FairAdaptiveBatchNorm2d):
                 m.set_root(self)
 
     def forward(self, batch):
-        """
-        Args:
-            batch: dict with keys 'clinical', 'dermoscopic', optionally 'skin_type'
-        Returns:
-            dict with 'logits', 'z'
-        """
-        # current_task_idx must be set by the caller before each forward pass
-        # so that FairAdaptiveBatchNorm2d layers know which group's stats to use.
         if self.current_task_idx is None:
             raise RuntimeError("Must set model.current_task_idx before forward()")
-        # Delegate to parent's forward — it knows the correct backbone attribute names.
         return super(FairDualResNet18, self).forward(batch)
 
 
@@ -214,7 +188,6 @@ class FairDualResNet18(DualResNet18):
 # Statistical Disparity Loss (L_SD) - Paper Eq.4
 # ------------------------------------------------------------
 class StatisticalDisparityLoss(nn.Module):
-    """L_SD = sum_{y} || P(Ŷ=y|A=0) - P(Ŷ=y|A=1) ||^2"""
     def __init__(self, num_classes):
         super(StatisticalDisparityLoss, self).__init__()
         self.num_classes = num_classes
@@ -244,34 +217,30 @@ def train_epoch_fair(model, loader, optimizer, epoch, scaler, device,
     total_spd_loss = 0.0
     all_preds, all_labels = [], []
     n_batches = 0
-    
+
     criterion_ce = nn.CrossEntropyLoss()
     spd_loss_fn = StatisticalDisparityLoss(num_classes)
-    
+
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", unit="batch", dynamic_ncols=True, leave=False)
     for batch in pbar:
-        # Move to device
         for k, v in batch.items():
             if isinstance(v, torch.Tensor):
                 batch[k] = v.to(device, non_blocking=True)
-        
-        # Binarize sensitive attribute (skin_type)
+
         sens = batch['skin_type']
         if sens.max() > 1:
-            # Fitzpatrick: 0-2 -> light (0), 3-5 -> dark (1)
             task_idx = (sens >= 3).long()
         else:
             task_idx = sens.long()
-        
+
         idx_0 = (task_idx == 0).nonzero(as_tuple=True)[0]
         idx_1 = (task_idx == 1).nonzero(as_tuple=True)[0]
-        
+
         loss_ce_0 = torch.tensor(0.0, device=device)
         loss_ce_1 = torch.tensor(0.0, device=device)
         preds_0 = torch.tensor([], dtype=torch.long, device=device)
         preds_1 = torch.tensor([], dtype=torch.long, device=device)
-        
-        # Subgroup A=0 (unprivileged)
+
         if len(idx_0) > 0:
             batch_0 = {k: v[idx_0] for k, v in batch.items() if isinstance(v, torch.Tensor)}
             model.current_task_idx = 0
@@ -280,8 +249,7 @@ def train_epoch_fair(model, loader, optimizer, epoch, scaler, device,
             preds_0 = out_0['logits'].argmax(dim=1)
             all_preds.append(preds_0.cpu().numpy())
             all_labels.append(batch_0['label'].cpu().numpy())
-        
-        # Subgroup A=1 (privileged)
+
         if len(idx_1) > 0:
             batch_1 = {k: v[idx_1] for k, v in batch.items() if isinstance(v, torch.Tensor)}
             model.current_task_idx = 1
@@ -290,33 +258,32 @@ def train_epoch_fair(model, loader, optimizer, epoch, scaler, device,
             preds_1 = out_1['logits'].argmax(dim=1)
             all_preds.append(preds_1.cpu().numpy())
             all_labels.append(batch_1['label'].cpu().numpy())
-        
-        # Statistical disparity loss
+
         if len(preds_0) > 0 and len(preds_1) > 0:
             loss_spd = spd_loss_fn(preds_0, preds_1)
         else:
             loss_spd = torch.tensor(0.0, device=device)
-        
+
         loss = loss_ce_0 + loss_ce_1 + alpha * loss_spd
-        
+
         optimizer.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         scaler.step(optimizer)
         scaler.update()
-        
+
         total_loss += loss.item()
         total_ce_loss += (loss_ce_0.item() + loss_ce_1.item())
         total_spd_loss += loss_spd.item()
         n_batches += 1
         pbar.set_postfix(loss=f"{total_loss/n_batches:.4f}")
-    
+
     pbar.close()
     avg_loss = total_loss / max(n_batches, 1)
     avg_ce = total_ce_loss / max(n_batches, 1)
     avg_spd = total_spd_loss / max(n_batches, 1)
-    
+
     if len(all_preds) > 0:
         all_preds = np.concatenate(all_preds)
         all_labels = np.concatenate(all_labels)
@@ -325,7 +292,7 @@ def train_epoch_fair(model, loader, optimizer, epoch, scaler, device,
     else:
         acc = 0.0
         macro_f1 = 0.0
-    
+
     return {"total": avg_loss, "ce": avg_ce, "spd": avg_spd, "acc": acc, "macro_f1": macro_f1}
 
 
@@ -335,33 +302,32 @@ def train_epoch_fair(model, loader, optimizer, epoch, scaler, device,
 def validate_fair(model, loader, device, num_classes, desc="Validation"):
     model.eval()
     all_preds  = []
-    all_probs  = []   # softmax probabilities for AUROC
+    all_probs  = []
     all_labels = []
-    all_skins  = []    # raw Fitzpatrick skin-type (0-5) — required by fairness()
+    all_skins  = []
     all_losses = []
     criterion = nn.CrossEntropyLoss()
-    
+
     with torch.no_grad():
         pbar = tqdm(loader, desc=desc, unit="batch", dynamic_ncols=True, leave=False)
         for batch in pbar:
             for k, v in batch.items():
                 if isinstance(v, torch.Tensor):
                     batch[k] = v.to(device, non_blocking=True)
-            
+
             sens = batch['skin_type']
             if sens.max() > 1:
                 task_idx = (sens >= 3).long()
             else:
                 task_idx = sens.long()
-            
-            # Process each subgroup separately, tracking original positions
-            idx_list   = []   # original positions within this batch
-            logit_list = []   # corresponding logits
+
+            idx_list   = []
+            logit_list = []
             for t in [0, 1]:
                 mask = (task_idx == t)
                 if mask.sum() == 0:
                     continue
-                orig_idx = mask.nonzero(as_tuple=True)[0]          # positions in full batch
+                orig_idx = mask.nonzero(as_tuple=True)[0]
                 batch_t  = {k: v[orig_idx] for k, v in batch.items() if isinstance(v, torch.Tensor)}
                 model.current_task_idx = t
                 out_t = model(batch_t)
@@ -371,14 +337,12 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
             if len(logit_list) == 0:
                 continue
 
-            # Restore original batch order: argsort of collected positions = inverse permutation
             gathered_idx = torch.cat(idx_list, dim=0)
             restore      = gathered_idx.argsort()
             logits       = torch.cat(logit_list, dim=0)[restore].to(device)
 
-            # Labels/sens for the exact samples processed, in their original order
             proc_labels = batch['label'][gathered_idx[restore]]
-            proc_skins  = batch['skin_type'][gathered_idx[restore]]  # raw FST (0-5)
+            proc_skins  = batch['skin_type'][gathered_idx[restore]]
 
             probs = torch.softmax(logits, dim=1)
             preds = probs.argmax(dim=1)
@@ -389,11 +353,11 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
             loss = criterion(logits, proc_labels)
             all_losses.append(loss.item())
             pbar.set_postfix(loss=f"{np.mean(all_losses):.4f}")
-    
+
     pbar.close()
     if len(all_preds) == 0:
         return None
-    
+
     from sklearn.metrics import (
         precision_score as _prec, recall_score as _rec, roc_auc_score as _auroc
     )
@@ -401,7 +365,7 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
     all_preds  = np.concatenate(all_preds)
     all_probs  = np.concatenate(all_probs)
     all_labels = np.concatenate(all_labels)
-    all_skins  = np.concatenate(all_skins)   # raw Fitzpatrick values (0-5), NOT binarised
+    all_skins  = np.concatenate(all_skins)
 
     acc         = accuracy_score(all_labels, all_preds)
     macro_f1    = f1_score(all_labels, all_preds, average='macro',    zero_division=0)
@@ -417,14 +381,12 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
                               labels=list(range(num_classes)))
     conf_mat = confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
 
-    # Macro one-vs-rest AUROC using evaluation.py's robust helper
     from models.evaluation import robust_macro_auroc
     auroc = robust_macro_auroc(all_probs, all_labels)
     if np.isnan(auroc):
         auroc = 0.0
 
     return {
-        # ── overall metrics (match evaluation.validate() key names exactly) ──
         'acc':             acc,
         'auroc':           auroc,
         'macro_f1':        macro_f1,
@@ -432,16 +394,13 @@ def validate_fair(model, loader, device, num_classes, desc="Validation"):
         'weighted_f1':     weighted_f1,
         'macro_prec':      macro_prec,
         'macro_rec':       macro_rec,
-        # ── per-class arrays ──
         'per_class_prec':  per_class_prec,
         'per_class_rec':   per_class_rec,
         'per_class_f1':    per_class_f1,
         'conf_mat':        conf_mat,
-        # ── sample-level arrays ──
         'preds':           all_preds,
         'probs':           all_probs,
         'labels':          all_labels,
-        # 'skin' = raw Fitzpatrick skin-type (0-5), required by evaluation.fairness()
         'skin':            all_skins,
         'loss':            np.mean(all_losses) if all_losses else 0.0,
     }
@@ -461,9 +420,6 @@ torch.backends.cudnn.benchmark = False
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-#WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
-#WORK_ROOT = Path('jobs/process_FairAdaBN_resnet18/outputs')
-#WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
 WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
@@ -472,8 +428,8 @@ IMAGE_ROOTS = {
     'fitzpatrick17k': Path('process_FairAdaBN_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
     'ham10000':       Path('process_FairAdaBN_resnet18/data/datasets/asosenge/ham10000/HAM10000'),
     'derm7pt':        Path('process_FairAdaBN_resnet18/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('process_FairAdaBN_resnet18/data/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('process_FairAdaBN_resnet18/data/datasets/sengenjih/isic2019'),                 # update path as needed
+    'padufes20':      Path('process_FairAdaBN_resnet18/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('process_FairAdaBN_resnet18/data/datasets/sengenjih/isic2019'),
 }
 
 CFG = {
@@ -481,22 +437,22 @@ CFG = {
     'image_roots':  IMAGE_ROOTS,
     'ckpt_dir':     WORK_ROOT / 'checkpoints_FairAdaBN_resnet18',
     'results_dir':  WORK_ROOT / 'results_FairAdaBN_resnet18',
-    
+
     'backbone': 'resnet18',
     'embed_dim': 512,
     'img_size': 224,
     'num_classes': 5,
     'num_skin_types': 6,
     'num_groups': 2,
-    
+
     'batch_size': 32,
-    'num_epochs': 500,       # Update as needed
+    'num_epochs': 500,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 100,     # Update as needed
+    'warmup_epochs': 100,
     'aug_probability': 0.85,
-    'alpha': 1.0,          # weight for L_SD loss
+    'alpha': 1.0,
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -520,7 +476,6 @@ def main():
         print(f"Test batches: {len(test_loader)}")
     print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
 
-    # Create FairDualResNet18 model
     model = FairDualResNet18(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
@@ -530,7 +485,6 @@ def main():
         num_groups=CFG["num_groups"]
     ).to(DEVICE)
 
-    # Layer-wise learning rate
     param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
     optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
 
@@ -558,25 +512,10 @@ def main():
             alpha=CFG["alpha"], num_classes=CFG["num_classes"]
         )
         scheduler.step()
-        
+
         val_metrics = validate_fair(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
-        
+
         lr = optimizer.param_groups[0]["lr"]
-
-        # ----- EARLY STOPPING (patience=20) -----
-        # Only if val_metrics is not None and contains macro_f1
-        # if val_metrics is not None:
-        #     current_f1 = val_metrics["macro_f1"]
-        #     if current_f1 > best_f1:
-        #         best_f1 = current_f1
-        #         patience_counter = 0
-        #     else:
-        #         patience_counter += 1
-
-        #     if patience_counter >= patience:
-        #         print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
-        #         break
-        # -----------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -595,7 +534,6 @@ def main():
               f"val_acc={val_acc_str}  val_f1={val_f1_str}  "
               f"spd_loss={train_metrics['spd']:.4f}  lr={lr:.2e}")
 
-        # Save checkpoints
         ckpt_state = {
             "epoch": epoch,
             "model": model.state_dict(),
@@ -618,7 +556,6 @@ def main():
 
     print(f"Training complete. Best AUROC: {best_auroc:.4f}, Best F1: {best_f1:.4f}")
 
-    # Load best model
     best_ckpt = CFG["ckpt_dir"] / "best_f1_model.pt"
     if not best_ckpt.exists():
         best_ckpt = CFG["ckpt_dir"] / "best_auroc_model.pt"
@@ -632,20 +569,27 @@ def main():
     val_res = validate_fair(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     if val_res:
         val_fair = fairness(val_res)
-        save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
+        val_fair_binary = fairness_binary(val_res)
+        save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES, fair_binary=val_fair_binary)
         plot_confusion_matrix(val_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Validation", CFG["results_dir"] / "val_confusion.png")
         plot_per_class_metrics(val_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                "Per-Class Metrics - Validation", CFG["results_dir"] / "val_per_class.png")
         plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"] / "val_fairness.png")
+        print("\nBinary fairness (Validation):")
+        print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
+        print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
+        print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
+        print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
+        print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
 
     # Test
     if test_loader:
         test_res = validate_fair(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         if test_res:
             test_fair = fairness(test_res)
+            test_fair_binary = fairness_binary(test_res)
 
-            # ---- Compute KNN accuracy on test embeddings (group‑aware) ----
             model.eval()
             all_embs = []
             all_labels_tsne = []
@@ -659,7 +603,6 @@ def main():
                         task_idx = (sens >= 3).long()
                     else:
                         task_idx = sens.long()
-                    # Process each subgroup and collect embeddings
                     idx_list = []
                     emb_list = []
                     for t in [0, 1]:
@@ -686,17 +629,21 @@ def main():
             else:
                 knn_acc = float('nan')
                 print("[WARN] No test embeddings collected for KNN.")
-            # ------------------------------------------------
 
             save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
-                             knn_acc=knn_acc)
+                             knn_acc=knn_acc, fair_binary=test_fair_binary)
             plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                   "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
             plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                    "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
             plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
+            print("\nBinary fairness (Test):")
+            print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
+            print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
+            print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
+            print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
+            print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
 
-            # t-SNE on test set (using embeddings collected above)
             if all_embs:
                 plot_tsne(embs, labels_tsne, "t-SNE - Test Set (FairAdaBN)", CFG["results_dir"] / "tsne_test.png")
 
@@ -707,12 +654,20 @@ def main():
         res = validate_fair(model, loader, DEVICE, CFG["num_classes"], desc=f"Cross-eval: {ds_name}")
         if res:
             fair_metrics = fairness(res)
-            save_results_csv(res, fair_metrics, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
+            fair_binary = fairness_binary(res)
+            save_results_csv(res, fair_metrics, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES, fair_binary=fair_binary)
             plot_confusion_matrix(res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                   f"Confusion Matrix - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
             plot_per_class_metrics(res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                                    f"Per-Class Metrics - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
             plot_fairness_metrics(fair_metrics, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
+            print(f"\nBinary fairness ({ds_name}):")
+            print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
+            print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
+            print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
+            print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
+            print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
+
             cross_results[ds_name] = {
                 "accuracy": res["acc"],
                 "auroc": res["auroc"],
@@ -730,7 +685,6 @@ def main():
         cross_df.to_csv(CFG["results_dir"] / "cross_dataset_summary.csv")
         print("\nCross-dataset summary:\n", cross_df)
 
-    # Training curves
     plot_training_curves(history, "Training History (FairAdaBN ResNet-18)",
                          CFG["results_dir"] / "training_curves.png")
 

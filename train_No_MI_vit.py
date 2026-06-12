@@ -88,7 +88,7 @@ IMAGE_ROOTS = {
     'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
     'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),
     'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
 }
 
