@@ -96,8 +96,8 @@ IMAGE_ROOTS = {
 CFG = {
     'csv_dir':      CSV_DIR,
     'image_roots':  IMAGE_ROOTS,
-    'ckpt_dir':     WORK_ROOT / 'checkpoints_No_MI_vit',
-    'results_dir':  WORK_ROOT / 'results_No_MI_vit',
+    'ckpt_dir':     WORK_ROOT / 'checkpoints_BASE+Conf_vit',
+    'results_dir':  WORK_ROOT / 'results_BASE+Conf_vit',
 
     'backbone': 'vit_small',
     'embed_dim': 512,

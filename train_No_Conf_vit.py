@@ -120,8 +120,8 @@ for name, root in IMAGE_ROOTS.items():
 CFG = {
     'csv_dir':      CSV_DIR,
     'image_roots':  IMAGE_ROOTS,
-    'ckpt_dir':     WORK_ROOT / 'checkpoints_Modality_Invariance_vit',
-    'results_dir':  WORK_ROOT / 'results_Modality_Invariance_vit',
+    'ckpt_dir':     WORK_ROOT / 'checkpoints_No_Conf_vit',
+    'results_dir':  WORK_ROOT / 'results_No_Conf_vit',
 
     'backbone':        'vit_small_patch16_224',
     'embed_dim':       512,

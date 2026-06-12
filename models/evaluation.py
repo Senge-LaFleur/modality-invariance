@@ -85,19 +85,9 @@ class UnpairedDataset(Dataset):
         img = Image.open(full_path).convert('RGB')
         if self.transform:
             img = self.transform(img)
-
-        # Only populate the key that matches this sample's modality.
-        # The other key gets a zero tensor so the model can route correctly
-        # without accidentally encoding the same image through the wrong branch.
-        dummy = torch.zeros_like(img)
-        if self.modality == 'derm':
-            clinical_img, derm_img = dummy, img
-        else:  # 'clinical' (default)
-            clinical_img, derm_img = img, dummy
-
         return {
-            'clinical': clinical_img,
-            'derm': derm_img,
+            'clinical': img,
+            'derm': img,
             'label': torch.tensor(row['label'], dtype=torch.long),
             'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
             'dataset': row['dataset'],
