@@ -85,9 +85,19 @@ class UnpairedDataset(Dataset):
         img = Image.open(full_path).convert('RGB')
         if self.transform:
             img = self.transform(img)
+
+        # Only populate the key that matches this sample's modality.
+        # The other key gets a zero tensor so the model can route correctly
+        # without accidentally encoding the same image through the wrong branch.
+        dummy = torch.zeros_like(img)
+        if self.modality == 'derm':
+            clinical_img, derm_img = dummy, img
+        else:  # 'clinical' (default)
+            clinical_img, derm_img = img, dummy
+
         return {
-            'clinical': img,
-            'derm': img,
+            'clinical': clinical_img,
+            'derm': derm_img,
             'label': torch.tensor(row['label'], dtype=torch.long),
             'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
             'dataset': row['dataset'],
@@ -950,87 +960,34 @@ def plot_tsne_class_fst(embeddings, labels, skins, title, save_path,
 
 
 def plot_tsne_modality(embeddings, skins, modalities, title, save_path,
-                       perplexity=40, seed=42, max_per_modality=None):
+                       perplexity=40, seed=42):
     """
-    Plot t-SNE of test-set embeddings coloured by modality and FST.
-
-    modalities : int array, 0=clinical, 1=dermoscopic
-                 (paired samples should be filtered out before calling)
-    max_per_modality : int or None
-        Hard cap on samples drawn from each modality.  When None the cap is
-        set automatically to min(n_clinical, n_derm, 2000) so that both
-        modalities contribute equally to the t-SNE projection and neither
-        dominates the plot.
+    modalities: array of ints, 0=clinical, 1=dermoscopic
+    (paired samples are filtered out before calling this function)
     """
     from matplotlib.colors import ListedColormap as _LC
     from matplotlib.lines import Line2D
-
-    rng = np.random.default_rng(seed)
-
-    # ── Balance modalities so neither overwhelms the plot ──────────────────
-    idx_clin = np.where(modalities == 0)[0]
-    idx_derm = np.where(modalities == 1)[0]
-    has_multi_mod = len(idx_clin) > 0 and len(idx_derm) > 0
-
-    if has_multi_mod:
-        n_cap = max_per_modality if max_per_modality is not None else min(
-            len(idx_clin), len(idx_derm), 2000
-        )
-        # Subsample each modality to exactly n_cap points
-        idx_clin_sel = rng.choice(idx_clin, size=min(n_cap, len(idx_clin)),
-                                  replace=False)
-        idx_derm_sel = rng.choice(idx_derm, size=min(n_cap, len(idx_derm)),
-                                  replace=False)
-        sel = np.sort(np.concatenate([idx_clin_sel, idx_derm_sel]))
-    else:
-        # Single modality — use all points (up to 4000 to keep t-SNE fast)
-        single_idx = idx_clin if len(idx_clin) > 0 else idx_derm
-        n_cap = min(len(single_idx), 4000)
-        sel = rng.choice(single_idx, size=n_cap, replace=False)
-        sel = np.sort(sel)
-
-    embeddings_sel = embeddings[sel]
-    skins_sel      = skins[sel]
-    modalities_sel = modalities[sel]
-
-    n_clin_used = int((modalities_sel == 0).sum())
-    n_derm_used = int((modalities_sel == 1).sum())
-
-    if embeddings_sel.shape[0] < 5:
-        print(f"[SKIP] plot_tsne_modality: too few samples after balancing "
-              f"(clinical={n_clin_used}, derm={n_derm_used})")
-        return
-
-    e2d = _run_tsne(embeddings_sel, perplexity=perplexity, seed=seed)
+    e2d = _run_tsne(embeddings, perplexity=perplexity, seed=seed)
     if e2d is None:
-        print(f"[SKIP] plot_tsne_modality: t-SNE failed "
-              f"(clinical={n_clin_used}, derm={n_derm_used})")
+        print(f"[SKIP] plot_tsne_modality: too few samples ({embeddings.shape[0]})")
         return
 
-    # ── Figure ─────────────────────────────────────────────────────────────
     fst_cmap = _LC(_FST_COLORS)
-    balance_note = (
-        f"clinical n={n_clin_used}, derm n={n_derm_used} (balanced)"
-        if has_multi_mod
-        else f"n={n_clin_used + n_derm_used}"
-    )
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-    fig.suptitle(f"{title}\n{balance_note}", fontsize=12, fontweight="bold")
+    has_multi_mod = len(set(modalities.tolist())) > 1
 
-    # Left: colour by modality
-    for mid, idx_used in [(0, idx_clin_sel if has_multi_mod else sel),
-                          (1, idx_derm_sel if has_multi_mod else np.array([], dtype=int))]:
-        mask = modalities_sel == mid
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+    fig.suptitle(title, fontsize=12, fontweight="bold")
+
+    # Left: modality only (colour by modality)
+    for mid in [0, 1]:
+        mask = modalities == mid
         if mask.any():
             axes[0].scatter(e2d[mask, 0], e2d[mask, 1],
-                            c=_MOD_COLORS[mid],
-                            s=_MOD_SIZES[mid] + 2,
-                            alpha=0.65,
-                            label=f"{_MOD_NAMES[mid]} (n={mask.sum()})",
-                            edgecolors="none")
+                            c=_MOD_COLORS[mid], s=18, alpha=0.65,
+                            label=_MOD_NAMES[mid], edgecolors="none")
     axes[0].set_title(
         "By Modality\n(mixed clusters → modality-invariant)" if has_multi_mod
-        else f"By Modality\n(single: {_MOD_NAMES[int(modalities_sel[0])]})",
+        else f"By Modality\n(single: {_MOD_NAMES[int(modalities[0])]})",
         fontweight="bold", fontsize=10)
     axes[0].set_xlabel("t-SNE-1"); axes[0].set_ylabel("t-SNE-2")
     axes[0].legend(fontsize=9, markerscale=1.5, framealpha=0.7)
@@ -1039,33 +996,28 @@ def plot_tsne_modality(embeddings, skins, modalities, title, save_path,
     # Right: colour = FST, shape = modality
     sc = None
     for mid in [0, 1]:
-        m_mask = modalities_sel == mid
-        if not m_mask.any():
-            continue
-        fst_sub = skins_sel[m_mask]
-        xy_sub  = e2d[m_mask]
-        known   = fst_sub >= 0
+        m_mask = modalities == mid
+        fst_sub = skins[m_mask]
+        xy_sub = e2d[m_mask]
+        known = fst_sub >= 0
         if known.any():
             sc = axes[1].scatter(xy_sub[known, 0], xy_sub[known, 1],
                                  c=fst_sub[known], cmap=fst_cmap, vmin=0, vmax=5,
                                  marker=_MOD_MARKERS[mid], s=_MOD_SIZES[mid],
-                                 alpha=0.75, edgecolors="none")
+                                 alpha=0.7, edgecolors="none")
         if (~known).any():
             axes[1].scatter(xy_sub[~known, 0], xy_sub[~known, 1],
                             c="#CCCCCC", marker=_MOD_MARKERS[mid],
-                            s=_MOD_SIZES[mid], alpha=0.25, edgecolors="none",
-                            label=None)
+                            s=_MOD_SIZES[mid], alpha=0.25, edgecolors="none")
     if sc is not None:
-        plt.colorbar(sc, ax=axes[1], label="FST (I=0 … VI=5)", shrink=0.85)
+        plt.colorbar(sc, ax=axes[1], label="FST (0=I ... 5=VI)", shrink=0.85)
     legend_h = [
-        Line2D([0], [0], marker="o", color="grey", ms=7, ls="none",
-               label=f"Clinical (n={n_clin_used})"),
-        Line2D([0], [0], marker="s", color="grey", ms=7, ls="none",
-               label=f"Dermoscopic (n={n_derm_used})"),
+        Line2D([0], [0], marker="o", color="grey", ms=7, ls="none", label="Clinical"),
+        Line2D([0], [0], marker="s", color="grey", ms=7, ls="none", label="Dermoscopic"),
     ]
     axes[1].legend(handles=legend_h, fontsize=8, title="Modality",
                    title_fontsize=8, framealpha=0.7)
-    axes[1].set_title("By FST × Modality\n(interleaved → no skin-colour confounding)",
+    axes[1].set_title("By FST x Modality\n(interleaved → no skin-colour confounding)",
                       fontweight="bold", fontsize=10)
     axes[1].set_xlabel("t-SNE-1"); axes[1].set_ylabel("t-SNE-2")
     axes[1].spines[["top", "right"]].set_visible(False)
