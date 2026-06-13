@@ -1,6 +1,0 @@
-split,class,precision,recall,f1
-cross_derm7pt,melanoma,0.3622448979591837,0.8452380952380952,0.5071428571428571
-cross_derm7pt,nevus,0.9652777777777778,0.2417391304347826,0.3866481223922114
-cross_derm7pt,basal cell carcinoma,0.20909090909090908,0.5476190476190477,0.3026315789473684
-cross_derm7pt,actinic keratosis,0.0,0.0,0.0
-cross_derm7pt,squamous cell carcinoma,0.0,0.0,0.0
