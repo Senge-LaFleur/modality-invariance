@@ -114,11 +114,11 @@ CFG = {
     'num_text_labels': 6,
     'text_embed_dim': 768,
     'batch_size': 32,
-    'num_epochs': 5,
+    'num_epochs': 50,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 1,
+    'warmup_epochs': 5,
     'aug_probability': 0.85,
     'alpha_conf': 0.5, 'beta_got': 1.0, 'lamb_got': 0.9,
 }

@@ -101,15 +101,15 @@ CFG = {
 
     'backbone': 'resnet18',
     'embed_dim': 512,
-    'num_classes': 5,
+    'num_classes': 3,
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 5,
+    'num_epochs': 50,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 1,
+    'warmup_epochs': 5,
     'aug_probability': 0.85,
 }
 
