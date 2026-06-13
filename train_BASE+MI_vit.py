@@ -251,7 +251,7 @@ def main():
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
-            model, train_loader, optimizer, epoch, scaler, DEVICE, CFG,
+            model, train_loader, optimizer, epoch, CFG, scaler, DEVICE,
             weight_tensor=weight_tensor,
         )
         scheduler.step()
