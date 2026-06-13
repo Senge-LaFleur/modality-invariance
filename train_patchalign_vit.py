@@ -131,8 +131,8 @@ CLASS_MAPPING = {
     "melanoma":                 "melanoma",
     "nevus":                    "nevocytic nevus",
     "basal cell carcinoma":     "basal cell carcinoma",
-    "actinic keratosis":        "actinic keratosis",
-    "squamous cell carcinoma":  "squamous cell carcinoma",
+    # "actinic keratosis":        "actinic keratosis",
+    # "squamous cell carcinoma":  "squamous cell carcinoma",
     "eudermic":                 "eudermic",
 }
 
