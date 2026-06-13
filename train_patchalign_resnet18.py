@@ -111,7 +111,7 @@ CFG = {
     'img_size': 224,
     'num_classes': 3,
     'num_skin_types': 6,
-    'num_text_labels': 6,
+    'num_text_labels': 4,
     'text_embed_dim': 768,
     'batch_size': 32,
     'num_epochs': 50,

@@ -324,7 +324,7 @@ CFG = {
     'img_size':         224,
     'num_classes':      3,
     'num_skin_types':   6,
-    'num_text_labels':  6,
+    'num_text_labels':  4,   # must equal len(CLASS_MAPPING); was incorrectly 6
     'text_embed_dim':   768,
 
     'batch_size':    32,
@@ -486,11 +486,14 @@ def main():
     print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
 
     # ── Build model ──────────────────────────────────────────────────────────
+    # Derive num_text_labels from the loaded text_emb so CFG and mask_net
+    # always agree, even if CLASS_MAPPING or the embedding file changes.
+    num_text_labels = text_emb.shape[0] if text_emb is not None else CFG["num_text_labels"]
     model = PatchAlignViT(
         embed_dim       = CFG["embed_dim"],
         num_classes     = CFG["num_classes"],
         num_skin_types  = CFG["num_skin_types"],
-        num_text_labels = CFG["num_text_labels"],
+        num_text_labels = num_text_labels,
         text_embed_dim  = CFG["text_embed_dim"],
         pretrained      = True,
         use_projection  = False,
