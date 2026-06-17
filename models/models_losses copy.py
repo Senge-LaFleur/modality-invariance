@@ -2,8 +2,8 @@
 models_losses.py
 
 Defines:
-- Dual ResNet-18 encoder (with projection head for modality invariance)
-- Dual ViT encoder (with projection head)
+- Dual ResNet-18 encoder (with per-modality projection heads for modality invariance)
+- Dual ViT encoder (with per-modality projection heads)
 - Loss functions: SupConLoss, confusion_loss, skin_type_loss, mi_loss_vicreg,
   cls_loss_fn (label-smoothed weighted CE), mixup_embeddings.
 - Helper to compute class weights.
@@ -124,7 +124,10 @@ class ProjectionHead(nn.Module):
 # ------------------------------------------------------------
 class DualResNet18(nn.Module):
     """
-    Dual ResNet-18 encoder with optional projection head.
+    Dual ResNet-18 encoder with per-modality projection heads.
+    Clinical embeddings are projected via proj_head_clinical;
+    dermoscopic embeddings via proj_head_derm. Both heads map into
+    the same shared embedding space (same out_dim).
     """
     def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True):
         super().__init__()
@@ -137,9 +140,11 @@ class DualResNet18(nn.Module):
         feat_dim = _RESNET18_FEAT_DIM
         self.use_projection = use_projection
         if use_projection:
-            self.proj_head = ProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head_clinical = ProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head_derm     = ProjectionHead(feat_dim, 1024, embed_dim)
         else:
-            self.proj_head = nn.Identity()
+            self.proj_head_clinical = nn.Identity()
+            self.proj_head_derm     = nn.Identity()
             embed_dim = feat_dim
 
         self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
@@ -151,9 +156,10 @@ class DualResNet18(nn.Module):
     def encode(self, x, modality):
         if modality == "clinical":
             f = self.clinical_backbone(x)
+            return f, self.proj_head_clinical(f)
         else:
             f = self.derm_backbone(x)
-        return f, self.proj_head(f)
+            return f, self.proj_head_derm(f)
 
     def forward(self, batch):
         device = batch["label"].device
@@ -203,7 +209,10 @@ class DualResNet18(nn.Module):
 # ------------------------------------------------------------
 class DualViT(nn.Module):
     """
-    Dual ViT-small encoder with optional projection head.
+    Dual ViT-small encoder with per-modality projection heads.
+    Clinical embeddings are projected via proj_head_clinical;
+    dermoscopic embeddings via proj_head_derm. Both heads map into
+    the same shared embedding space (same out_dim).
     """
     def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True):
         super().__init__()
@@ -214,9 +223,11 @@ class DualViT(nn.Module):
 
         self.use_projection = use_projection
         if use_projection:
-            self.proj_head = ProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head_clinical = ProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head_derm     = ProjectionHead(feat_dim, 1024, embed_dim)
         else:
-            self.proj_head = nn.Identity()
+            self.proj_head_clinical = nn.Identity()
+            self.proj_head_derm     = nn.Identity()
             embed_dim = feat_dim
 
         self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
@@ -228,9 +239,10 @@ class DualViT(nn.Module):
     def encode(self, x, modality):
         if modality == "clinical":
             f = self.clinical_vit(x)
+            return f, self.proj_head_clinical(f)
         else:
             f = self.derm_vit(x)
-        return f, self.proj_head(f)
+            return f, self.proj_head_derm(f)
 
     def forward(self, batch):
         device = batch["label"].device

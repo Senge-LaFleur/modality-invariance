@@ -28,9 +28,8 @@ from tqdm import tqdm
 # Label mapping (shared with training scripts) — 3-class
 # ------------------------------------------------------------
 LABEL_NAMES = {
-    0: 'melanoma',
-    1: 'nevus',
-    2: 'basal cell carcinoma',
+    0: 'benign',
+    1: 'malignant',
 }
 
 
@@ -403,7 +402,7 @@ def compute_knn_accuracy(embeddings, labels, k=5, device='cpu'):
 # Validation function (with descriptive progress bar)
 # ------------------------------------------------------------
 @torch.no_grad()
-def validate(model, loader, device, num_classes=3, desc="Validation"):
+def validate(model, loader, device, num_classes=2, desc="Validation"):
     model.eval()
     all_probs, all_labels, all_skins = [], [], []
     print(f"Running {desc}...")
@@ -882,8 +881,8 @@ def plot_training_curves(history, title, save_path):
 
 
 # ── Palettes shared by t-SNE functions ─────────────────────────────────────
-_CLS_COLORS = ["#1950A0", "#0096B4", "#DC641E"]   # 3 classes
-_CLS_NAMES  = {0: "melanoma", 1: "nevus", 2: "basal cell ca."}
+_CLS_COLORS = ["#1950A0", "#DC641E"]   # 2 classes
+_CLS_NAMES  = {0: "benign", 1: "malignant"}
 _FST_COLORS = ["#FFEDE0", "#F4C18C", "#D49060", "#A0522D", "#5C3317", "#2B1500"]
 _FST_MAP    = {i: f"FST {i+1}" for i in range(6)}
 _MOD_COLORS = {0: "#1950A0", 1: "#DC641E"}
@@ -931,7 +930,7 @@ def plot_tsne_class_fst(embeddings, labels, skins, title, save_path,
     fig.suptitle(title, fontsize=13, fontweight="bold")
 
     _tsne_scatter_labeled(axes[0], e2d, labels, _CLS_COLORS, _CLS_NAMES,
-                          "By Disease Class (3 classes)")
+                          "By Disease Class (2 classes)")
 
     mk_known = skins >= 0
     if mk_known.any():

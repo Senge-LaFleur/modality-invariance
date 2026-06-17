@@ -130,7 +130,7 @@ CFG = {
     'backbone':        'vit_small_patch16_224',
     'embed_dim':       512,
     'img_size':        224,
-    'num_classes':     2,      # melanoma / nevus / basal cell carcinoma
+    'num_classes':     3,      # melanoma / nevus / basal cell carcinoma
     'num_skin_types':  6,
 
     'batch_size':      32,

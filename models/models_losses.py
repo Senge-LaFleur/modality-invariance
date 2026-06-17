@@ -28,7 +28,7 @@ _RESNET18_FEAT_DIM = 384
 _VIT_SMALL_FEAT_DIM = 384  
 
 
-def compute_class_weights(csv_dir, num_classes=3):
+def compute_class_weights(csv_dir, num_classes=2):
     """Compute effective number class weights from all training CSVs."""
     try:
         csv_dir = Path(csv_dir)
