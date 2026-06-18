@@ -1,7 +1,5 @@
 label,skin_type,dataset,clinical
-0,1,hiba,ISIC_7756020
-1,1,hiba,ISIC_9401469
-1,1,hiba,ISIC_5121137
-0,1,hiba,ISIC_6542300
-1,1,hiba,ISIC_9417610
-1,2,hiba,ISIC_3754853
+2,1,hiba,ISIC_9401469
+0,1,hiba,ISIC_0633437
+0,1,hiba,ISIC_9600064
+1,1,hiba,ISIC_9651464

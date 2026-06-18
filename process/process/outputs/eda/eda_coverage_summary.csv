@@ -1,13 +1,13 @@
 Dataset,Modality,Rows,FST known,FST%,FST source,Class distribution
-HIBA + Derm7pt (paired train),paired,910,857,94%,ground-truth,benign=577  malignant=333
-HIBA + Derm7pt (paired val),paired,130,121,93%,ground-truth,benign=83  malignant=47
-HIBA + Derm7pt (paired test),paired,261,249,95%,ground-truth,benign=166  malignant=95
-HIBA residual clin (train),clinical,38,37,97%,ground-truth,benign=13  malignant=25
-HIBA residual clin (val),clinical,6,6,100%,ground-truth,benign=2  malignant=4
-HIBA residual clin (test),clinical,12,12,100%,ground-truth,benign=4  malignant=8
-HIBA residual derm (train),derm,686,615,90%,ground-truth,benign=439  malignant=247
-HIBA residual derm (val),derm,98,89,91%,ground-truth,benign=63  malignant=35
-HIBA residual derm (test),derm,196,178,91%,ground-truth,benign=126  malignant=70
-Fitzpatrick17k (cross-eval),clinical,4497,4320,96%,ground-truth,benign=2234  malignant=2263
-PAD-UFES-20 (cross-eval),clinical,2298,1494,65%,ground-truth,benign=1209  malignant=1089
-ISIC2019 (cross-eval),derm,18199,0,0%,N/A,benign=7259  malignant=10940
+HIBA + Derm7pt (paired train),paired,738,687,93%,ground-truth,melanoma=206  nevus=433  basal cell carcinoma=99
+HIBA + Derm7pt (paired val),paired,106,103,97%,ground-truth,melanoma=30  nevus=62  basal cell carcinoma=14
+HIBA + Derm7pt (paired test),paired,211,198,94%,ground-truth,melanoma=59  nevus=124  basal cell carcinoma=28
+HIBA residual clin (train),clinical,26,25,96%,ground-truth,melanoma=11  nevus=6  basal cell carcinoma=9
+HIBA residual clin (val),clinical,4,4,100%,ground-truth,melanoma=2  nevus=1  basal cell carcinoma=1
+HIBA residual clin (test),clinical,8,8,100%,ground-truth,melanoma=3  nevus=2  basal cell carcinoma=3
+HIBA residual derm (train),derm,549,503,92%,ground-truth,melanoma=106  nevus=353  basal cell carcinoma=90
+HIBA residual derm (val),derm,79,69,87%,ground-truth,melanoma=15  nevus=51  basal cell carcinoma=13
+HIBA residual derm (test),derm,157,139,89%,ground-truth,melanoma=30  nevus=101  basal cell carcinoma=26
+Fitzpatrick17k (cross-eval),clinical,1727,1672,97%,ground-truth,melanoma=573  nevus=558  basal cell carcinoma=596
+PAD-UFES-20 (cross-eval),clinical,1141,972,85%,ground-truth,melanoma=52  nevus=244  basal cell carcinoma=845
+ISIC2019 (cross-eval),derm,25517,0,0%,N/A,melanoma=5849  nevus=15370  basal cell carcinoma=4298
