@@ -160,6 +160,41 @@ class PairedDataset(Dataset):
 
 
 # ------------------------------------------------------------
+# Custom collate function
+#
+# FIX: PyTorch's default_collate infers a per-key collation strategy by
+# inspecting the type of that key's values across the batch. `pair_id`
+# is a string for paired samples and None for unpaired ones. When a
+# batch happens to be ALL-unpaired (a real, common occurrence once
+# unpaired pools are large and PairAwareBatchSampler sometimes draws
+# zero pairs into a batch), every value for `pair_id` is None —
+# default_collate sees a homogeneous list of NoneType and has no
+# handler for it, raising:
+#   TypeError: default_collate: batch must contain tensors, numpy
+#   arrays, numbers, dicts or lists; found <class 'NoneType'>
+# This is exactly the dataloader worker crash seen in production
+# training (Train batches: 79, crashing partway through epoch 1).
+#
+# Rather than rely on default_collate's type-inference (which "worked"
+# in smaller smoke tests purely by luck — those batches happened to mix
+# string and None pair_id values, which default_collate silently
+# leaves as a plain list instead of erroring), every non-tensor field
+# is explicitly collated as a plain Python list here, with no type
+# inference involved.
+# ------------------------------------------------------------
+def paired_aware_collate(batch):
+    out = {}
+    out['image'] = torch.stack([b['image'] for b in batch])
+    out['label'] = torch.stack([b['label'] for b in batch])
+    out['skin_type'] = torch.stack([b['skin_type'] for b in batch])
+    out['dataset'] = [b['dataset'] for b in batch]
+    out['paired'] = [b['paired'] for b in batch]
+    out['modality'] = [b['modality'] for b in batch]
+    out['pair_id'] = [b['pair_id'] for b in batch]   # may be all-None; that's fine as a list
+    return out
+
+
+# ------------------------------------------------------------
 # Pair-aware batch sampler
 #
 # FIX: once PairedDataset emits the clinical and derm image of a
@@ -386,15 +421,15 @@ def build_loaders(cfg, seed=42):
 
     train_loader = DataLoader(
         train_dataset, batch_sampler=batch_sampler,
-        num_workers=4, pin_memory=True
+        num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=4, pin_memory=True
+        num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
     ) if val_dataset else None
     test_loader = DataLoader(
         test_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=4, pin_memory=True
+        num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
     ) if test_dataset else None
 
     # ------------------------------------------------------------------
@@ -414,7 +449,7 @@ def build_loaders(cfg, seed=42):
             )
             eval_loaders['fitzpatrick17k'] = DataLoader(
                 fitz_dataset, batch_size=batch_size, shuffle=False,
-                num_workers=4, pin_memory=True
+                num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
             )
             print(f"[INFO] Loaded fitzpatrick17k eval set: {len(fitz_df)} samples")
         else:
@@ -442,7 +477,7 @@ def build_loaders(cfg, seed=42):
             )
             eval_loaders['padufes20'] = DataLoader(
                 padufes_dataset, batch_size=batch_size, shuffle=False,
-                num_workers=4, pin_memory=True
+                num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
             )
             print(f"[INFO] Loaded padufes20 eval set: {len(padufes_df)} samples")
         else:
@@ -468,7 +503,7 @@ def build_loaders(cfg, seed=42):
             )
             eval_loaders['isic2019'] = DataLoader(
                 isic_dataset, batch_size=batch_size, shuffle=False,
-                num_workers=4, pin_memory=True
+                num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
             )
             print(f"[INFO] Loaded isic2019 eval set: {len(isic_df)} samples")
         else:
