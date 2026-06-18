@@ -55,6 +55,22 @@ def build_image_maps(dataset_roots):
 
 # ------------------------------------------------------------
 # Custom Dataset Classes (ID-based image resolution using prebuilt maps)
+#
+# FIX (pair-utilization rewrite): both dataset classes now emit ONE
+# single-image sample per item, under a unified 'image' key. A row in
+# a paired CSV used to collapse its clinical+derm images into ONE
+# dataset item (averaged inside the model) — meaning only ~half of a
+# pair's images ever got a direct classification gradient, and
+# `len(dataset)` undercounted real images by the number of paired rows.
+#
+# Now PairedDataset.__len__() == 2 * len(df): each row yields a
+# clinical sample AND a derm sample, each carrying a shared `pair_id`
+# so train_epoch() can regroup same-lesion clinical/derm embeddings
+# for the contrastive (Lcon) and modality-invariance (LMI) losses.
+# Use PairAwareBatchSampler (below) at the DataLoader level to
+# guarantee both halves of a pair land in the same batch — otherwise
+# `pair_id` matches across a batch can be sparse since the two halves
+# are now independent, separately-sampled items.
 # ------------------------------------------------------------
 class UnpairedDataset(Dataset):
     def __init__(self, df, image_maps, transform=None,
@@ -85,17 +101,23 @@ class UnpairedDataset(Dataset):
         if self.transform:
             img = self.transform(img)
         return {
-            'clinical': img,
-            'derm': img,
+            'image': img,
             'label': torch.tensor(row['label'], dtype=torch.long),
             'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
             'dataset': row['dataset'],
             'paired': False,
             'modality': self.modality,
+            'pair_id': None,
         }
 
 
 class PairedDataset(Dataset):
+    """
+    Each underlying row (one lesion) yields TWO independent samples —
+    one clinical, one derm — instead of one row averaging both images
+    into a single embedding. Both samples carry the same `pair_id` so
+    losses that need the (z_c, z_d) relationship can regroup them.
+    """
     def __init__(self, df, image_maps, transform=None,
                  clinical_col='clinical', derm_col='derm'):
         self.df = df.reset_index(drop=True)
@@ -111,31 +133,116 @@ class PairedDataset(Dataset):
         return full_path
 
     def __len__(self):
-        return len(self.df)
+        return len(self.df) * 2
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
+        row_idx, which = divmod(idx, 2)   # which: 0=clinical, 1=derm
+        row = self.df.iloc[row_idx]
         ds = row['dataset']
-        clinical_id = str(row[self.clinical_col])
-        derm_id = str(row[self.derm_col])
-        clinical_path = self._resolve_path(ds, clinical_id)
-        derm_path = self._resolve_path(ds, derm_id)
+        modality = 'clinical' if which == 0 else 'derm'
+        col = self.clinical_col if which == 0 else self.derm_col
+        img_id = str(row[col])
+        path = self._resolve_path(ds, img_id)
 
-        clinical_img = Image.open(clinical_path).convert('RGB')
-        derm_img = Image.open(derm_path).convert('RGB')
+        img = Image.open(path).convert('RGB')
         if self.transform:
-            clinical_img = self.transform(clinical_img)
-            derm_img = self.transform(derm_img)
+            img = self.transform(img)
 
         return {
-            'clinical': clinical_img,
-            'derm': derm_img,
+            'image': img,
             'label': torch.tensor(row['label'], dtype=torch.long),
             'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
             'dataset': ds,
             'paired': True,
-            'modality': 'paired',
+            'modality': modality,
+            'pair_id': f"{ds}_{row_idx}",
         }
+
+
+# ------------------------------------------------------------
+# Pair-aware batch sampler
+#
+# FIX: once PairedDataset emits the clinical and derm image of a
+# lesion as two INDEPENDENT samples, a plain WeightedRandomSampler can
+# (and usually will) draw them into different batches, starving
+# cross_modal_supcon_loss / mi_loss of (z_c, z_d) pairs to work with.
+# This sampler keeps full per-image classification gradients (the
+# whole point of the split) while guaranteeing every paired lesion's
+# clinical+derm samples co-occur in the same batch, so the
+# modality-invariance losses keep getting a steady, undiluted supply
+# of matched pairs every batch — not just "some batches, sometimes",
+# which is what the old paired_rate metric was quietly hiding.
+#
+# Class imbalance is still handled by weighted sampling: paired
+# LESIONS are drawn with replacement using per-lesion class weight,
+# and unpaired images are drawn with replacement using per-image
+# class weight, then interleaved into the target batch size.
+# ------------------------------------------------------------
+class PairAwareBatchSampler(torch.utils.data.Sampler):
+    def __init__(self, pair_row_indices, pair_class_labels,
+                 unpaired_indices, unpaired_class_labels,
+                 batch_size, num_classes, num_batches, seed=42):
+        """
+        pair_row_indices:      list of PairedDataset *row* indices (0..len(df)-1)
+        pair_class_labels:     label per row, same length/order as pair_row_indices
+        unpaired_indices:      list of flat indices into the unpaired part of
+                                the ConcatDataset (clin_* and derm_* datasets)
+        unpaired_class_labels: label per unpaired index, same order
+        batch_size:            target batch size (must be even-friendly; pairs
+                                contribute 2 items each)
+        num_batches:           number of batches per epoch
+        """
+        self.pair_row_indices = np.array(pair_row_indices)
+        self.unpaired_indices = np.array(unpaired_indices)
+        self.batch_size = batch_size
+        self.num_batches = num_batches
+        self.rng = np.random.default_rng(seed)
+
+        def _weights(labels):
+            labels = np.array(labels)
+            counts = np.bincount(labels, minlength=num_classes).astype(float)
+            counts[counts == 0] = 1.0
+            inv = 1.0 / counts
+            w = inv[labels]
+            return w / w.sum()
+
+        self.pair_weights = _weights(pair_class_labels) if len(pair_row_indices) else None
+        self.unpaired_weights = _weights(unpaired_class_labels) if len(unpaired_indices) else None
+
+        # Roughly half the batch from pairs (2 items/lesion), half from
+        # unpaired singles — proportioned to how much of each pool exists.
+        n_pair_rows = len(self.pair_row_indices)
+        n_unpaired = len(self.unpaired_indices)
+        total = max(n_pair_rows * 2 + n_unpaired, 1)
+        self.pairs_per_batch = max(
+            0, round((n_pair_rows * 2 / total) * batch_size / 2)
+        ) if n_pair_rows else 0
+        self.singles_per_batch = max(0, batch_size - self.pairs_per_batch * 2)
+
+    def __len__(self):
+        return self.num_batches
+
+    def __iter__(self):
+        for _ in range(self.num_batches):
+            batch = []
+            if self.pairs_per_batch and len(self.pair_row_indices):
+                chosen_rows = self.rng.choice(
+                    self.pair_row_indices, size=self.pairs_per_batch,
+                    replace=True, p=self.pair_weights
+                )
+                for r in chosen_rows:
+                    # PairedDataset.__getitem__ maps idx -> (row, which)
+                    # via divmod(idx, 2); reconstruct both flat indices.
+                    batch.append(int(r) * 2)       # clinical sample
+                    batch.append(int(r) * 2 + 1)   # derm sample
+            if self.singles_per_batch and len(self.unpaired_indices):
+                chosen = self.rng.choice(
+                    self.unpaired_indices, size=self.singles_per_batch,
+                    replace=True, p=self.unpaired_weights
+                )
+                batch.extend(int(i) for i in chosen)
+            self.rng.shuffle(batch)
+            yield batch
 
 
 # ------------------------------------------------------------
@@ -223,20 +330,63 @@ def build_loaders(cfg, seed=42):
         test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm'))
     test_dataset = torch.utils.data.ConcatDataset(test_datasets) if test_datasets else None
 
-    # Weighted sampler for training (handle class imbalance)
-    labels = []
+    # ------------------------------------------------------------
+    # Pair-aware batch sampling for training
+    #
+    # FIX: labels must now account for PairedDataset yielding 2 samples
+    # per row (one per modality, same label) — `ds.df['label']` alone
+    # undercounts by half for the paired dataset. We also need to know
+    # which flat indices into `train_dataset` (the ConcatDataset) belong
+    # to the paired dataset's rows vs. the unpaired datasets, so the
+    # PairAwareBatchSampler can guarantee clinical/derm siblings of a
+    # lesion co-occur in a batch while still respecting class weights.
+    # ------------------------------------------------------------
+    cumulative = 0
+    pair_row_indices, pair_class_labels = [], []
+    unpaired_indices, unpaired_class_labels = [], []
     for ds in train_datasets:
-        labels.extend(ds.df['label'].tolist())
-    class_counts = np.bincount(labels, minlength=cfg['num_classes'])
-    class_weights = 1.0 / (class_counts + 1e-6)
-    sample_weights = [class_weights[lbl] for lbl in labels]
-    sampler = WeightedRandomSampler(
-        sample_weights, num_samples=len(train_dataset), replacement=True
+        if isinstance(ds, PairedDataset):
+            n_rows = len(ds.df)
+            pair_row_indices.extend(range(n_rows))      # row index, NOT flat index
+            pair_class_labels.extend(ds.df['label'].tolist())
+            # NOTE: PairAwareBatchSampler computes flat indices for this
+            # dataset's two samples-per-row scheme directly (row*2, row*2+1)
+            # and ConcatDataset places this dataset at offset `cumulative`
+            # only if it's first; we therefore require PairedDataset(s)
+            # to be concatenated FIRST so its flat indices start at 0.
+            # This is enforced by the train_datasets construction order
+            # below (paired appended before clin/derm).
+            cumulative += len(ds)
+        else:
+            n = len(ds)
+            unpaired_indices.extend(range(cumulative, cumulative + n))
+            unpaired_class_labels.extend(ds.df['label'].tolist())
+            cumulative += n
+
+    if pair_row_indices and not isinstance(train_datasets[0], PairedDataset):
+        raise RuntimeError(
+            "PairedDataset must be the first dataset in train_datasets so "
+            "PairAwareBatchSampler's flat-index assumption (row*2, row*2+1 "
+            "starting at 0) holds. Check the ConcatDataset construction order."
+        )
+
+    total_train_images = len(train_dataset)
+    num_batches = max(1, total_train_images // batch_size)
+
+    batch_sampler = PairAwareBatchSampler(
+        pair_row_indices=pair_row_indices,
+        pair_class_labels=pair_class_labels,
+        unpaired_indices=unpaired_indices,
+        unpaired_class_labels=unpaired_class_labels,
+        batch_size=batch_size,
+        num_classes=cfg['num_classes'],
+        num_batches=num_batches,
+        seed=seed,
     )
 
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, sampler=sampler,
-        num_workers=4, pin_memory=True, drop_last=True
+        train_dataset, batch_sampler=batch_sampler,
+        num_workers=4, pin_memory=True
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,

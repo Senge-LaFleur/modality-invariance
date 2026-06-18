@@ -3,7 +3,7 @@
 
 """
 Modality-Invariant ViT (vit_small_patch16_224) for Skin Disease Classification
-3-class setup: melanoma / nevus / basal cell carcinoma
+2-class setup: benign / malignant
 Training data: HIBA (paired) + Derm7pt (paired)
 Cross-eval:    Fitzpatrick17k (clinical) · PAD-UFES-20 (clinical) · ISIC2019 (derm)
 
@@ -130,7 +130,7 @@ CFG = {
     'backbone':        'vit_small_patch16_224',
     'embed_dim':       512,
     'img_size':        224,
-    'num_classes':     2,      # melanoma / nevus / basal cell carcinoma
+    'num_classes':     2,     
     'num_skin_types':  6,
 
     'batch_size':      32,
@@ -169,8 +169,15 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     totals = dict(total=0., cls=0., conf=0., skin=0., con=0., mi=0.)
     all_preds, all_labels = [], []
     n_batches = 0
-    n_paired_batches = 0   # FIX: track how often MI actually fires
 
+    # FIX: replaced the old `paired_rate` (fraction of batches touching
+    # >=1 pair, which read ~1.0 even when most images never got
+    # cross-modal loss signal) with a metric that actually answers
+    # "how many of this epoch's pair-eligible images had their sibling
+    # available in the same batch to compute Lcon/LMI on". Tracked at the
+    # image level, not the batch level.
+    n_pairable_images_seen = 0   # images that came from a paired row (have a pair_id)
+    n_pairable_images_matched = 0  # of those, how many found their sibling in-batch
 
     sup_con = SupConLoss(cfg["temperature"]).to(device)
     weight_tensor = (
@@ -212,18 +219,51 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 skin_type_loss(model.skin_clf(out["z"].detach()), skin_types)
                 if cfg.get("use_conf") else 0.0
             )
+
+            # ------------------------------------------------------------
+            # FIX: model.forward() no longer special-cases pairing — every
+            # sample (clinical or derm) gets its own row in out["z"].
+            # To recover (z_c, z_d) for the SAME lesion for Lcon/LMI, we
+            # regroup by `pair_id` + `modality` here instead. With
+            # PairAwareBatchSampler guaranteeing both halves of every
+            # sampled pair co-occur in this batch, `common_pids` below
+            # should be non-empty whenever the batch contains any paired
+            # data — but we don't assume that; we measure it directly via
+            # n_pairable_images_seen / n_pairable_images_matched so a
+            # regression in the sampler shows up immediately in logs
+            # instead of silently degrading Lcon/LMI like before.
+            # ------------------------------------------------------------
+            pair_ids = batch["pair_id"]          # list, None for unpaired samples
+            modality = batch["modality"]         # list of 'clinical' / 'derm'
+
+            clin_idx_by_pid, derm_idx_by_pid = {}, {}
+            for i, (pid, m) in enumerate(zip(pair_ids, modality)):
+                if pid is None:
+                    continue
+                n_pairable_images_seen += 1
+                if m == "clinical":
+                    clin_idx_by_pid[pid] = i
+                else:
+                    derm_idx_by_pid[pid] = i
+            common_pids = sorted(set(clin_idx_by_pid) & set(derm_idx_by_pid))
+            n_pairable_images_matched += 2 * len(common_pids)
+
+            z_c = z_d = paired_labels = None
+            if common_pids:
+                c_idx = torch.tensor([clin_idx_by_pid[p] for p in common_pids], device=device)
+                d_idx = torch.tensor([derm_idx_by_pid[p] for p in common_pids], device=device)
+                z_c = out["z"][c_idx]
+                z_d = out["z"][d_idx]
+                paired_labels = labels[c_idx]   # clinical/derm sibling share the same label
+
             loss_con = 0.0
-            if cfg.get("use_con") and "z_c" in out and out["z_c"].size(0) > 1:
-                paired_labels = labels[out["paired_mask"]]
-                loss_con = cross_modal_supcon_loss(
-                    out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
-                )
- 
-            # --- FIX: VICReg-based MI loss (collapse-resistant) ---
+            if cfg.get("use_con") and z_c is not None and z_c.size(0) > 1:
+                loss_con = cross_modal_supcon_loss(z_c, z_d, paired_labels, cfg["temperature"])
+
+            # --- VICReg-based MI loss (collapse-resistant) ---
             loss_mi = 0.0
-            if cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 1:
-                loss_mi = mi_loss(out["z_c"], out["z_d"])
-                n_paired_batches += 1
+            if cfg.get("use_mi") and z_c is not None and z_c.size(0) > 1:
+                loss_mi = mi_loss(z_c, z_d)
 
             total_loss = cfg["lambda_cls"] * loss_cls
             if cfg.get("use_conf"):
@@ -261,9 +301,12 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     all_labels = np.concatenate(all_labels)
     totals["acc"] = (all_preds == all_labels).mean()
     totals["macro_f1"] = f1_score(all_labels, all_preds, average="macro", zero_division=0)
-    
-    # FIX: report paired-batch rate so you can verify MI is actually training
-    totals["paired_rate"] = n_paired_batches / max(n_batches, 1)
+
+    # FIX: image-level pair-match rate. 1.0 means every pairable image
+    # found its clinical/derm sibling in the same batch this epoch (the
+    # PairAwareBatchSampler invariant holding); anything less is a real
+    # signal that Lcon/LMI are running on fewer pairs than they should.
+    totals["pair_match_rate"] = n_pairable_images_matched / max(n_pairable_images_seen, 1)
 
     return totals
 
@@ -345,7 +388,7 @@ def main():
             f"loss={train_metrics['total']:.4f}  tr_acc={train_metrics['acc']:.4f}  "
             f"val_acc={val_metrics['acc']:.4f}  val_auroc={val_metrics['auroc']:.4f}  "
             f"val_f1={val_metrics['macro_f1']:.4f}  "
-            f"paired={train_metrics['paired_rate']:.2f}  lr={lr:.2e}"
+            f"pair_match={train_metrics['pair_match_rate']:.2f}  lr={lr:.2e}"
         )
 
         ckpt_state = {
@@ -421,7 +464,13 @@ def main():
         all_embs = []
         all_labels_tsne = []
         all_skins_tsne = []
-        all_mods_tsne = []   # 0=clinical, 1=derm, paired excluded
+        # FIX: batch["modality"] is now always 'clinical' or 'derm' for every
+        # sample (paired rows used to tag samples 'paired' and silently fall
+        # into the `else: -1 (exclude)` branch below, meaning this t-SNE/KNN
+        # modality-invariance plot was previously built ONLY from the small
+        # unpaired residual pools — never from HIBA/Derm7pt pairs at all).
+        # Now every test sample, including ones from paired rows, is plotted.
+        all_mods_tsne = []   # 0=clinical, 1=derm
         with torch.no_grad():
             for batch in test_loader:
                 for k, v in batch.items():
@@ -433,14 +482,8 @@ def main():
                 all_labels_tsne.append(batch["label"].cpu().numpy())
                 all_skins_tsne.append(batch["skin_type"].cpu().numpy())
 
-                mod_list = []
-                for m in batch.get("modality", ["clinical"] * b):
-                    if m == "clinical":
-                        mod_list.append(0)
-                    elif m == "derm":
-                        mod_list.append(1)
-                    else:
-                        mod_list.append(-1)   # paired – exclude
+                mod_list = [0 if m == "clinical" else 1
+                            for m in batch.get("modality", ["clinical"] * b)]
                 all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
 
         embs        = np.concatenate(all_embs)

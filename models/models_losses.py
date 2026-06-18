@@ -24,7 +24,7 @@ from pathlib import Path
 # ------------------------------------------------------------
 # Shared constants and helpers
 # ------------------------------------------------------------
-_RESNET18_FEAT_DIM = 384
+_RESNET18_FEAT_DIM = 512  
 _VIT_SMALL_FEAT_DIM = 384  
 
 
@@ -119,10 +119,59 @@ class ProjectionHead(nn.Module):
         return F.normalize(out, dim=-1)
 
 
+class _DualEncoderForwardMixin:
+    """
+    Shared forward() for DualResNet18 / DualViT.
+
+    FIX (pair-utilization rewrite): previously this method special-cased
+    `batch["paired"]` and averaged z_c/z_d into one embedding per paired
+    row, BEFORE the classifier — meaning a clinical+derm pair contributed
+    only ONE classification gradient (diluted by averaging) for what
+    were two real images. Up to 71% of training images were affected.
+
+    Now every sample in the batch — paired or not — is just one image
+    with a `modality` tag ('clinical' or 'derm'). Each gets its own
+    independent encode + classify pass, so every image contributes its
+    own full-weight Lcls term. Pairs are reconstructed downstream (in
+    train_epoch, via `pair_id` + PairAwareBatchSampler) purely for the
+    contrastive / modality-invariance losses, which operate on z_c/z_d
+    directly and don't need this method to know about pairing at all.
+    """
+
+    def forward(self, batch):
+        device = batch["label"].device
+        modality = batch["modality"]  # list[str] of len == batch_size
+        clinical_mask = torch.tensor(
+            [m == "clinical" for m in modality], dtype=torch.bool, device=device
+        )
+        derm_mask = ~clinical_mask
+
+        embed_dim = self.classifier[1].in_features
+        n = len(modality)
+        embeddings = torch.zeros(n, embed_dim, device=device)
+
+        out = {}
+
+        if clinical_mask.any():
+            clin_t = batch["image"][clinical_mask].to(device)
+            _, z_c_all = self.encode(clin_t, "clinical")
+            embeddings[clinical_mask] = z_c_all
+
+        if derm_mask.any():
+            derm_t = batch["image"][derm_mask].to(device)
+            _, z_d_all = self.encode(derm_t, "derm")
+            embeddings[derm_mask] = z_d_all
+
+        out["z"] = embeddings
+        out["logits"] = self.classifier(out["z"])
+        out["skin_logits"] = self.skin_clf(out["z"])
+        return out
+
+
 # ------------------------------------------------------------
 # Dual ResNet-18 Model (with projection head)
 # ------------------------------------------------------------
-class DualResNet18(nn.Module):
+class DualResNet18(_DualEncoderForwardMixin, nn.Module):
     """
     Dual ResNet-18 encoder with optional projection head.
     """
@@ -155,53 +204,12 @@ class DualResNet18(nn.Module):
             f = self.derm_backbone(x)
         return f, self.proj_head(f)
 
-    def forward(self, batch):
-        device = batch["label"].device
-        batch_size = len(batch["label"])
-        embeddings = None
-
-        paired_mask = torch.tensor(batch["paired"], dtype=torch.bool, device=device)
-        unpaired_mask = ~paired_mask
-
-        out = {}
-
-        # Paired samples
-        if paired_mask.any() and "clinical" in batch and "derm" in batch:
-            clin_t = batch["clinical"][paired_mask].to(device)
-            derm_t = batch["derm"][paired_mask].to(device)
-            _, z_c = self.encode(clin_t, "clinical")
-            _, z_d = self.encode(derm_t, "derm")
-            z_paired = (z_c + z_d) / 2
-
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z_paired.size(-1), device=device, dtype=z_paired.dtype)
-            embeddings[paired_mask] = z_paired
-            out["z_c"] = z_c
-            out["z_d"] = z_d
-            # Store the paired mask so train scripts can use it for cross-modal contrastive loss
-            out["paired_mask"] = paired_mask
-
-        # Unpaired samples
-        if unpaired_mask.any() and "clinical" in batch:
-            img_t = batch["clinical"][unpaired_mask].to(device)
-            _, z = self.encode(img_t, "clinical")
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z.size(-1), device=device, dtype=z.dtype)
-            embeddings[unpaired_mask] = z
-
-        if embeddings is None:
-            embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
-
-        out["z"] = embeddings
-        out["logits"] = self.classifier(out["z"])
-        out["skin_logits"] = self.skin_clf(out["z"])
-        return out
 
 
 # ------------------------------------------------------------
 # Dual ViT Model (with projection head)
 # ------------------------------------------------------------
-class DualViT(nn.Module):
+class DualViT(_DualEncoderForwardMixin, nn.Module):
     """
     Dual ViT-small encoder with optional projection head.
     """
@@ -231,48 +239,6 @@ class DualViT(nn.Module):
         else:
             f = self.derm_vit(x)
         return f, self.proj_head(f)
-
-    def forward(self, batch):
-        device = batch["label"].device
-        batch_size = len(batch["label"])
-        embeddings = None
-
-        paired_mask = torch.tensor(batch["paired"], dtype=torch.bool, device=device)
-        unpaired_mask = ~paired_mask
-
-        out = {}
-
-        # Paired samples
-        if paired_mask.any() and "clinical" in batch and "derm" in batch:
-            clin_t = batch["clinical"][paired_mask].to(device)
-            derm_t = batch["derm"][paired_mask].to(device)
-            _, z_c = self.encode(clin_t, "clinical")
-            _, z_d = self.encode(derm_t, "derm")
-            z_paired = (z_c + z_d) / 2
-
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z_paired.size(-1), device=device, dtype=z_paired.dtype)
-            embeddings[paired_mask] = z_paired
-            out["z_c"] = z_c
-            out["z_d"] = z_d
-            # Store the paired mask so train scripts can use it for cross-modal contrastive loss
-            out["paired_mask"] = paired_mask
-
-        # Unpaired samples
-        if unpaired_mask.any() and "clinical" in batch:
-            img_t = batch["clinical"][unpaired_mask].to(device)
-            _, z = self.encode(img_t, "clinical")
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z.size(-1), device=device, dtype=z.dtype)
-            embeddings[unpaired_mask] = z
-
-        if embeddings is None:
-            embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
-
-        out["z"] = embeddings
-        out["logits"] = self.classifier(out["z"])
-        out["skin_logits"] = self.skin_clf(out["z"])
-        return out
 
 
 # ------------------------------------------------------------
