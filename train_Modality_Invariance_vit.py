@@ -45,6 +45,7 @@ from models.models_losses import (
     confusion_loss,
     skin_type_loss,
     mi_loss,
+    symmetric_kl_loss,
     mixup_embeddings,
     cls_loss_fn,
     compute_class_weights,
@@ -146,6 +147,20 @@ CFG = {
     'lambda_skin':     0.3,  
     'lambda_con':      1.0,
     'lambda_mi':       1.0,
+    # NOTE (flagging, not silently changing): lambda_con and lambda_mi are
+    # currently >= lambda_cls. Lcon/LMI only shape embedding GEOMETRY (pull
+    # same-lesion clinical/derm together, push different classes apart) —
+    # neither has any notion of "predict the right label." If they
+    # outweigh Lcls for long, the optimizer can profitably sacrifice
+    # classification accuracy for cheaper geometry, which risks the
+    # accuracy/F1 numbers you already have. Worth watching tr_acc/val_acc
+    # closely after this change; consider dropping lambda_con/lambda_mi
+    # back toward ~0.5 if accuracy regresses from your current 80-84%.
+    'lambda_kl':       0.35,   # NEW: alignment-through-classifier, see
+                               # symmetric_kl_loss docstring in models_losses.py.
+                               # Kept below lambda_cls deliberately — Lcls must
+                               # stay dominant so the optimizer can't satisfy
+                               # Lkl via low-confidence ("uniform") collapse.
     'temperature':     0.1,
     'label_smoothing': 0.01,
     'mixup_alpha':     0.4,
@@ -153,6 +168,7 @@ CFG = {
     'use_conf':  True,
     'use_con':   True,
     'use_mi':    True,
+    'use_kl':    True,    # NEW
     'use_mixup': False,
 
 }
@@ -166,7 +182,7 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 # ------------------------------------------------------------
 def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, device):
     model.train()
-    totals = dict(total=0., cls=0., conf=0., skin=0., con=0., mi=0.)
+    totals = dict(total=0., cls=0., conf=0., skin=0., con=0., mi=0., kl=0.)
     all_preds, all_labels = [], []
     n_batches = 0
 
@@ -178,6 +194,18 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     # image level, not the batch level.
     n_pairable_images_seen = 0   # images that came from a paired row (have a pair_id)
     n_pairable_images_matched = 0  # of those, how many found their sibling in-batch
+
+    # Lightweight diagnostic for loss_kl specifically: of the matched
+    # clinical/derm pairs seen this epoch, what fraction did the
+    # classifier predict the SAME class for? This is cheap (no t-SNE,
+    # no extra forward pass) and tells you whether alignment-through-
+    # classification is actually working epoch-over-epoch, instead of
+    # only finding out at the end via a t-SNE plot on the final
+    # checkpoint. Should trend toward 1.0 as training progresses if
+    # loss_kl is doing its job; flat/low values mean lambda_kl needs
+    # to go up (or lambda_con/lambda_mi are working against it).
+    n_kl_pairs_seen = 0
+    n_kl_pairs_agree = 0
 
     sup_con = SupConLoss(cfg["temperature"]).to(device)
     weight_tensor = (
@@ -265,6 +293,30 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
             if cfg.get("use_mi") and z_c is not None and z_c.size(0) > 1:
                 loss_mi = mi_loss(z_c, z_d)
 
+            # ------------------------------------------------------------
+            # NEW: alignment-through-classification (symmetric KL).
+            # Reuses the SAME c_idx/d_idx already computed above for
+            # loss_con/loss_mi — those select the matched clinical/derm
+            # pairs present in this batch. Operates on out["logits"]
+            # (the classifier's actual predictions), not on raw z, so the
+            # pressure to align flows through the same parameters that
+            # produce the classification decision, instead of only
+            # constraining the upstream embedding geometry.
+            # See symmetric_kl_loss docstring in models_losses.py for the
+            # collapse-mode analysis and why lambda_kl must stay below
+            # lambda_cls.
+            # ------------------------------------------------------------
+            loss_kl = 0.0
+            if cfg.get("use_kl") and z_c is not None and z_c.size(0) > 1:
+                logits_c = out["logits"][c_idx]
+                logits_d = out["logits"][d_idx]
+                loss_kl = symmetric_kl_loss(logits_c, logits_d)
+                with torch.no_grad():
+                    pred_c = logits_c.argmax(dim=-1)
+                    pred_d = logits_d.argmax(dim=-1)
+                    n_kl_pairs_seen += pred_c.size(0)
+                    n_kl_pairs_agree += (pred_c == pred_d).sum().item()
+
             total_loss = cfg["lambda_cls"] * loss_cls
             if cfg.get("use_conf"):
                 total_loss += cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_skin   # FIX: explicit lambda
@@ -272,6 +324,8 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 total_loss += cfg["lambda_con"] * loss_con
             if cfg.get("use_mi") and loss_mi != 0:
                 total_loss += cfg["lambda_mi"] * loss_mi
+            if cfg.get("use_kl") and loss_kl != 0:
+                total_loss += cfg["lambda_kl"] * loss_kl
 
         scaler.scale(total_loss).backward()
         scaler.unscale_(optimizer)
@@ -285,6 +339,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
         totals["skin"]  += loss_skin.item() if isinstance(loss_skin, torch.Tensor) else loss_skin
         totals["con"]   += loss_con.item()  if isinstance(loss_con,  torch.Tensor) else loss_con
         totals["mi"]    += loss_mi.item()   if isinstance(loss_mi,   torch.Tensor) else loss_mi
+        totals["kl"]    += loss_kl.item()   if isinstance(loss_kl,   torch.Tensor) else loss_kl
         n_batches += 1
 
         with torch.no_grad():
@@ -307,6 +362,12 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     # PairAwareBatchSampler invariant holding); anything less is a real
     # signal that Lcon/LMI are running on fewer pairs than they should.
     totals["pair_match_rate"] = n_pairable_images_matched / max(n_pairable_images_seen, 1)
+
+    # NEW: fraction of matched clinical/derm pairs the classifier agreed
+    # on this epoch. Track this across epochs — it should trend up
+    # toward 1.0 if loss_kl is actually aligning the two modalities
+    # through the classifier, not just minimizing in isolation.
+    totals["kl_agreement_rate"] = n_kl_pairs_agree / max(n_kl_pairs_seen, 1)
 
     return totals
 
@@ -388,7 +449,8 @@ def main():
             f"loss={train_metrics['total']:.4f}  tr_acc={train_metrics['acc']:.4f}  "
             f"val_acc={val_metrics['acc']:.4f}  val_auroc={val_metrics['auroc']:.4f}  "
             f"val_f1={val_metrics['macro_f1']:.4f}  "
-            f"pair_match={train_metrics['pair_match_rate']:.2f}  lr={lr:.2e}"
+            f"pair_match={train_metrics['pair_match_rate']:.2f}  "
+            f"kl_agree={train_metrics['kl_agreement_rate']:.2f}  lr={lr:.2e}"
         )
 
         ckpt_state = {
