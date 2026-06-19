@@ -1,7 +1,7 @@
 Dataset,Modality,Rows,FST known,FST%,FST source,Class distribution
-HIBA + Derm7pt (paired train),paired,738,687,93%,ground-truth,melanoma=206  nevus=433  basal cell carcinoma=99
-HIBA + Derm7pt (paired val),paired,106,103,97%,ground-truth,melanoma=30  nevus=62  basal cell carcinoma=14
-HIBA + Derm7pt (paired test),paired,211,198,94%,ground-truth,melanoma=59  nevus=124  basal cell carcinoma=28
+HIBA + Derm7pt (paired train),paired,1476,1374,93%,ground-truth,melanoma=412  nevus=866  basal cell carcinoma=198
+HIBA + Derm7pt (paired val),paired,212,206,97%,ground-truth,melanoma=60  nevus=124  basal cell carcinoma=28
+HIBA + Derm7pt (paired test),paired,422,396,94%,ground-truth,melanoma=118  nevus=248  basal cell carcinoma=56
 HIBA residual clin (train),clinical,26,25,96%,ground-truth,melanoma=11  nevus=6  basal cell carcinoma=9
 HIBA residual clin (val),clinical,4,4,100%,ground-truth,melanoma=2  nevus=1  basal cell carcinoma=1
 HIBA residual clin (test),clinical,8,8,100%,ground-truth,melanoma=3  nevus=2  basal cell carcinoma=3
