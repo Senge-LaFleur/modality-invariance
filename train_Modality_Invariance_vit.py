@@ -142,7 +142,7 @@ CFG = {
     'warmup_epochs': 5,      # update as needed
     'aug_probability': 0.85,
 
-    'lambda_cls':      0.8,
+    'lambda_cls':      1.0,
     'lambda_conf':     0.5,
     'lambda_skin':     0.3,  
     'lambda_con':      1.0,
