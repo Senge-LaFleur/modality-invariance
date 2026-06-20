@@ -179,7 +179,7 @@ def build_loaders(cfg, seed=42):
         return pd.read_csv(p) if p.exists() else pd.DataFrame()
 
     # Load CSV files
-    paired_train = _load_csv('paired_train.csv')
+    paired_train = _load_csv('paired_train_update.csv')
     clin_train   = _load_csv('clin_train.csv')
     derm_train   = _load_csv('derm_train.csv')
 
