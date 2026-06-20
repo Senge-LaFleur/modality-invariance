@@ -305,11 +305,27 @@ def build_loaders(cfg, seed=42):
     img_size = cfg.get('img_size', 224)
 
     # Transforms
+    #
+    # FIX: aug_probability was defined in CFG but never actually used —
+    # RandomResizedCrop/ColorJitter always applied, and the flips had
+    # their own fixed, independent probabilities (0.5/0.3) baked in.
+    # aug_probability=0.85 is now applied literally as written: 85% of
+    # images get the FULL augmentation stack (crop + both flips +
+    # jitter) applied together as one unit; the other 15% pass through
+    # with only resize (no augmentation at all). This is a single gate,
+    # not four independent ones — an image is never "partially"
+    # augmented under this scheme. (Each transform inside the gate uses
+    # p=1.0 since the outer RandomApply already made the augment/no-augment
+    # decision; only RandomResizedCrop is itself stochastic on top of that.)
+    aug_p = cfg.get('aug_probability', 0.85)
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(img_size, scale=(0.85, 1.0)),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomVerticalFlip(p=0.3),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+        transforms.Resize((img_size, img_size)),
+        transforms.RandomApply([
+            transforms.RandomResizedCrop(img_size, scale=(0.85, 1.0)),
+            transforms.RandomHorizontalFlip(p=1.0),
+            transforms.RandomVerticalFlip(p=1.0),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+        ], p=aug_p),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])

@@ -28,7 +28,7 @@ _RESNET18_FEAT_DIM = 512
 _VIT_SMALL_FEAT_DIM = 384  
 
 
-def compute_class_weights(csv_dir, num_classes=3):
+def compute_class_weights(csv_dir, num_classes=2):
     """Compute effective number class weights from all training CSVs."""
     try:
         csv_dir = Path(csv_dir)
@@ -175,13 +175,38 @@ class DualResNet18(_DualEncoderForwardMixin, nn.Module):
     """
     Dual ResNet-18 encoder with optional projection head.
     """
-    def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True):
+    def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True,
+                 drop_block_rate=0.1, classifier_dropout=0.4):
         super().__init__()
+        # FIX (overfitting, ported from DualViT): tr_acc=1.0 with
+        # declining val_acc on the ViT run was traced to zero internal
+        # backbone regularization. ViT uses drop_path_rate (stochastic
+        # depth on transformer blocks); torchvision's resnet18 has no
+        # equivalent hook since it isn't built from drop-path-able
+        # residual blocks. The CNN-appropriate equivalent is
+        # nn.Dropout2d inserted after each residual stage (layer2-4) —
+        # zeroes out entire feature CHANNELS (not just elements, which
+        # would do almost nothing on spatially-correlated conv
+        # features), forcing the network to not over-rely on any single
+        # channel. Same drop_block_rate applied identically to both
+        # backbones so neither modality is regularized more than the
+        # other (matches DualViT's symmetric treatment of
+        # clinical_vit/derm_vit).
         weights = ResNet18_Weights.DEFAULT if pretrained else None
         self.clinical_backbone = resnet18(weights=weights)
         self.derm_backbone = resnet18(weights=weights)
         self.clinical_backbone.fc = nn.Identity()
         self.derm_backbone.fc = nn.Identity()
+
+        if drop_block_rate > 0:
+            for backbone in (self.clinical_backbone, self.derm_backbone):
+                backbone.layer2 = nn.Sequential(backbone.layer2, nn.Dropout2d(drop_block_rate))
+                backbone.layer3 = nn.Sequential(backbone.layer3, nn.Dropout2d(drop_block_rate))
+                backbone.layer4 = nn.Sequential(backbone.layer4, nn.Dropout2d(drop_block_rate))
+                # layer1 deliberately skipped — early/low-level features
+                # benefit least from this and dropping them too
+                # aggressively can hurt convergence (mirrors timm's ViT
+                # behavior of using ~0 drop_path at the first block).
 
         feat_dim = _RESNET18_FEAT_DIM
         self.use_projection = use_projection
@@ -191,9 +216,11 @@ class DualResNet18(_DualEncoderForwardMixin, nn.Module):
             self.proj_head = nn.Identity()
             embed_dim = feat_dim
 
-        self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
+        # FIX (overfitting): classifier dropout raised 0.3 -> configurable
+        # (default 0.4), matching the DualViT change.
+        self.classifier = nn.Sequential(nn.Dropout(classifier_dropout), nn.Linear(embed_dim, num_classes))
         self.skin_clf = nn.Sequential(
-            nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.2),
+            nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.3),
             nn.Linear(256, num_skin_types)
         )
 
@@ -213,11 +240,28 @@ class DualViT(_DualEncoderForwardMixin, nn.Module):
     """
     Dual ViT-small encoder with optional projection head.
     """
-    def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True):
+    def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True,
+                 drop_path_rate=0.2, classifier_dropout=0.4):
         super().__init__()
         vit_name = "vit_small_patch16_224"
-        self.clinical_vit = timm.create_model(vit_name, pretrained=pretrained, num_classes=0)
-        self.derm_vit = timm.create_model(vit_name, pretrained=pretrained, num_classes=0)
+        # FIX (overfitting): tr_acc hit 1.0 well before epoch 100 while
+        # val_acc plateaued then declined (0.8407 -> 0.8070 -> 0.8007 in
+        # the last 4 epochs) — classic overfitting signature on a ~2500
+        # image dataset with two full ViT-Small backbones (no internal
+        # regularization previously: drop_rate/drop_path_rate both
+        # defaulted to 0.0). drop_path_rate enables stochastic depth,
+        # timm's standard ViT regularizer — randomly drops entire
+        # transformer blocks' residual contributions during training,
+        # forcing the network to not rely on any single block too
+        # heavily. Same drop_path_rate applied to both backbones so
+        # neither modality is regularized more than the other (keeping
+        # the alignment losses' job fair across modalities).
+        self.clinical_vit = timm.create_model(
+            vit_name, pretrained=pretrained, num_classes=0, drop_path_rate=drop_path_rate
+        )
+        self.derm_vit = timm.create_model(
+            vit_name, pretrained=pretrained, num_classes=0, drop_path_rate=drop_path_rate
+        )
         feat_dim = _VIT_SMALL_FEAT_DIM
 
         self.use_projection = use_projection
@@ -227,9 +271,12 @@ class DualViT(_DualEncoderForwardMixin, nn.Module):
             self.proj_head = nn.Identity()
             embed_dim = feat_dim
 
-        self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
+        # FIX (overfitting): classifier dropout raised 0.3 -> configurable
+        # (default 0.4); this was previously the ONLY regularization in
+        # the entire classification path besides weight_decay.
+        self.classifier = nn.Sequential(nn.Dropout(classifier_dropout), nn.Linear(embed_dim, num_classes))
         self.skin_clf = nn.Sequential(
-            nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.2),
+            nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.3),
             nn.Linear(256, num_skin_types)
         )
 
@@ -407,10 +454,9 @@ def symmetric_kl_loss(logits_c, logits_d):
     whether z_c and z_d land in the same region — Lcls only requires
     each embedding to be individually linearly separable by class.
     With Lcls weighted far above Lcon/LMI, the optimizer's easiest path
-    is to let clinical_vit and derm_vit specialize into two separate
-    "good enough for classification" subspaces, which is exactly what
-    the t-SNE plots showed (clean class separation, but clinical/derm
-    forming separate clusters within each class).
+    is to let clinical_vit/clinical_backbone and derm_vit/derm_backbone
+    specialize into two separate "good enough for classification"
+    subspaces.
 
     This term penalizes the classifier for disagreeing on the clinical
     vs. derm embedding of the same lesion. The only way to make this
@@ -419,15 +465,15 @@ def symmetric_kl_loss(logits_c, logits_d):
     flowing through the same parameters classification already uses,
     instead of competing with it.
 
-    KNOWN FAILURE MODE (verified empirically, see chat): symmetric KL
-    between two near-uniform ("I don't know") distributions is also
-    near zero — collapse toward low-confidence predictions is a cheap
-    way to satisfy this loss in isolation. This is NOT a free pass:
-    Lcls (cross-entropy) is heavily penalized by uniform predictions,
-    and as long as lambda_cls is kept meaningfully larger than
-    lambda_kl, that path costs far more in Lcls than it saves here.
-    Always use this ADDITIVELY alongside Lcls, never as a substitute,
-    and keep lambda_kl < lambda_cls.
+    KNOWN FAILURE MODE (verified empirically): symmetric KL between two
+    near-uniform ("I don't know") distributions is also near zero —
+    collapse toward low-confidence predictions is a cheap way to
+    satisfy this loss in isolation. This is NOT a free pass: Lcls
+    (cross-entropy) is heavily penalized by uniform predictions, and as
+    long as lambda_cls is kept meaningfully larger than lambda_kl, that
+    path costs far more in Lcls than it saves here. Always use this
+    ADDITIVELY alongside Lcls, never as a substitute, and keep
+    lambda_kl < lambda_cls.
 
     Args:
         logits_c: [N, C] classifier logits from clinical embeddings
