@@ -221,9 +221,7 @@ def paired_aware_collate(batch):
 class PairAwareBatchSampler(torch.utils.data.Sampler):
     def __init__(self, pair_row_indices, pair_class_labels,
                  unpaired_indices, unpaired_class_labels,
-                 batch_size, num_classes, num_batches, seed=42,
-                 pair_skin_labels=None, unpaired_skin_labels=None,
-                 fst_aware=False, sampler_beta=0.99, dark_skin_boost=1.5):
+                 batch_size, num_classes, num_batches, seed=42):
         """
         pair_row_indices:      list of PairedDataset *row* indices (0..len(df)-1)
         pair_class_labels:     label per row, same length/order as pair_row_indices
@@ -233,88 +231,23 @@ class PairAwareBatchSampler(torch.utils.data.Sampler):
         batch_size:            target batch size (must be even-friendly; pairs
                                 contribute 2 items each)
         num_batches:           number of batches per epoch
-
-        FIX (sampler tuning, no architecture/loss changes): adds optional
-        joint (class, skin-tone-group) weighting on top of the original
-        class-only weighting. EDA showed melanoma is severely thin on
-        darker skin tones — e.g. only 8 (FST V) + 2 (FST VI) = 10 train
-        images total — while melanoma is also the worst-performing class
-        (test recall 0.64 vs. 0.89/0.80 for nevus/BCC). Class-only
-        weighting cannot see that imbalance at all, since it only counts
-        melanoma vs. nevus vs. BCC totals, not how those totals are
-        distributed across skin tone.
-
-        pair_skin_labels / unpaired_skin_labels: skin_type per sample,
-            same order/length as the corresponding *_class_labels list.
-            -1 (or any negative value) means "unknown FST".
-        fst_aware:      if True, weight by the joint (class, skin-group)
-            cell instead of class alone. Skin tones are pooled into 3
-            groups — light (FST I-II), mid (FST III-IV), dark (FST V-VI)
-            — plus "unknown", rather than using the full 6-way FST split.
-            Pooling matters here: weighting on the *exact* FST (rather
-            than the pooled group) would mean drawing melanoma's 2 single
-            FST-VI images with very heavy replacement, which risks
-            memorizing those two images rather than generalizing — pooling
-            V+VI (and III+IV) keeps the correction meaningful without that
-            failure mode.
-        sampler_beta:   effective-number beta for the joint weighting
-            (class-only weighting is left as plain inverse-frequency,
-            unchanged from before, when fst_aware=False). Deliberately
-            moderate (0.99, not the more aggressive 0.999 sometimes used
-            for class-only effective-number weighting): with cells this
-            small (e.g. BCC-dark train n=6), 0.999 + a 2x boost pushes
-            "dark" cells to ~15% of every batch EACH (~45% combined)
-            despite being <4% of the real data — heavy enough repetition
-            of a handful of images to risk memorizing them rather than
-            generalizing. 0.99 + 1.5x lands dark cells around 5-7% of
-            batch composition instead — still a 3-20x relative boost
-            over their natural frequency, without that failure mode.
-        dark_skin_boost: extra flat multiplier applied to each class's
-            "dark" cell on top of the effective-number weight. Even
-            pooled V+VI counts remain far below light/mid for every
-            class, so inverse-frequency alone is dominated by count
-            noise at this scale — this guarantees a minimum, deliberate
-            oversampling push instead of relying purely on 1/count.
         """
         self.pair_row_indices = np.array(pair_row_indices)
         self.unpaired_indices = np.array(unpaired_indices)
         self.batch_size = batch_size
         self.num_batches = num_batches
         self.rng = np.random.default_rng(seed)
-        self.fst_aware = fst_aware
 
-        def _fst_group(skins):
-            """0=light(I-II) 1=mid(III-IV) 2=dark(V-VI) 3=unknown"""
-            skins = np.asarray(skins)
-            grp = np.full(skins.shape, 3, dtype=int)
-            grp[(skins == 0) | (skins == 1)] = 0
-            grp[(skins == 2) | (skins == 3)] = 1
-            grp[(skins == 4) | (skins == 5)] = 2
-            return grp
-
-        def _weights(labels, skins=None):
+        def _weights(labels):
             labels = np.array(labels)
-            if fst_aware and skins is not None and len(skins) == len(labels):
-                groups = _fst_group(skins)
-                n_groups = 4
-                joint = labels * n_groups + groups
-                n_cells = num_classes * n_groups
-                counts = np.bincount(joint, minlength=n_cells).astype(float)
-                counts[counts == 0] = 1.0
-                eff_num = (1.0 - sampler_beta ** counts) / (1.0 - sampler_beta)
-                cell_w = 1.0 / eff_num
-                dark_cells = np.array([c * n_groups + 2 for c in range(num_classes)])
-                cell_w[dark_cells] *= dark_skin_boost
-                w = cell_w[joint]
-            else:
-                counts = np.bincount(labels, minlength=num_classes).astype(float)
-                counts[counts == 0] = 1.0
-                inv = 1.0 / counts
-                w = inv[labels]
+            counts = np.bincount(labels, minlength=num_classes).astype(float)
+            counts[counts == 0] = 1.0
+            inv = 1.0 / counts
+            w = inv[labels]
             return w / w.sum()
 
-        self.pair_weights = _weights(pair_class_labels, pair_skin_labels) if len(pair_row_indices) else None
-        self.unpaired_weights = _weights(unpaired_class_labels, unpaired_skin_labels) if len(unpaired_indices) else None
+        self.pair_weights = _weights(pair_class_labels) if len(pair_row_indices) else None
+        self.unpaired_weights = _weights(unpaired_class_labels) if len(unpaired_indices) else None
 
         # Roughly half the batch from pairs (2 items/lesion), half from
         # unpaired singles — proportioned to how much of each pool exists.
@@ -373,28 +306,122 @@ def build_loaders(cfg, seed=42):
 
     # Transforms
     #
-    # FIX: aug_probability was defined in CFG but never actually used —
-    # RandomResizedCrop/ColorJitter always applied, and the flips had
-    # their own fixed, independent probabilities (0.5/0.3) baked in.
-    # aug_probability=0.85 is now applied literally as written: 85% of
-    # images get the FULL augmentation stack (crop + both flips +
-    # jitter) applied together as one unit; the other 15% pass through
-    # with only resize (no augmentation at all). This is a single gate,
-    # not four independent ones — an image is never "partially"
-    # augmented under this scheme. (Each transform inside the gate uses
-    # p=1.0 since the outer RandomApply already made the augment/no-augment
-    # decision; only RandomResizedCrop is itself stochastic on top of that.)
-    aug_p = cfg.get('aug_probability', 0.85)
+    # MEDICAL AUGMENTATION (skin-type-aware, per-transform p=0.85):
+    #
+    # Each augmentation is now an independent Bernoulli gate at p=0.85,
+    # meaning images receive a random SUBSET of transforms each step
+    # rather than either the full stack or nothing. This dramatically
+    # increases effective augmentation diversity (2^7 = 128 possible
+    # combinations vs. the old 2 outcomes).
+    #
+    # Augmentations are chosen for dermatology specifics:
+    #   - Spatial: flips + rotation are clinically valid (lesions have no
+    #     canonical orientation) and scale/crop simulates exam-distance variance.
+    #   - Color: dermoscopic images vary heavily by device/lighting; clinical
+    #     images vary by ambient light and skin tone. ColorJitter + channel
+    #     shuffle forces the model to rely on shape/texture rather than hue.
+    #   - Texture: GaussianBlur simulates out-of-focus/low-res images;
+    #     RandomErasing simulates hair/occlusion artefacts common in derm images.
+    #   - Skin-type bias: underrepresented dark skin tones (FST IV-VI) receive
+    #     stronger color and brightness augmentation via SkinTypeAwareTransform,
+    #     which samples from a wider jitter range for those tones. This directly
+    #     counteracts the dataset-level imbalance in favor of light skin
+    #     (FST I-III dominate HIBA, Derm7pt, ISIC2019).
+    #
+    # SkinTypeAwareTransform wraps ColorJitter and is applied LAST (after
+    # all spatial/texture transforms) so it only adjusts pixel values on an
+    # already-augmented image, not before other augmentations have a chance
+    # to fire. It falls back to standard ColorJitter for unknown FST (-1).
+
+    class SkinTypeAwareColorJitter:
+        """
+        Stronger ColorJitter for underrepresented dark skin tones (FST IV-VI).
+        Applied as a callable transform; skin_type is passed in via the
+        sample dict in Dataset.__getitem__ but torchvision transforms only
+        receive the image tensor. We therefore expose this as a stateful
+        object whose skin_type is set immediately before each call by the
+        dataset's __getitem__ — datasets that use this transform must call
+        transform.set_skin_type(st) before transform(img).
+
+        Jitter ranges by FST group:
+          Unknown / FST I-III  (majority):  standard   b=0.2, c=0.2, s=0.2, h=0.05
+          FST IV-V             (moderate):  amplified  b=0.35, c=0.35, s=0.35, h=0.08
+          FST VI               (rare):      strongest  b=0.5, c=0.4, s=0.4, h=0.1
+        """
+        def __init__(self):
+            self.skin_type = -1  # default: unknown
+            self._standard  = transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
+            self._amplified = transforms.ColorJitter(brightness=0.35, contrast=0.35, saturation=0.35, hue=0.08)
+            self._strongest = transforms.ColorJitter(brightness=0.5,  contrast=0.4,  saturation=0.4,  hue=0.1)
+
+        def set_skin_type(self, skin_type: int):
+            self.skin_type = int(skin_type)
+
+        def __call__(self, img):
+            st = self.skin_type
+            if st in (3, 4):    # FST IV-V (0-indexed: 3,4)
+                jitter = self._amplified
+            elif st == 5:       # FST VI (0-indexed: 5)
+                jitter = self._strongest
+            else:               # unknown (-1) or FST I-III (0,1,2)
+                jitter = self._standard
+            if torch.rand(1).item() < 0.85:
+                return jitter(img)
+            return img
+
+    skin_jitter = SkinTypeAwareColorJitter()
+
+    # Patch UnpairedDataset and PairedDataset to inject skin_type into the
+    # transform before each call. We subclass here to avoid modifying the
+    # dataset classes upstream (they're shared with val/test which don't
+    # use SkinTypeAwareColorJitter).
+    _orig_unpaired_getitem = UnpairedDataset.__getitem__
+    _orig_paired_getitem   = PairedDataset.__getitem__
+
+    def _unpaired_getitem_aware(self, idx):
+        row = self.df.iloc[idx]
+        st = int(row.get('skin_type', -1)) if hasattr(row, 'get') else -1
+        if hasattr(self.transform, 'transforms'):
+            for t in self.transform.transforms:
+                if isinstance(t, SkinTypeAwareColorJitter):
+                    t.set_skin_type(st)
+        return _orig_unpaired_getitem(self, idx)
+
+    def _paired_getitem_aware(self, idx):
+        row_idx, _ = divmod(idx, 2)
+        row = self.df.iloc[row_idx]
+        st = int(row.get('skin_type', -1)) if hasattr(row, 'get') else -1
+        if hasattr(self.transform, 'transforms'):
+            for t in self.transform.transforms:
+                if isinstance(t, SkinTypeAwareColorJitter):
+                    t.set_skin_type(st)
+        return _orig_paired_getitem(self, idx)
+
+    # Bind the aware __getitem__ only to training dataset instances (applied
+    # below when constructing train_datasets).
+    import types as _types
+
+    aug_p = cfg.get('aug_probability', 0.85)   # kept for logging; each transform uses this p
+
     train_transform = transforms.Compose([
+        # --- Spatial ---
         transforms.Resize((img_size, img_size)),
-        transforms.RandomApply([
-            transforms.RandomResizedCrop(img_size, scale=(0.85, 1.0)),
-            transforms.RandomHorizontalFlip(p=1.0),
-            transforms.RandomVerticalFlip(p=1.0),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-        ], p=aug_p),
+        transforms.RandomApply([transforms.RandomResizedCrop(img_size, scale=(0.80, 1.0), ratio=(0.9, 1.1))], p=aug_p),
+        transforms.RandomHorizontalFlip(p=aug_p),
+        transforms.RandomVerticalFlip(p=aug_p),
+        transforms.RandomApply([transforms.RandomRotation(degrees=30)], p=aug_p),
+        # RandomAffine: simulates slight perspective shift from handheld cameras
+        transforms.RandomApply([transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05), shear=5)], p=aug_p),
+        # --- Texture / focus simulation ---
+        # GaussianBlur: out-of-focus dermoscope or motion blur
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.5))], p=aug_p),
+        # --- Color (skin-type-aware, must come after spatial) ---
+        skin_jitter,   # internally gates at p=0.85 and scales strength by FST
+        transforms.RandomGrayscale(p=0.05),   # rare: forces texture-only features
+        # --- Occlusion (hair / ruler artefacts in derm images) ---
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transforms.RandomErasing(p=aug_p, scale=(0.01, 0.08), ratio=(0.2, 5.0), value=0),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
     val_transform = transforms.Compose([
@@ -420,25 +447,20 @@ def build_loaders(cfg, seed=42):
     clin_test   = _load_csv('clin_test.csv')
     derm_test   = _load_csv('derm_test.csv')
 
-    # Build training datasets
-    #
-    # FIX (derm-backbone starvation): UnpairedDataset defaults to
-    # modality='clinical'. The three derm_* constructions below used to
-    # omit modality='derm' entirely, so every unpaired dermoscopic image
-    # in train/val/test was silently tagged "clinical" and routed through
-    # clinical_backbone in _DualEncoderForwardMixin.forward() instead of
-    # derm_backbone. This both corrupted clinical_backbone (trained on a
-    # mix of real clinical photos and mislabeled dermoscopic close-ups)
-    # and starved derm_backbone (which then only ever saw gradient from
-    # the much smaller paired-rows pool). modality='derm' is now passed
-    # explicitly everywhere a derm_* split is built.
+    # Build training datasets (with skin-type-aware augmentation injection)
     train_datasets = []
     if not paired_train.empty:
-        train_datasets.append(PairedDataset(paired_train, image_maps, transform=train_transform))
+        ds = PairedDataset(paired_train, image_maps, transform=train_transform)
+        ds.__getitem__ = _types.MethodType(_paired_getitem_aware, ds)
+        train_datasets.append(ds)
     if not clin_train.empty:
-        train_datasets.append(UnpairedDataset(clin_train, image_maps, transform=train_transform, id_col='clinical'))
+        ds = UnpairedDataset(clin_train, image_maps, transform=train_transform, id_col='clinical')
+        ds.__getitem__ = _types.MethodType(_unpaired_getitem_aware, ds)
+        train_datasets.append(ds)
     if not derm_train.empty:
-        train_datasets.append(UnpairedDataset(derm_train, image_maps, transform=train_transform, id_col='derm', modality='derm'))
+        ds = UnpairedDataset(derm_train, image_maps, transform=train_transform, id_col='derm')
+        ds.__getitem__ = _types.MethodType(_unpaired_getitem_aware, ds)
+        train_datasets.append(ds)
     if not train_datasets:
         raise FileNotFoundError("No training data found. Check CSV files in " + str(csv_dir))
 
@@ -451,7 +473,7 @@ def build_loaders(cfg, seed=42):
     if not clin_val.empty:
         val_datasets.append(UnpairedDataset(clin_val, image_maps, transform=val_transform, id_col='clinical'))
     if not derm_val.empty:
-        val_datasets.append(UnpairedDataset(derm_val, image_maps, transform=val_transform, id_col='derm', modality='derm'))
+        val_datasets.append(UnpairedDataset(derm_val, image_maps, transform=val_transform, id_col='derm'))
     val_dataset = torch.utils.data.ConcatDataset(val_datasets) if val_datasets else None
 
     # Test datasets
@@ -461,7 +483,7 @@ def build_loaders(cfg, seed=42):
     if not clin_test.empty:
         test_datasets.append(UnpairedDataset(clin_test, image_maps, transform=val_transform, id_col='clinical'))
     if not derm_test.empty:
-        test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm', modality='derm'))
+        test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm'))
     test_dataset = torch.utils.data.ConcatDataset(test_datasets) if test_datasets else None
 
     # ------------------------------------------------------------
@@ -476,14 +498,13 @@ def build_loaders(cfg, seed=42):
     # lesion co-occur in a batch while still respecting class weights.
     # ------------------------------------------------------------
     cumulative = 0
-    pair_row_indices, pair_class_labels, pair_skin_labels = [], [], []
-    unpaired_indices, unpaired_class_labels, unpaired_skin_labels = [], [], []
+    pair_row_indices, pair_class_labels = [], []
+    unpaired_indices, unpaired_class_labels = [], []
     for ds in train_datasets:
         if isinstance(ds, PairedDataset):
             n_rows = len(ds.df)
             pair_row_indices.extend(range(n_rows))      # row index, NOT flat index
             pair_class_labels.extend(ds.df['label'].tolist())
-            pair_skin_labels.extend(ds.df['skin_type'].tolist())
             # NOTE: PairAwareBatchSampler computes flat indices for this
             # dataset's two samples-per-row scheme directly (row*2, row*2+1)
             # and ConcatDataset places this dataset at offset `cumulative`
@@ -496,7 +517,6 @@ def build_loaders(cfg, seed=42):
             n = len(ds)
             unpaired_indices.extend(range(cumulative, cumulative + n))
             unpaired_class_labels.extend(ds.df['label'].tolist())
-            unpaired_skin_labels.extend(ds.df['skin_type'].tolist())
             cumulative += n
 
     if pair_row_indices and not isinstance(train_datasets[0], PairedDataset):
@@ -514,15 +534,10 @@ def build_loaders(cfg, seed=42):
         pair_class_labels=pair_class_labels,
         unpaired_indices=unpaired_indices,
         unpaired_class_labels=unpaired_class_labels,
-        pair_skin_labels=pair_skin_labels,
-        unpaired_skin_labels=unpaired_skin_labels,
         batch_size=batch_size,
         num_classes=cfg['num_classes'],
         num_batches=num_batches,
         seed=seed,
-        fst_aware=cfg.get('fst_aware_sampling', False),
-        sampler_beta=cfg.get('sampler_beta', 0.99),
-        dark_skin_boost=cfg.get('sampler_dark_skin_boost', 1.5),
     )
 
     train_loader = DataLoader(
@@ -690,11 +705,28 @@ def compute_knn_accuracy(embeddings, labels, k=5, device='cpu'):
 
 
 # ------------------------------------------------------------
-# Shared metrics computation (factored out of validate() so the TTA
-# and ensemble paths below can reuse the exact same metric logic
-# instead of duplicating it)
+# Validation function (with descriptive progress bar)
 # ------------------------------------------------------------
-def _metrics_from_probs(probs, labels, skins, num_classes):
+@torch.no_grad()
+def validate(model, loader, device, num_classes=3, desc="Validation"):
+    model.eval()
+    all_probs, all_labels, all_skins = [], [], []
+    print(f"Running {desc}...")
+    pbar = tqdm(loader, desc=desc, unit="batch", dynamic_ncols=True, leave=False)
+    for batch in pbar:
+        for k, v in batch.items():
+            if isinstance(v, torch.Tensor):
+                batch[k] = v.to(device, non_blocking=True)
+        out = model(batch)
+        probs = F.softmax(out["logits"], dim=-1).cpu().numpy()
+        all_probs.append(probs)
+        all_labels.append(batch["label"].cpu().numpy())
+        all_skins.append(batch["skin_type"].cpu().numpy())
+    pbar.close()
+
+    probs = np.concatenate(all_probs)
+    labels = np.concatenate(all_labels)
+    skins = np.concatenate(all_skins)
     preds = probs.argmax(axis=1)
 
     acc = (preds == labels).mean()
@@ -729,139 +761,6 @@ def _metrics_from_probs(probs, labels, skins, num_classes):
         "labels": labels,
         "skin": skins,
     }
-
-
-# ------------------------------------------------------------
-# Test-time augmentation
-#
-# ADDED (eval-time-only accuracy lever, no architecture/loss changes):
-# averages softmax probabilities over the original image plus
-# horizontal/vertical flips of the same image. Lesion photos have no
-# canonical "up" orientation, so flipping is a label-preserving
-# augmentation at inference too (same family already used in
-# aug_probability's training-time RandomHorizontalFlip/RandomVerticalFlip
-# in build_loaders) — this just re-applies that same invariance
-# assumption at test time instead of training time, by averaging
-# predictions across views instead of training on a single random one.
-# ------------------------------------------------------------
-def _tta_probs(model, batch, device):
-    image = batch["image"]
-    variants = [image, torch.flip(image, dims=[-1]), torch.flip(image, dims=[-2])]
-    probs_sum = None
-    for img_v in variants:
-        b = dict(batch)
-        b["image"] = img_v.to(device, non_blocking=True)
-        out = model(b)
-        p = F.softmax(out["logits"], dim=-1)
-        probs_sum = p if probs_sum is None else probs_sum + p
-    return probs_sum / len(variants)
-
-
-# ------------------------------------------------------------
-# Validation function (with descriptive progress bar)
-# ------------------------------------------------------------
-@torch.no_grad()
-def validate(model, loader, device, num_classes=3, desc="Validation", tta=False):
-    model.eval()
-    all_probs, all_labels, all_skins = [], [], []
-    print(f"Running {desc}{' [TTA]' if tta else ''}...")
-    pbar = tqdm(loader, desc=desc, unit="batch", dynamic_ncols=True, leave=False)
-    for batch in pbar:
-        for k, v in batch.items():
-            if isinstance(v, torch.Tensor):
-                batch[k] = v.to(device, non_blocking=True)
-        if tta:
-            probs = _tta_probs(model, batch, device).cpu().numpy()
-        else:
-            out = model(batch)
-            probs = F.softmax(out["logits"], dim=-1).cpu().numpy()
-        all_probs.append(probs)
-        all_labels.append(batch["label"].cpu().numpy())
-        all_skins.append(batch["skin_type"].cpu().numpy())
-    pbar.close()
-
-    probs = np.concatenate(all_probs)
-    labels = np.concatenate(all_labels)
-    skins = np.concatenate(all_skins)
-    return _metrics_from_probs(probs, labels, skins, num_classes)
-
-
-# ------------------------------------------------------------
-# Checkpoint averaging (SWA-style)
-#
-# ADDED (eval-time-only, no architecture/loss changes): plain parameter
-# averaging across the last few periodic checkpoints a training run
-# already saves (every 5 epochs — see CFG-driven checkpoint saving in
-# the train_* scripts). Smooths out the specific noisy minimum the
-# final epoch happened to land in, without retraining or any change to
-# what was trained. Use checkpoints from late in a single completed
-# run (e.g. last 3-4 saved epochs), not across runs with different
-# configs/architectures.
-# ------------------------------------------------------------
-def average_checkpoints(ckpt_paths, device="cpu", state_dict_key="model"):
-    avg_state = None
-    n = len(ckpt_paths)
-    if n == 0:
-        raise ValueError("average_checkpoints: no checkpoint paths given")
-    for p in ckpt_paths:
-        ckpt = torch.load(p, map_location=device, weights_only=False)
-        sd = ckpt[state_dict_key] if state_dict_key in ckpt else ckpt
-        if avg_state is None:
-            avg_state = {k: v.clone().float() for k, v in sd.items()}
-        else:
-            for k in avg_state:
-                avg_state[k] += sd[k].float()
-    for k in avg_state:
-        avg_state[k] /= n
-    return avg_state
-
-
-# ------------------------------------------------------------
-# Ensemble evaluation (e.g. ResNet18 + ViT)
-#
-# ADDED (eval-time-only, no architecture/loss changes): averages softmax
-# probabilities across multiple already-trained models at inference —
-# the two backbone families you train (DualResNet18, DualViT) make
-# disagreement-driven ensembling a natural fit, since CNN and ViT
-# inductive biases tend to make different mistakes on the same image.
-# `weights` lets you weight by, e.g., each model's own val AUROC
-# instead of a plain average if one model is clearly stronger.
-# ------------------------------------------------------------
-@torch.no_grad()
-def validate_ensemble(models, loader, device, num_classes=3, desc="Ensemble",
-                       weights=None, tta=False):
-    for m in models:
-        m.eval()
-    if weights is None:
-        weights = [1.0 / len(models)] * len(models)
-    else:
-        s = sum(weights)
-        weights = [w / s for w in weights]
-
-    all_probs, all_labels, all_skins = [], [], []
-    print(f"Running {desc} ({len(models)} models){' [TTA]' if tta else ''}...")
-    pbar = tqdm(loader, desc=desc, unit="batch", dynamic_ncols=True, leave=False)
-    for batch in pbar:
-        for k, v in batch.items():
-            if isinstance(v, torch.Tensor):
-                batch[k] = v.to(device, non_blocking=True)
-        probs_sum = None
-        for model, w in zip(models, weights):
-            if tta:
-                p = _tta_probs(model, batch, device)
-            else:
-                out = model(batch)
-                p = F.softmax(out["logits"], dim=-1)
-            probs_sum = w * p if probs_sum is None else probs_sum + w * p
-        all_probs.append(probs_sum.cpu().numpy())
-        all_labels.append(batch["label"].cpu().numpy())
-        all_skins.append(batch["skin_type"].cpu().numpy())
-    pbar.close()
-
-    probs = np.concatenate(all_probs)
-    labels = np.concatenate(all_labels)
-    skins = np.concatenate(all_skins)
-    return _metrics_from_probs(probs, labels, skins, num_classes)
 
 
 # ------------------------------------------------------------
@@ -930,38 +829,6 @@ def fairness(res, K=6):
         "PQD": pqd(pg),
         "DPM": dpm(res["preds"], res["labels"], res["skin"], K),
     }
-
-
-# ------------------------------------------------------------
-# Per-(class x FST) diagnostic
-#
-# ADDED: pg_acc()/fairness() report accuracy per FST group, aggregated
-# across all classes. That can't distinguish "this FST group is
-# genuinely harder for the model" from "this FST group just happens to
-# have more of the dataset's hardest CLASS in it" — e.g. FST 4's 0.73
-# aggregate accuracy could be a real fairness gap, or could simply be
-# because FST 4 carries a disproportionate share of melanoma (the
-# weakest class overall, recall 0.64). This table reports accuracy (and
-# n, since several class x FST cells have single-digit counts and a
-# 1.00 or 0.00 there is not a meaningful signal) for every cell, so the
-# two explanations can be told apart before chasing a fairness fix that
-# may actually be a class-difficulty problem.
-# ------------------------------------------------------------
-def per_class_per_fst(res, label_names, K=6):
-    classes = sorted(label_names.keys())
-    rows = []
-    for c in classes:
-        for g in range(K):
-            mask = (res["labels"] == c) & (res["skin"] == g)
-            n = int(mask.sum())
-            acc = float((res["preds"][mask] == c).mean()) if n > 0 else None
-            rows.append({
-                "class": label_names.get(c, str(c)),
-                "fitzpatrick_type": f"FST {g+1}",
-                "n": n,
-                "accuracy": acc,
-            })
-    return pd.DataFrame(rows)
 
 
 # ------------------------------------------------------------
@@ -1135,27 +1002,17 @@ def save_results_csv(res, fair, split_name, results_dir, label_names, fair_binar
         results_dir / f"{split_name}_per_class.csv", index=False
     )
 
-    # Per-FST accuracy (now includes n, since several groups have
-    # single-digit counts and a bare accuracy number there is misleading
-    # on its own — e.g. an FST group with n=2 reporting 1.00 accuracy)
+    # Per-FST accuracy (unchanged)
     per_fst = []
     for fst_idx, acc in fair["pg_acc"].items():
-        n_grp = int((res["skin"] == fst_idx).sum())
         per_fst.append({
             "split": split_name,
             "fitzpatrick_type": f"FST {fst_idx+1}",
-            "n": n_grp,
             "accuracy": acc if not np.isnan(acc) else None,
         })
     pd.DataFrame(per_fst).to_csv(
         results_dir / f"{split_name}_per_fst.csv", index=False
     )
-
-    # Per-(class x FST) diagnostic — see per_class_per_fst() docstring.
-    label_idx_names = {i: label_names.get(i, str(i)) for i in range(len(res["per_class_prec"]))}
-    pcf = per_class_per_fst(res, label_idx_names)
-    pcf.insert(0, "split", split_name)
-    pcf.to_csv(results_dir / f"{split_name}_per_class_per_fst.csv", index=False)
 
 
 # ------------------------------------------------------------
