@@ -2,8 +2,8 @@
 models_losses.py
 
 Defines:
-- Dual ResNet-18 encoder (with per-modality projection heads for modality invariance)
-- Dual ViT encoder (with per-modality projection heads)
+- Dual ResNet-18 encoder (with projection head for modality invariance)
+- Dual ViT encoder (with projection head)
 - Loss functions: SupConLoss, confusion_loss, skin_type_loss, mi_loss_vicreg,
   cls_loss_fn (label-smoothed weighted CE), mixup_embeddings.
 - Helper to compute class weights.
@@ -24,11 +24,11 @@ from pathlib import Path
 # ------------------------------------------------------------
 # Shared constants and helpers
 # ------------------------------------------------------------
-_RESNET18_FEAT_DIM = 384
+_RESNET18_FEAT_DIM = 512  
 _VIT_SMALL_FEAT_DIM = 384  
 
 
-def compute_class_weights(csv_dir, num_classes=3):
+def compute_class_weights(csv_dir, num_classes=2):
     """Compute effective number class weights from all training CSVs."""
     try:
         csv_dir = Path(csv_dir)
@@ -119,172 +119,173 @@ class ProjectionHead(nn.Module):
         return F.normalize(out, dim=-1)
 
 
+class _DualEncoderForwardMixin:
+    """
+    Shared forward() for DualResNet18 / DualViT.
+
+    FIX (pair-utilization rewrite): previously this method special-cased
+    `batch["paired"]` and averaged z_c/z_d into one embedding per paired
+    row, BEFORE the classifier — meaning a clinical+derm pair contributed
+    only ONE classification gradient (diluted by averaging) for what
+    were two real images. Up to 71% of training images were affected.
+
+    Now every sample in the batch — paired or not — is just one image
+    with a `modality` tag ('clinical' or 'derm'). Each gets its own
+    independent encode + classify pass, so every image contributes its
+    own full-weight Lcls term. Pairs are reconstructed downstream (in
+    train_epoch, via `pair_id` + PairAwareBatchSampler) purely for the
+    contrastive / modality-invariance losses, which operate on z_c/z_d
+    directly and don't need this method to know about pairing at all.
+    """
+
+    def forward(self, batch):
+        device = batch["label"].device
+        modality = batch["modality"]  # list[str] of len == batch_size
+        clinical_mask = torch.tensor(
+            [m == "clinical" for m in modality], dtype=torch.bool, device=device
+        )
+        derm_mask = ~clinical_mask
+
+        embed_dim = self.classifier[1].in_features
+        n = len(modality)
+        embeddings = torch.zeros(n, embed_dim, device=device)
+
+        out = {}
+
+        if clinical_mask.any():
+            clin_t = batch["image"][clinical_mask].to(device)
+            _, z_c_all = self.encode(clin_t, "clinical")
+            embeddings[clinical_mask] = z_c_all
+
+        if derm_mask.any():
+            derm_t = batch["image"][derm_mask].to(device)
+            _, z_d_all = self.encode(derm_t, "derm")
+            embeddings[derm_mask] = z_d_all
+
+        out["z"] = embeddings
+        out["logits"] = self.classifier(out["z"])
+        out["skin_logits"] = self.skin_clf(out["z"])
+        return out
+
+
 # ------------------------------------------------------------
 # Dual ResNet-18 Model (with projection head)
 # ------------------------------------------------------------
-class DualResNet18(nn.Module):
+class DualResNet18(_DualEncoderForwardMixin, nn.Module):
     """
-    Dual ResNet-18 encoder with per-modality projection heads.
-    Clinical embeddings are projected via proj_head_clinical;
-    dermoscopic embeddings via proj_head_derm. Both heads map into
-    the same shared embedding space (same out_dim).
+    Dual ResNet-18 encoder with optional projection head.
     """
-    def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True):
+    def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True,
+                 drop_block_rate=0.1, classifier_dropout=0.4):
         super().__init__()
+        # FIX (overfitting, ported from DualViT): tr_acc=1.0 with
+        # declining val_acc on the ViT run was traced to zero internal
+        # backbone regularization. ViT uses drop_path_rate (stochastic
+        # depth on transformer blocks); torchvision's resnet18 has no
+        # equivalent hook since it isn't built from drop-path-able
+        # residual blocks. The CNN-appropriate equivalent is
+        # nn.Dropout2d inserted after each residual stage (layer2-4) —
+        # zeroes out entire feature CHANNELS (not just elements, which
+        # would do almost nothing on spatially-correlated conv
+        # features), forcing the network to not over-rely on any single
+        # channel. Same drop_block_rate applied identically to both
+        # backbones so neither modality is regularized more than the
+        # other (matches DualViT's symmetric treatment of
+        # clinical_vit/derm_vit).
         weights = ResNet18_Weights.DEFAULT if pretrained else None
         self.clinical_backbone = resnet18(weights=weights)
         self.derm_backbone = resnet18(weights=weights)
         self.clinical_backbone.fc = nn.Identity()
         self.derm_backbone.fc = nn.Identity()
 
+        if drop_block_rate > 0:
+            for backbone in (self.clinical_backbone, self.derm_backbone):
+                backbone.layer2 = nn.Sequential(backbone.layer2, nn.Dropout2d(drop_block_rate))
+                backbone.layer3 = nn.Sequential(backbone.layer3, nn.Dropout2d(drop_block_rate))
+                backbone.layer4 = nn.Sequential(backbone.layer4, nn.Dropout2d(drop_block_rate))
+                # layer1 deliberately skipped — early/low-level features
+                # benefit least from this and dropping them too
+                # aggressively can hurt convergence (mirrors timm's ViT
+                # behavior of using ~0 drop_path at the first block).
+
         feat_dim = _RESNET18_FEAT_DIM
         self.use_projection = use_projection
         if use_projection:
-            self.proj_head_clinical = ProjectionHead(feat_dim, 1024, embed_dim)
-            self.proj_head_derm     = ProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head = ProjectionHead(feat_dim, 1024, embed_dim)
         else:
-            self.proj_head_clinical = nn.Identity()
-            self.proj_head_derm     = nn.Identity()
+            self.proj_head = nn.Identity()
             embed_dim = feat_dim
 
-        self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
+        # FIX (overfitting): classifier dropout raised 0.3 -> configurable
+        # (default 0.4), matching the DualViT change.
+        self.classifier = nn.Sequential(nn.Dropout(classifier_dropout), nn.Linear(embed_dim, num_classes))
         self.skin_clf = nn.Sequential(
-            nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.2),
+            nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.3),
             nn.Linear(256, num_skin_types)
         )
 
     def encode(self, x, modality):
         if modality == "clinical":
             f = self.clinical_backbone(x)
-            return f, self.proj_head_clinical(f)
         else:
             f = self.derm_backbone(x)
-            return f, self.proj_head_derm(f)
+        return f, self.proj_head(f)
 
-    def forward(self, batch):
-        device = batch["label"].device
-        batch_size = len(batch["label"])
-        embeddings = None
-
-        paired_mask = torch.tensor(batch["paired"], dtype=torch.bool, device=device)
-        unpaired_mask = ~paired_mask
-
-        out = {}
-
-        # Paired samples
-        if paired_mask.any() and "clinical" in batch and "derm" in batch:
-            clin_t = batch["clinical"][paired_mask].to(device)
-            derm_t = batch["derm"][paired_mask].to(device)
-            _, z_c = self.encode(clin_t, "clinical")
-            _, z_d = self.encode(derm_t, "derm")
-            z_paired = (z_c + z_d) / 2
-
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z_paired.size(-1), device=device, dtype=z_paired.dtype)
-            embeddings[paired_mask] = z_paired
-            out["z_c"] = z_c
-            out["z_d"] = z_d
-            # Store the paired mask so train scripts can use it for cross-modal contrastive loss
-            out["paired_mask"] = paired_mask
-
-        # Unpaired samples
-        if unpaired_mask.any() and "clinical" in batch:
-            img_t = batch["clinical"][unpaired_mask].to(device)
-            _, z = self.encode(img_t, "clinical")
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z.size(-1), device=device, dtype=z.dtype)
-            embeddings[unpaired_mask] = z
-
-        if embeddings is None:
-            embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
-
-        out["z"] = embeddings
-        out["logits"] = self.classifier(out["z"])
-        out["skin_logits"] = self.skin_clf(out["z"])
-        return out
 
 
 # ------------------------------------------------------------
 # Dual ViT Model (with projection head)
 # ------------------------------------------------------------
-class DualViT(nn.Module):
+class DualViT(_DualEncoderForwardMixin, nn.Module):
     """
-    Dual ViT-small encoder with per-modality projection heads.
-    Clinical embeddings are projected via proj_head_clinical;
-    dermoscopic embeddings via proj_head_derm. Both heads map into
-    the same shared embedding space (same out_dim).
+    Dual ViT-small encoder with optional projection head.
     """
-    def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True):
+    def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True,
+                 drop_path_rate=0.2, classifier_dropout=0.4):
         super().__init__()
         vit_name = "vit_small_patch16_224"
-        self.clinical_vit = timm.create_model(vit_name, pretrained=pretrained, num_classes=0)
-        self.derm_vit = timm.create_model(vit_name, pretrained=pretrained, num_classes=0)
+        # FIX (overfitting): tr_acc hit 1.0 well before epoch 100 while
+        # val_acc plateaued then declined (0.8407 -> 0.8070 -> 0.8007 in
+        # the last 4 epochs) — classic overfitting signature on a ~2500
+        # image dataset with two full ViT-Small backbones (no internal
+        # regularization previously: drop_rate/drop_path_rate both
+        # defaulted to 0.0). drop_path_rate enables stochastic depth,
+        # timm's standard ViT regularizer — randomly drops entire
+        # transformer blocks' residual contributions during training,
+        # forcing the network to not rely on any single block too
+        # heavily. Same drop_path_rate applied to both backbones so
+        # neither modality is regularized more than the other (keeping
+        # the alignment losses' job fair across modalities).
+        self.clinical_vit = timm.create_model(
+            vit_name, pretrained=pretrained, num_classes=0, drop_path_rate=drop_path_rate
+        )
+        self.derm_vit = timm.create_model(
+            vit_name, pretrained=pretrained, num_classes=0, drop_path_rate=drop_path_rate
+        )
         feat_dim = _VIT_SMALL_FEAT_DIM
 
         self.use_projection = use_projection
         if use_projection:
-            self.proj_head_clinical = ProjectionHead(feat_dim, 1024, embed_dim)
-            self.proj_head_derm     = ProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head = ProjectionHead(feat_dim, 1024, embed_dim)
         else:
-            self.proj_head_clinical = nn.Identity()
-            self.proj_head_derm     = nn.Identity()
+            self.proj_head = nn.Identity()
             embed_dim = feat_dim
 
-        self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
+        # FIX (overfitting): classifier dropout raised 0.3 -> configurable
+        # (default 0.4); this was previously the ONLY regularization in
+        # the entire classification path besides weight_decay.
+        self.classifier = nn.Sequential(nn.Dropout(classifier_dropout), nn.Linear(embed_dim, num_classes))
         self.skin_clf = nn.Sequential(
-            nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.2),
+            nn.Linear(embed_dim, 256), nn.GELU(), nn.Dropout(0.3),
             nn.Linear(256, num_skin_types)
         )
 
     def encode(self, x, modality):
         if modality == "clinical":
             f = self.clinical_vit(x)
-            return f, self.proj_head_clinical(f)
         else:
             f = self.derm_vit(x)
-            return f, self.proj_head_derm(f)
-
-    def forward(self, batch):
-        device = batch["label"].device
-        batch_size = len(batch["label"])
-        embeddings = None
-
-        paired_mask = torch.tensor(batch["paired"], dtype=torch.bool, device=device)
-        unpaired_mask = ~paired_mask
-
-        out = {}
-
-        # Paired samples
-        if paired_mask.any() and "clinical" in batch and "derm" in batch:
-            clin_t = batch["clinical"][paired_mask].to(device)
-            derm_t = batch["derm"][paired_mask].to(device)
-            _, z_c = self.encode(clin_t, "clinical")
-            _, z_d = self.encode(derm_t, "derm")
-            z_paired = (z_c + z_d) / 2
-
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z_paired.size(-1), device=device, dtype=z_paired.dtype)
-            embeddings[paired_mask] = z_paired
-            out["z_c"] = z_c
-            out["z_d"] = z_d
-            # Store the paired mask so train scripts can use it for cross-modal contrastive loss
-            out["paired_mask"] = paired_mask
-
-        # Unpaired samples
-        if unpaired_mask.any() and "clinical" in batch:
-            img_t = batch["clinical"][unpaired_mask].to(device)
-            _, z = self.encode(img_t, "clinical")
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z.size(-1), device=device, dtype=z.dtype)
-            embeddings[unpaired_mask] = z
-
-        if embeddings is None:
-            embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
-
-        out["z"] = embeddings
-        out["logits"] = self.classifier(out["z"])
-        out["skin_logits"] = self.skin_clf(out["z"])
-        return out
+        return f, self.proj_head(f)
 
 
 # ------------------------------------------------------------
@@ -439,6 +440,55 @@ def mi_loss_legacy(z_c, z_d):
 def mi_loss(z_c, z_d):
     """Alias for mi_loss_vicreg() with default weights. Backwards-compatible."""
     return mi_loss_vicreg(z_c, z_d)
+
+
+def symmetric_kl_loss(logits_c, logits_d):
+    """
+    Symmetric KL divergence between the classifier's predicted
+    distributions for the clinical and derm embeddings of the SAME
+    lesion. This is the alignment-through-classification term.
+
+    WHY THIS EXISTS: cross_modal_supcon_loss / mi_loss_vicreg pull z_c
+    and z_d together in raw embedding space, but the classifier head
+    sits on top of that space and has no explicit reason to care
+    whether z_c and z_d land in the same region — Lcls only requires
+    each embedding to be individually linearly separable by class.
+    With Lcls weighted far above Lcon/LMI, the optimizer's easiest path
+    is to let clinical_vit/clinical_backbone and derm_vit/derm_backbone
+    specialize into two separate "good enough for classification"
+    subspaces.
+
+    This term penalizes the classifier for disagreeing on the clinical
+    vs. derm embedding of the same lesion. The only way to make this
+    term small AND keep Lcls small is for z_c and z_d to live in the
+    same classifiable region of embedding space — alignment pressure
+    flowing through the same parameters classification already uses,
+    instead of competing with it.
+
+    KNOWN FAILURE MODE (verified empirically): symmetric KL between two
+    near-uniform ("I don't know") distributions is also near zero —
+    collapse toward low-confidence predictions is a cheap way to
+    satisfy this loss in isolation. This is NOT a free pass: Lcls
+    (cross-entropy) is heavily penalized by uniform predictions, and as
+    long as lambda_cls is kept meaningfully larger than lambda_kl, that
+    path costs far more in Lcls than it saves here. Always use this
+    ADDITIVELY alongside Lcls, never as a substitute, and keep
+    lambda_kl < lambda_cls.
+
+    Args:
+        logits_c: [N, C] classifier logits from clinical embeddings
+        logits_d: [N, C] classifier logits from derm embeddings,
+                  same N lesions, same order as logits_c
+    Returns:
+        scalar loss, >= 0, 0 only when the two distributions match exactly
+    """
+    log_p_c = F.log_softmax(logits_c, dim=-1)
+    log_p_d = F.log_softmax(logits_d, dim=-1)
+    p_c = log_p_c.exp()
+    p_d = log_p_d.exp()
+    kl_cd = F.kl_div(log_p_d, p_c, reduction="batchmean")
+    kl_dc = F.kl_div(log_p_c, p_d, reduction="batchmean")
+    return 0.5 * (kl_cd + kl_dc)
 
 
 def mixup_embeddings(z, labels, alpha=0.4):

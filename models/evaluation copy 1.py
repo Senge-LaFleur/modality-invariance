@@ -27,6 +27,10 @@ from tqdm import tqdm
 # ------------------------------------------------------------
 # Label mapping (shared with training scripts) — 3-class
 # ------------------------------------------------------------
+# LABEL_NAMES = {
+#     0: 'benign',
+#     1: 'malignant',
+# }
 LABEL_NAMES = {
     0: 'melanoma',
     1: 'nevus',
@@ -56,6 +60,22 @@ def build_image_maps(dataset_roots):
 
 # ------------------------------------------------------------
 # Custom Dataset Classes (ID-based image resolution using prebuilt maps)
+#
+# FIX (pair-utilization rewrite): both dataset classes now emit ONE
+# single-image sample per item, under a unified 'image' key. A row in
+# a paired CSV used to collapse its clinical+derm images into ONE
+# dataset item (averaged inside the model) — meaning only ~half of a
+# pair's images ever got a direct classification gradient, and
+# `len(dataset)` undercounted real images by the number of paired rows.
+#
+# Now PairedDataset.__len__() == 2 * len(df): each row yields a
+# clinical sample AND a derm sample, each carrying a shared `pair_id`
+# so train_epoch() can regroup same-lesion clinical/derm embeddings
+# for the contrastive (Lcon) and modality-invariance (LMI) losses.
+# Use PairAwareBatchSampler (below) at the DataLoader level to
+# guarantee both halves of a pair land in the same batch — otherwise
+# `pair_id` matches across a batch can be sparse since the two halves
+# are now independent, separately-sampled items.
 # ------------------------------------------------------------
 class UnpairedDataset(Dataset):
     def __init__(self, df, image_maps, transform=None,
@@ -86,17 +106,23 @@ class UnpairedDataset(Dataset):
         if self.transform:
             img = self.transform(img)
         return {
-            'clinical': img,
-            'derm': img,
+            'image': img,
             'label': torch.tensor(row['label'], dtype=torch.long),
             'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
             'dataset': row['dataset'],
             'paired': False,
             'modality': self.modality,
+            'pair_id': None,
         }
 
 
 class PairedDataset(Dataset):
+    """
+    Each underlying row (one lesion) yields TWO independent samples —
+    one clinical, one derm — instead of one row averaging both images
+    into a single embedding. Both samples carry the same `pair_id` so
+    losses that need the (z_c, z_d) relationship can regroup them.
+    """
     def __init__(self, df, image_maps, transform=None,
                  clinical_col='clinical', derm_col='derm'):
         self.df = df.reset_index(drop=True)
@@ -112,31 +138,151 @@ class PairedDataset(Dataset):
         return full_path
 
     def __len__(self):
-        return len(self.df)
+        return len(self.df) * 2
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
+        row_idx, which = divmod(idx, 2)   # which: 0=clinical, 1=derm
+        row = self.df.iloc[row_idx]
         ds = row['dataset']
-        clinical_id = str(row[self.clinical_col])
-        derm_id = str(row[self.derm_col])
-        clinical_path = self._resolve_path(ds, clinical_id)
-        derm_path = self._resolve_path(ds, derm_id)
+        modality = 'clinical' if which == 0 else 'derm'
+        col = self.clinical_col if which == 0 else self.derm_col
+        img_id = str(row[col])
+        path = self._resolve_path(ds, img_id)
 
-        clinical_img = Image.open(clinical_path).convert('RGB')
-        derm_img = Image.open(derm_path).convert('RGB')
+        img = Image.open(path).convert('RGB')
         if self.transform:
-            clinical_img = self.transform(clinical_img)
-            derm_img = self.transform(derm_img)
+            img = self.transform(img)
 
         return {
-            'clinical': clinical_img,
-            'derm': derm_img,
+            'image': img,
             'label': torch.tensor(row['label'], dtype=torch.long),
             'skin_type': torch.tensor(row['skin_type'], dtype=torch.long),
             'dataset': ds,
             'paired': True,
-            'modality': 'paired',
+            'modality': modality,
+            'pair_id': f"{ds}_{row_idx}",
         }
+
+
+# ------------------------------------------------------------
+# Custom collate function
+#
+# FIX: PyTorch's default_collate infers a per-key collation strategy by
+# inspecting the type of that key's values across the batch. `pair_id`
+# is a string for paired samples and None for unpaired ones. When a
+# batch happens to be ALL-unpaired (a real, common occurrence once
+# unpaired pools are large and PairAwareBatchSampler sometimes draws
+# zero pairs into a batch), every value for `pair_id` is None —
+# default_collate sees a homogeneous list of NoneType and has no
+# handler for it, raising:
+#   TypeError: default_collate: batch must contain tensors, numpy
+#   arrays, numbers, dicts or lists; found <class 'NoneType'>
+# This is exactly the dataloader worker crash seen in production
+# training (Train batches: 79, crashing partway through epoch 1).
+#
+# Rather than rely on default_collate's type-inference (which "worked"
+# in smaller smoke tests purely by luck — those batches happened to mix
+# string and None pair_id values, which default_collate silently
+# leaves as a plain list instead of erroring), every non-tensor field
+# is explicitly collated as a plain Python list here, with no type
+# inference involved.
+# ------------------------------------------------------------
+def paired_aware_collate(batch):
+    out = {}
+    out['image'] = torch.stack([b['image'] for b in batch])
+    out['label'] = torch.stack([b['label'] for b in batch])
+    out['skin_type'] = torch.stack([b['skin_type'] for b in batch])
+    out['dataset'] = [b['dataset'] for b in batch]
+    out['paired'] = [b['paired'] for b in batch]
+    out['modality'] = [b['modality'] for b in batch]
+    out['pair_id'] = [b['pair_id'] for b in batch]   # may be all-None; that's fine as a list
+    return out
+
+
+# ------------------------------------------------------------
+# Pair-aware batch sampler
+#
+# FIX: once PairedDataset emits the clinical and derm image of a
+# lesion as two INDEPENDENT samples, a plain WeightedRandomSampler can
+# (and usually will) draw them into different batches, starving
+# cross_modal_supcon_loss / mi_loss of (z_c, z_d) pairs to work with.
+# This sampler keeps full per-image classification gradients (the
+# whole point of the split) while guaranteeing every paired lesion's
+# clinical+derm samples co-occur in the same batch, so the
+# modality-invariance losses keep getting a steady, undiluted supply
+# of matched pairs every batch — not just "some batches, sometimes",
+# which is what the old paired_rate metric was quietly hiding.
+#
+# Class imbalance is still handled by weighted sampling: paired
+# LESIONS are drawn with replacement using per-lesion class weight,
+# and unpaired images are drawn with replacement using per-image
+# class weight, then interleaved into the target batch size.
+# ------------------------------------------------------------
+class PairAwareBatchSampler(torch.utils.data.Sampler):
+    def __init__(self, pair_row_indices, pair_class_labels,
+                 unpaired_indices, unpaired_class_labels,
+                 batch_size, num_classes, num_batches, seed=42):
+        """
+        pair_row_indices:      list of PairedDataset *row* indices (0..len(df)-1)
+        pair_class_labels:     label per row, same length/order as pair_row_indices
+        unpaired_indices:      list of flat indices into the unpaired part of
+                                the ConcatDataset (clin_* and derm_* datasets)
+        unpaired_class_labels: label per unpaired index, same order
+        batch_size:            target batch size (must be even-friendly; pairs
+                                contribute 2 items each)
+        num_batches:           number of batches per epoch
+        """
+        self.pair_row_indices = np.array(pair_row_indices)
+        self.unpaired_indices = np.array(unpaired_indices)
+        self.batch_size = batch_size
+        self.num_batches = num_batches
+        self.rng = np.random.default_rng(seed)
+
+        def _weights(labels):
+            labels = np.array(labels)
+            counts = np.bincount(labels, minlength=num_classes).astype(float)
+            counts[counts == 0] = 1.0
+            inv = 1.0 / counts
+            w = inv[labels]
+            return w / w.sum()
+
+        self.pair_weights = _weights(pair_class_labels) if len(pair_row_indices) else None
+        self.unpaired_weights = _weights(unpaired_class_labels) if len(unpaired_indices) else None
+
+        # Roughly half the batch from pairs (2 items/lesion), half from
+        # unpaired singles — proportioned to how much of each pool exists.
+        n_pair_rows = len(self.pair_row_indices)
+        n_unpaired = len(self.unpaired_indices)
+        total = max(n_pair_rows * 2 + n_unpaired, 1)
+        self.pairs_per_batch = max(
+            0, round((n_pair_rows * 2 / total) * batch_size / 2)
+        ) if n_pair_rows else 0
+        self.singles_per_batch = max(0, batch_size - self.pairs_per_batch * 2)
+
+    def __len__(self):
+        return self.num_batches
+
+    def __iter__(self):
+        for _ in range(self.num_batches):
+            batch = []
+            if self.pairs_per_batch and len(self.pair_row_indices):
+                chosen_rows = self.rng.choice(
+                    self.pair_row_indices, size=self.pairs_per_batch,
+                    replace=True, p=self.pair_weights
+                )
+                for r in chosen_rows:
+                    # PairedDataset.__getitem__ maps idx -> (row, which)
+                    # via divmod(idx, 2); reconstruct both flat indices.
+                    batch.append(int(r) * 2)       # clinical sample
+                    batch.append(int(r) * 2 + 1)   # derm sample
+            if self.singles_per_batch and len(self.unpaired_indices):
+                chosen = self.rng.choice(
+                    self.unpaired_indices, size=self.singles_per_batch,
+                    replace=True, p=self.unpaired_weights
+                )
+                batch.extend(int(i) for i in chosen)
+            self.rng.shuffle(batch)
+            yield batch
 
 
 # ------------------------------------------------------------
@@ -159,13 +305,123 @@ def build_loaders(cfg, seed=42):
     img_size = cfg.get('img_size', 224)
 
     # Transforms
+    #
+    # MEDICAL AUGMENTATION (skin-type-aware, per-transform p=0.85):
+    #
+    # Each augmentation is now an independent Bernoulli gate at p=0.85,
+    # meaning images receive a random SUBSET of transforms each step
+    # rather than either the full stack or nothing. This dramatically
+    # increases effective augmentation diversity (2^7 = 128 possible
+    # combinations vs. the old 2 outcomes).
+    #
+    # Augmentations are chosen for dermatology specifics:
+    #   - Spatial: flips + rotation are clinically valid (lesions have no
+    #     canonical orientation) and scale/crop simulates exam-distance variance.
+    #   - Color: dermoscopic images vary heavily by device/lighting; clinical
+    #     images vary by ambient light and skin tone. ColorJitter + channel
+    #     shuffle forces the model to rely on shape/texture rather than hue.
+    #   - Texture: GaussianBlur simulates out-of-focus/low-res images;
+    #     RandomErasing simulates hair/occlusion artefacts common in derm images.
+    #   - Skin-type bias: underrepresented dark skin tones (FST IV-VI) receive
+    #     stronger color and brightness augmentation via SkinTypeAwareTransform,
+    #     which samples from a wider jitter range for those tones. This directly
+    #     counteracts the dataset-level imbalance in favor of light skin
+    #     (FST I-III dominate HIBA, Derm7pt, ISIC2019).
+    #
+    # SkinTypeAwareTransform wraps ColorJitter and is applied LAST (after
+    # all spatial/texture transforms) so it only adjusts pixel values on an
+    # already-augmented image, not before other augmentations have a chance
+    # to fire. It falls back to standard ColorJitter for unknown FST (-1).
+
+    class SkinTypeAwareColorJitter:
+        """
+        Stronger ColorJitter for underrepresented dark skin tones (FST IV-VI).
+        Applied as a callable transform; skin_type is passed in via the
+        sample dict in Dataset.__getitem__ but torchvision transforms only
+        receive the image tensor. We therefore expose this as a stateful
+        object whose skin_type is set immediately before each call by the
+        dataset's __getitem__ — datasets that use this transform must call
+        transform.set_skin_type(st) before transform(img).
+
+        Jitter ranges by FST group:
+          Unknown / FST I-III  (majority):  standard   b=0.2, c=0.2, s=0.2, h=0.05
+          FST IV-V             (moderate):  amplified  b=0.35, c=0.35, s=0.35, h=0.08
+          FST VI               (rare):      strongest  b=0.5, c=0.4, s=0.4, h=0.1
+        """
+        def __init__(self):
+            self.skin_type = -1  # default: unknown
+            self._standard  = transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05)
+            self._amplified = transforms.ColorJitter(brightness=0.35, contrast=0.35, saturation=0.35, hue=0.08)
+            self._strongest = transforms.ColorJitter(brightness=0.5,  contrast=0.4,  saturation=0.4,  hue=0.1)
+
+        def set_skin_type(self, skin_type: int):
+            self.skin_type = int(skin_type)
+
+        def __call__(self, img):
+            st = self.skin_type
+            if st in (3, 4):    # FST IV-V (0-indexed: 3,4)
+                jitter = self._amplified
+            elif st == 5:       # FST VI (0-indexed: 5)
+                jitter = self._strongest
+            else:               # unknown (-1) or FST I-III (0,1,2)
+                jitter = self._standard
+            if torch.rand(1).item() < 0.85:
+                return jitter(img)
+            return img
+
+    skin_jitter = SkinTypeAwareColorJitter()
+
+    # Patch UnpairedDataset and PairedDataset to inject skin_type into the
+    # transform before each call. We subclass here to avoid modifying the
+    # dataset classes upstream (they're shared with val/test which don't
+    # use SkinTypeAwareColorJitter).
+    _orig_unpaired_getitem = UnpairedDataset.__getitem__
+    _orig_paired_getitem   = PairedDataset.__getitem__
+
+    def _unpaired_getitem_aware(self, idx):
+        row = self.df.iloc[idx]
+        st = int(row.get('skin_type', -1)) if hasattr(row, 'get') else -1
+        if hasattr(self.transform, 'transforms'):
+            for t in self.transform.transforms:
+                if isinstance(t, SkinTypeAwareColorJitter):
+                    t.set_skin_type(st)
+        return _orig_unpaired_getitem(self, idx)
+
+    def _paired_getitem_aware(self, idx):
+        row_idx, _ = divmod(idx, 2)
+        row = self.df.iloc[row_idx]
+        st = int(row.get('skin_type', -1)) if hasattr(row, 'get') else -1
+        if hasattr(self.transform, 'transforms'):
+            for t in self.transform.transforms:
+                if isinstance(t, SkinTypeAwareColorJitter):
+                    t.set_skin_type(st)
+        return _orig_paired_getitem(self, idx)
+
+    # Bind the aware __getitem__ only to training dataset instances (applied
+    # below when constructing train_datasets).
+    import types as _types
+
+    aug_p = cfg.get('aug_probability', 0.85)   # kept for logging; each transform uses this p
+
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(img_size, scale=(0.85, 1.0)),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomVerticalFlip(p=0.3),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+        # --- Spatial ---
+        transforms.Resize((img_size, img_size)),
+        transforms.RandomApply([transforms.RandomResizedCrop(img_size, scale=(0.80, 1.0), ratio=(0.9, 1.1))], p=aug_p),
+        transforms.RandomHorizontalFlip(p=aug_p),
+        transforms.RandomVerticalFlip(p=aug_p),
+        transforms.RandomApply([transforms.RandomRotation(degrees=30)], p=aug_p),
+        # RandomAffine: simulates slight perspective shift from handheld cameras
+        transforms.RandomApply([transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05), shear=5)], p=aug_p),
+        # --- Texture / focus simulation ---
+        # GaussianBlur: out-of-focus dermoscope or motion blur
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.5))], p=aug_p),
+        # --- Color (skin-type-aware, must come after spatial) ---
+        skin_jitter,   # internally gates at p=0.85 and scales strength by FST
+        transforms.RandomGrayscale(p=0.05),   # rare: forces texture-only features
+        # --- Occlusion (hair / ruler artefacts in derm images) ---
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transforms.RandomErasing(p=aug_p, scale=(0.01, 0.08), ratio=(0.2, 5.0), value=0),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
     val_transform = transforms.Compose([
@@ -191,14 +447,20 @@ def build_loaders(cfg, seed=42):
     clin_test   = _load_csv('clin_test.csv')
     derm_test   = _load_csv('derm_test.csv')
 
-    # Build training datasets
+    # Build training datasets (with skin-type-aware augmentation injection)
     train_datasets = []
     if not paired_train.empty:
-        train_datasets.append(PairedDataset(paired_train, image_maps, transform=train_transform))
+        ds = PairedDataset(paired_train, image_maps, transform=train_transform)
+        ds.__getitem__ = _types.MethodType(_paired_getitem_aware, ds)
+        train_datasets.append(ds)
     if not clin_train.empty:
-        train_datasets.append(UnpairedDataset(clin_train, image_maps, transform=train_transform, id_col='clinical'))
+        ds = UnpairedDataset(clin_train, image_maps, transform=train_transform, id_col='clinical')
+        ds.__getitem__ = _types.MethodType(_unpaired_getitem_aware, ds)
+        train_datasets.append(ds)
     if not derm_train.empty:
-        train_datasets.append(UnpairedDataset(derm_train, image_maps, transform=train_transform, id_col='derm'))
+        ds = UnpairedDataset(derm_train, image_maps, transform=train_transform, id_col='derm')
+        ds.__getitem__ = _types.MethodType(_unpaired_getitem_aware, ds)
+        train_datasets.append(ds)
     if not train_datasets:
         raise FileNotFoundError("No training data found. Check CSV files in " + str(csv_dir))
 
@@ -224,28 +486,71 @@ def build_loaders(cfg, seed=42):
         test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm'))
     test_dataset = torch.utils.data.ConcatDataset(test_datasets) if test_datasets else None
 
-    # Weighted sampler for training (handle class imbalance)
-    labels = []
+    # ------------------------------------------------------------
+    # Pair-aware batch sampling for training
+    #
+    # FIX: labels must now account for PairedDataset yielding 2 samples
+    # per row (one per modality, same label) — `ds.df['label']` alone
+    # undercounts by half for the paired dataset. We also need to know
+    # which flat indices into `train_dataset` (the ConcatDataset) belong
+    # to the paired dataset's rows vs. the unpaired datasets, so the
+    # PairAwareBatchSampler can guarantee clinical/derm siblings of a
+    # lesion co-occur in a batch while still respecting class weights.
+    # ------------------------------------------------------------
+    cumulative = 0
+    pair_row_indices, pair_class_labels = [], []
+    unpaired_indices, unpaired_class_labels = [], []
     for ds in train_datasets:
-        labels.extend(ds.df['label'].tolist())
-    class_counts = np.bincount(labels, minlength=cfg['num_classes'])
-    class_weights = 1.0 / (class_counts + 1e-6)
-    sample_weights = [class_weights[lbl] for lbl in labels]
-    sampler = WeightedRandomSampler(
-        sample_weights, num_samples=len(train_dataset), replacement=True
+        if isinstance(ds, PairedDataset):
+            n_rows = len(ds.df)
+            pair_row_indices.extend(range(n_rows))      # row index, NOT flat index
+            pair_class_labels.extend(ds.df['label'].tolist())
+            # NOTE: PairAwareBatchSampler computes flat indices for this
+            # dataset's two samples-per-row scheme directly (row*2, row*2+1)
+            # and ConcatDataset places this dataset at offset `cumulative`
+            # only if it's first; we therefore require PairedDataset(s)
+            # to be concatenated FIRST so its flat indices start at 0.
+            # This is enforced by the train_datasets construction order
+            # below (paired appended before clin/derm).
+            cumulative += len(ds)
+        else:
+            n = len(ds)
+            unpaired_indices.extend(range(cumulative, cumulative + n))
+            unpaired_class_labels.extend(ds.df['label'].tolist())
+            cumulative += n
+
+    if pair_row_indices and not isinstance(train_datasets[0], PairedDataset):
+        raise RuntimeError(
+            "PairedDataset must be the first dataset in train_datasets so "
+            "PairAwareBatchSampler's flat-index assumption (row*2, row*2+1 "
+            "starting at 0) holds. Check the ConcatDataset construction order."
+        )
+
+    total_train_images = len(train_dataset)
+    num_batches = max(1, total_train_images // batch_size)
+
+    batch_sampler = PairAwareBatchSampler(
+        pair_row_indices=pair_row_indices,
+        pair_class_labels=pair_class_labels,
+        unpaired_indices=unpaired_indices,
+        unpaired_class_labels=unpaired_class_labels,
+        batch_size=batch_size,
+        num_classes=cfg['num_classes'],
+        num_batches=num_batches,
+        seed=seed,
     )
 
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, sampler=sampler,
-        num_workers=4, pin_memory=True, drop_last=True
+        train_dataset, batch_sampler=batch_sampler,
+        num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=4, pin_memory=True
+        num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
     ) if val_dataset else None
     test_loader = DataLoader(
         test_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=4, pin_memory=True
+        num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
     ) if test_dataset else None
 
     # ------------------------------------------------------------------
@@ -265,7 +570,7 @@ def build_loaders(cfg, seed=42):
             )
             eval_loaders['fitzpatrick17k'] = DataLoader(
                 fitz_dataset, batch_size=batch_size, shuffle=False,
-                num_workers=4, pin_memory=True
+                num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
             )
             print(f"[INFO] Loaded fitzpatrick17k eval set: {len(fitz_df)} samples")
         else:
@@ -293,7 +598,7 @@ def build_loaders(cfg, seed=42):
             )
             eval_loaders['padufes20'] = DataLoader(
                 padufes_dataset, batch_size=batch_size, shuffle=False,
-                num_workers=4, pin_memory=True
+                num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
             )
             print(f"[INFO] Loaded padufes20 eval set: {len(padufes_df)} samples")
         else:
@@ -319,7 +624,7 @@ def build_loaders(cfg, seed=42):
             )
             eval_loaders['isic2019'] = DataLoader(
                 isic_dataset, batch_size=batch_size, shuffle=False,
-                num_workers=4, pin_memory=True
+                num_workers=4, pin_memory=True, collate_fn=paired_aware_collate
             )
             print(f"[INFO] Loaded isic2019 eval set: {len(isic_df)} samples")
         else:
@@ -882,6 +1187,8 @@ def plot_training_curves(history, title, save_path):
 
 
 # ── Palettes shared by t-SNE functions ─────────────────────────────────────
+# _CLS_COLORS = ["#1950A0", "#DC641E"]   # 2 classes
+# _CLS_NAMES  = {0: "benign", 1: "malignant"}
 _CLS_COLORS = ["#1950A0", "#0096B4", "#DC641E"]   # 3 classes
 _CLS_NAMES  = {0: "melanoma", 1: "nevus", 2: "basal cell ca."}
 _FST_COLORS = ["#FFEDE0", "#F4C18C", "#D49060", "#A0522D", "#5C3317", "#2B1500"]
@@ -931,7 +1238,7 @@ def plot_tsne_class_fst(embeddings, labels, skins, title, save_path,
     fig.suptitle(title, fontsize=13, fontweight="bold")
 
     _tsne_scatter_labeled(axes[0], e2d, labels, _CLS_COLORS, _CLS_NAMES,
-                          "By Disease Class (3 classes)")
+                          "By Disease Class (2 classes)")
 
     mk_known = skins >= 0
     if mk_known.any():
