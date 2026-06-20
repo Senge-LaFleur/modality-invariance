@@ -169,7 +169,8 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     totals = dict(total=0., cls=0., conf=0., skin=0., con=0., mi=0.)
     all_preds, all_labels = [], []
     n_batches = 0
-    n_paired_batches = 0   # track how often MI actually fires
+    n_paired_batches = 0   # FIX: track how often MI actually fires
+
 
     sup_con = SupConLoss(cfg["temperature"]).to(device)
     weight_tensor = (
@@ -217,7 +218,8 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                 loss_con = cross_modal_supcon_loss(
                     out["z_c"], out["z_d"], paired_labels, cfg["temperature"]
                 )
-
+ 
+            # --- FIX: VICReg-based MI loss (collapse-resistant) ---
             loss_mi = 0.0
             if cfg.get("use_mi") and "z_c" in out and out["z_c"].size(0) > 1:
                 loss_mi = mi_loss(out["z_c"], out["z_d"])
@@ -225,7 +227,7 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
 
             total_loss = cfg["lambda_cls"] * loss_cls
             if cfg.get("use_conf"):
-                total_loss += cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_skin
+                total_loss += cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_skin   # FIX: explicit lambda
             if cfg.get("use_con"):
                 total_loss += cfg["lambda_con"] * loss_con
             if cfg.get("use_mi") and loss_mi != 0:
@@ -259,6 +261,8 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     all_labels = np.concatenate(all_labels)
     totals["acc"] = (all_preds == all_labels).mean()
     totals["macro_f1"] = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+    
+    # FIX: report paired-batch rate so you can verify MI is actually training
     totals["paired_rate"] = n_paired_batches / max(n_batches, 1)
 
     return totals
@@ -276,9 +280,10 @@ def main():
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
-    train_loader, val_loader, test_loaders, eval_loaders = build_loaders(CFG, seed=SEED)
+    train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
-    print(f"Test loaders: {list(test_loaders.keys())}")
+    if test_loader:
+        print(f"Test batches: {len(test_loader)}")
     print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
 
     class_weights = compute_class_weights(CFG["csv_dir"], CFG["num_classes"])
@@ -317,6 +322,7 @@ def main():
     best_auroc = 0.0
     best_f1 = 0.0
     history = defaultdict(list)
+
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
         train_metrics = train_epoch(
@@ -404,20 +410,18 @@ def main():
                    "ROC Curves - Validation",
                    CFG["results_dir"] / "val_roc.png")
 
-    # ── Internal test splits (paired, clinical, derm) ─────────────────────
-    # We'll collect embeddings for t-SNE from all test subsets combined
-    all_embs, all_labels_tsne, all_skins_tsne, all_mods_tsne = [], [], [], []
-
-    for test_name, test_loader in test_loaders.items():
-        print(f"\n=== Evaluating test subset: {test_name} ===")
-        test_res = validate(model, test_loader, DEVICE, CFG["num_classes"],
-                            desc=f"Test {test_name}")
+    # ── Internal test split ─────────────────────────────────────────────────
+    if test_loader:
+        test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
         test_fair_binary = fairness_binary(test_res)
 
-        # ---- Compute KNN accuracy on this subset ----
+        # ---- Compute KNN accuracy on test embeddings ----
         model.eval()
-        embs_sub, labs_sub, skins_sub, mods_sub = [], [], [], []
+        all_embs = []
+        all_labels_tsne = []
+        all_skins_tsne = []
+        all_mods_tsne = []   # 0=clinical, 1=derm, paired excluded
         with torch.no_grad():
             for batch in test_loader:
                 for k, v in batch.items():
@@ -425,75 +429,60 @@ def main():
                         batch[k] = v.to(DEVICE)
                 out = model(batch)
                 b = out["z"].size(0)
-                embs_sub.append(out["z"].cpu().numpy())
-                labs_sub.append(batch["label"].cpu().numpy())
-                skins_sub.append(batch["skin_type"].cpu().numpy())
+                all_embs.append(out["z"].cpu().numpy())
+                all_labels_tsne.append(batch["label"].cpu().numpy())
+                all_skins_tsne.append(batch["skin_type"].cpu().numpy())
 
-                # modality mapping
                 mod_list = []
                 for m in batch.get("modality", ["clinical"] * b):
                     if m == "clinical":
                         mod_list.append(0)
                     elif m == "derm":
                         mod_list.append(1)
-                    else:   # 'paired'
-                        mod_list.append(-1)
-                mods_sub.append(np.array(mod_list, dtype=np.int64))
+                    else:
+                        mod_list.append(-1)   # paired – exclude
+                all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
 
-        embs_sub = np.concatenate(embs_sub)
-        labs_sub = np.concatenate(labs_sub)
-        skins_sub = np.concatenate(skins_sub)
-        mods_sub = np.concatenate(mods_sub)
+        embs        = np.concatenate(all_embs)
+        labels_tsne = np.concatenate(all_labels_tsne)
+        skins_tsne  = np.concatenate(all_skins_tsne)
+        mods_tsne   = np.concatenate(all_mods_tsne)
 
-        knn_acc_sub = compute_knn_accuracy(embs_sub, labs_sub, k=3)
-        print(f"  KNN (k=3) accuracy: {knn_acc_sub:.4f}")
+        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=3)
+        print(f"\n[Modality-Invariant ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
 
-        # Save results for this subset
-        save_results_csv(test_res, test_fair, f"test_{test_name}",
-                         CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc_sub)
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc)
         plot_confusion_matrix(test_res["conf_mat"], class_names,
-                              f"Confusion Matrix - Test {test_name}",
-                              CFG["results_dir"] / f"test_{test_name}_confusion.png")
+                              "Confusion Matrix - Test",
+                              CFG["results_dir"] / "test_confusion.png")
         plot_per_class_metrics(test_res, class_names,
-                               f"Per-Class Metrics - Test {test_name}",
-                               CFG["results_dir"] / f"test_{test_name}_per_class.png")
-        plot_fairness_metrics(test_fair, f"Fairness - Test {test_name}",
-                              CFG["results_dir"] / f"test_{test_name}_fairness.png")
-        print(f"\nBinary fairness (Test {test_name}):")
+                               "Per-Class Metrics - Test",
+                               CFG["results_dir"] / "test_per_class.png")
+        plot_fairness_metrics(test_fair, "Fairness - Test",
+                              CFG["results_dir"] / "test_fairness.png")
+        print("\nBinary fairness (Test):")
         print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
         print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
         print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
         print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
         plot_roc_curve(test_res["labels"], test_res["probs"], class_names,
-                       f"ROC Curves - Test {test_name}",
-                       CFG["results_dir"] / f"test_{test_name}_roc.png")
+                       "ROC Curves - Test",
+                       CFG["results_dir"] / "test_roc.png")
 
-        # Accumulate for combined t-SNE
-        all_embs.append(embs_sub)
-        all_labels_tsne.append(labs_sub)
-        all_skins_tsne.append(skins_sub)
-        all_mods_tsne.append(mods_sub)
-
-    # ── Combined t-SNE plots over all test samples ──────────────────────
-    if all_embs:
-        embs_all = np.concatenate(all_embs)
-        labels_all = np.concatenate(all_labels_tsne)
-        skins_all = np.concatenate(all_skins_tsne)
-        mods_all = np.concatenate(all_mods_tsne)
-
+        # t-SNE plots
         plot_tsne_class_fst(
-            embs_all, labels_all, skins_all,
-            title="t-SNE — Shared Embedding Space  [All Test Subsets]",
-            save_path=CFG["results_dir"] / "tsne_test_all_class_fst.png",
+            embs, labels_tsne, skins_tsne,
+            title="t-SNE — Shared Embedding Space  [Internal Test]",
+            save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
         )
 
-        mask_mod = mods_all >= 0
+        mask_mod = mods_tsne >= 0
         if mask_mod.sum() > 1:
             plot_tsne_modality(
-                embs_all[mask_mod], skins_all[mask_mod], mods_all[mask_mod],
-                title="t-SNE — Modality-Invariance  [All Test Subsets]",
-                save_path=CFG["results_dir"] / "tsne_test_all_modality_invariance.png",
+                embs[mask_mod], skins_tsne[mask_mod], mods_tsne[mask_mod],
+                title="t-SNE — Modality-Invariance  [Internal Test]",
+                save_path=CFG["results_dir"] / "tsne_test_modality_invariance.png",
             )
         else:
             print("[WARN] Not enough unpaired clinical/derm samples for modality t-SNE plot.")

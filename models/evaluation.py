@@ -143,15 +143,6 @@ class PairedDataset(Dataset):
 # DataLoader Builder (ID-based, using prebuilt image maps)
 # ------------------------------------------------------------
 def build_loaders(cfg, seed=42):
-    """
-    Builds training, validation, and test DataLoaders.
-
-    Returns:
-        train_loader: DataLoader for training (with weighted sampler)
-        val_loader: DataLoader for validation (combined, if any)
-        test_loaders: dict with keys 'paired', 'clinical', 'derm' -> DataLoader
-        eval_loaders: dict for external evaluation datasets (e.g., fitzpatrick17k, etc.)
-    """
     csv_dir = Path(cfg['csv_dir'])
     # Accept both 'dataset_roots' and 'image_roots' keys
     if 'dataset_roots' in cfg:
@@ -224,31 +215,15 @@ def build_loaders(cfg, seed=42):
     
     val_dataset = torch.utils.data.ConcatDataset(val_datasets) if val_datasets else None
 
-    # ------------------------------------------------------------------
-    # Build separate test loaders for paired, clinical, and derm
-    # ------------------------------------------------------------------
-    test_loaders = {}
+    # Test datasets
+    test_datasets = []
     if not paired_test.empty:
-        ds = PairedDataset(paired_test, image_maps, transform=val_transform)
-        test_loaders['paired'] = DataLoader(
-            ds, batch_size=batch_size, shuffle=False,
-            num_workers=4, pin_memory=True
-        )
-        print(f"[INFO] Test paired loader: {len(ds)} samples")
+        test_datasets.append(PairedDataset(paired_test, image_maps, transform=val_transform))
     if not clin_test.empty:
-        ds = UnpairedDataset(clin_test, image_maps, transform=val_transform, id_col='clinical', modality='clinical')
-        test_loaders['clinical'] = DataLoader(
-            ds, batch_size=batch_size, shuffle=False,
-            num_workers=4, pin_memory=True
-        )
-        print(f"[INFO] Test clinical loader: {len(ds)} samples")
+        test_datasets.append(UnpairedDataset(clin_test, image_maps, transform=val_transform, id_col='clinical'))
     if not derm_test.empty:
-        ds = UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm', modality='derm')
-        test_loaders['derm'] = DataLoader(
-            ds, batch_size=batch_size, shuffle=False,
-            num_workers=4, pin_memory=True
-        )
-        print(f"[INFO] Test derm loader: {len(ds)} samples")
+        test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm'))
+    test_dataset = torch.utils.data.ConcatDataset(test_datasets) if test_datasets else None
 
     # Weighted sampler for training (handle class imbalance)
     labels = []
@@ -269,6 +244,10 @@ def build_loaders(cfg, seed=42):
         val_dataset, batch_size=batch_size, shuffle=False,
         num_workers=4, pin_memory=True
     ) if val_dataset else None
+    test_loader = DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False,
+        num_workers=4, pin_memory=True
+    ) if test_dataset else None
 
     # ------------------------------------------------------------------
     # Cross-evaluation loaders
@@ -355,7 +334,7 @@ def build_loaders(cfg, seed=42):
             "run data_preprocessing_v3 to generate it."
         )
 
-    return train_loader, val_loader, test_loaders, eval_loaders
+    return train_loader, val_loader, test_loader, eval_loaders
 
 
 # ------------------------------------------------------------
