@@ -384,7 +384,7 @@ def robust_macro_f1(labels, preds):
 # ------------------------------------------------------------
 # KNN accuracy on embeddings (for class separation evaluation)
 # ------------------------------------------------------------
-def compute_knn_accuracy(embeddings, labels, k=5, device='cpu'):
+def compute_knn_accuracy(embeddings, labels, k=3, device='cpu'):
     """
     Compute k-NN classification accuracy using the given embeddings.
     embeddings: numpy array of shape (n_samples, embed_dim)
