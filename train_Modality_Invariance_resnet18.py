@@ -157,11 +157,37 @@ CFG = {
     'label_smoothing': 0.01,
     'mixup_alpha':     0.4,
 
+    # FIX (visible progress by epoch 10, no new loss terms — just a
+    # schedule for the existing lambda_conf/con/mi/kl weights): same
+    # rationale as the ViT script — these four auxiliary losses sum to
+    # 3.15 vs. lambda_cls=1.0, all at full strength from epoch 1, while
+    # the embedding space is still close to the pretrained init.
+    # curriculum_ramp_epochs linearly ramps lambda_conf/con/mi/kl from
+    # (curriculum_start_frac * full weight) up to full weight over the
+    # first N epochs. lambda_skin is untouched/un-ramped — see
+    # skin_type_loss in models_losses.py: it trains only skin_clf on a
+    # DETACHED embedding, so it never competes with classification
+    # gradient and is safe at full weight from epoch 1.
+    'curriculum_ramp_epochs': 15,
+    'curriculum_start_frac':  0.15,
+
     'use_conf':  True,
     'use_con':   True,
     'use_mi':    True,
     'use_kl':    True,
     'use_mixup': False,
+
+    # FIX (sampler tuning, no architecture/loss changes — see
+    # PairAwareBatchSampler in evaluation.py): EDA showed melanoma is
+    # severely thin on darker skin tones (FST V+VI = 8+2 = 10 train
+    # images total) and melanoma is also the worst-performing class
+    # (test recall 0.64 vs. 0.89/0.80). Class-only sampling weights can't
+    # see that. Turning this on weights by the joint (class, pooled
+    # skin-tone-group) cell instead, with an extra boost on each class's
+    # "dark" cell.
+    'fst_aware_sampling':      True,
+    'sampler_beta':            0.99,
+    'sampler_dark_skin_boost': 1.5,
 
 }
 
@@ -302,14 +328,28 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
                     n_kl_pairs_agree += (pred_c == pred_d).sum().item()
 
             total_loss = cfg["lambda_cls"] * loss_cls
+            # FIX: curriculum ramp on the auxiliary losses only (lambda_skin
+            # is intentionally excluded — see CFG comment). `epoch` is
+            # 0-indexed; ramp reaches 1.0 once epoch+1 == curriculum_ramp_epochs.
+            ramp_epochs = cfg.get("curriculum_ramp_epochs", 0)
+            start_frac = cfg.get("curriculum_start_frac", 1.0)
+            if ramp_epochs > 0:
+                ramp = start_frac + (1.0 - start_frac) * min(1.0, (epoch + 1) / ramp_epochs)
+            else:
+                ramp = 1.0
+            lambda_conf_eff = cfg["lambda_conf"] * ramp
+            lambda_con_eff  = cfg["lambda_con"]  * ramp
+            lambda_mi_eff   = cfg["lambda_mi"]   * ramp
+            lambda_kl_eff   = cfg["lambda_kl"]   * ramp
+
             if cfg.get("use_conf"):
-                total_loss += cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_skin   # FIX: explicit lambda
+                total_loss += lambda_conf_eff * loss_conf + cfg["lambda_skin"] * loss_skin   # FIX: explicit lambda
             if cfg.get("use_con"):
-                total_loss += cfg["lambda_con"] * loss_con
+                total_loss += lambda_con_eff * loss_con
             if cfg.get("use_mi") and loss_mi != 0:
-                total_loss += cfg["lambda_mi"] * loss_mi
+                total_loss += lambda_mi_eff * loss_mi
             if cfg.get("use_kl") and loss_kl != 0:
-                total_loss += cfg["lambda_kl"] * loss_kl
+                total_loss += lambda_kl_eff * loss_kl
 
         scaler.scale(total_loss).backward()
         scaler.unscale_(optimizer)
@@ -352,6 +392,16 @@ def train_epoch(model, loader, optimizer, cfg, epoch, scaler, class_weights, dev
     # loss_kl is actually aligning the two modalities through the
     # classifier.
     totals["kl_agreement_rate"] = n_kl_pairs_agree / max(n_kl_pairs_seen, 1)
+
+    # ramp is constant across all batches in an epoch (depends only on
+    # `epoch`), so any value computed above is representative — recompute
+    # once here for logging in case n_batches==0 skipped the loop body.
+    ramp_epochs = cfg.get("curriculum_ramp_epochs", 0)
+    start_frac = cfg.get("curriculum_start_frac", 1.0)
+    totals["aux_ramp"] = (
+        start_frac + (1.0 - start_frac) * min(1.0, (epoch + 1) / ramp_epochs)
+        if ramp_epochs > 0 else 1.0
+    )
 
     return totals
 
@@ -436,7 +486,8 @@ def main():
             f"val_acc={val_metrics['acc']:.4f}  val_auroc={val_metrics['auroc']:.4f}  "
             f"val_f1={val_metrics['macro_f1']:.4f}  "
             f"pair_match={train_metrics['pair_match_rate']:.2f}  "
-            f"kl_agree={train_metrics['kl_agreement_rate']:.2f}  lr={lr:.2e}"
+            f"kl_agree={train_metrics['kl_agreement_rate']:.2f}  "
+            f"aux_ramp={train_metrics['aux_ramp']:.2f}  lr={lr:.2e}"
         )
 
         ckpt_state = {
@@ -560,6 +611,20 @@ def main():
         plot_roc_curve(test_res["labels"], test_res["probs"], class_names,
                        "ROC Curves - Test",
                        CFG["results_dir"] / "test_roc.png")
+
+        # ── TTA pass (eval-time-only lever, see _tta_probs() in
+        # evaluation.py) — saved under a separate "test_tta" split name so
+        # it's directly comparable to the non-TTA test_res above instead
+        # of silently replacing it. ──────────────────────────────────────
+        test_res_tta = validate(model, test_loader, DEVICE, CFG["num_classes"],
+                                desc="Test (TTA)", tta=True)
+        test_fair_tta = fairness(test_res_tta)
+        save_results_csv(test_res_tta, test_fair_tta, "test_tta", CFG["results_dir"], LABEL_NAMES)
+        print(
+            f"\n[TTA] Test acc: {test_res_tta['acc']:.4f}  (no-TTA: {test_res['acc']:.4f})   "
+            f"AUROC: {test_res_tta['auroc']:.4f}  (no-TTA: {test_res['auroc']:.4f})   "
+            f"macro-F1: {test_res_tta['macro_f1']:.4f}  (no-TTA: {test_res['macro_f1']:.4f})"
+        )
 
         # t-SNE plots
         plot_tsne_class_fst(
