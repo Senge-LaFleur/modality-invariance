@@ -24,7 +24,7 @@ from pathlib import Path
 # ------------------------------------------------------------
 # Shared constants and helpers
 # ------------------------------------------------------------
-_RESNET18_FEAT_DIM = 384
+_RESNET18_FEAT_DIM = 512
 _VIT_SMALL_FEAT_DIM = 384  
 
 
