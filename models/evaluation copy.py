@@ -178,62 +178,16 @@ def build_loaders(cfg, seed=42):
         p = csv_dir / fname
         return pd.read_csv(p) if p.exists() else pd.DataFrame()
 
-    def _load_paired_split(split):
-        """
-        Load paired data for a given split ('train' / 'val' / 'test').
-
-        Preferred format: two separate, ID-correspondence files —
-            paired_clin_<split>.csv  (columns include: lesion_id, clinical, label, skin_type, dataset)
-            paired_derm_<split>.csv  (columns include: lesion_id, derm,     label, skin_type, dataset)
-        joined on a shared id column (lesion_id, falling back to pair_id)
-        so correspondence is guaranteed by ID rather than by row order.
-
-        Falls back to the legacy single combined CSV
-        (paired_train_update.csv / paired_val.csv / paired_test.csv) if the
-        split files aren't present, so older preprocessing runs still work.
-        """
-        clin_p = csv_dir / f'paired_clin_{split}.csv'
-        derm_p = csv_dir / f'paired_derm_{split}.csv'
-        if clin_p.exists() and derm_p.exists():
-            clin_df = pd.read_csv(clin_p)
-            derm_df = pd.read_csv(derm_p)
-            join_key = next(
-                (k for k in ('lesion_id', 'pair_id') if k in clin_df.columns and k in derm_df.columns),
-                None,
-            )
-            if join_key is None:
-                raise KeyError(
-                    f"paired_clin_{split}.csv / paired_derm_{split}.csv must share a "
-                    "'lesion_id' (or 'pair_id') column to establish clinical<->derm correspondence."
-                )
-            merged = clin_df.merge(
-                derm_df[[join_key, 'derm']], on=join_key, how='inner', validate='one_to_one'
-            )
-            dropped = len(clin_df) - len(merged)
-            if dropped:
-                print(f"[WARN] paired_{split}: {dropped} clinical rows had no derm match on '{join_key}' and were dropped")
-            print(f"[INFO] paired_{split}: loaded {len(merged)} ID-matched pairs from split clin/derm CSVs")
-            return merged
-
-        # Legacy fallback: single combined file (back-compat with older runs)
-        legacy_name = 'paired_train_update.csv' if split == 'train' else f'paired_{split}.csv'
-        legacy = _load_csv(legacy_name)
-        if legacy.empty and legacy_name != f'paired_{split}.csv':
-            legacy = _load_csv(f'paired_{split}.csv')
-        if not legacy.empty:
-            print(f"[INFO] paired_{split}: loaded {len(legacy)} rows from legacy combined CSV (no split clin/derm files found)")
-        return legacy
-
     # Load CSV files
-    paired_train = _load_paired_split('train')
+    paired_train = _load_csv('paired_train_update.csv')
     clin_train   = _load_csv('clin_train.csv')
     derm_train   = _load_csv('derm_train.csv')
 
-    paired_val = _load_paired_split('val')
+    paired_val = _load_csv('paired_val.csv')
     clin_val   = _load_csv('clin_val.csv')
     derm_val   = _load_csv('derm_val.csv')
 
-    paired_test = _load_paired_split('test')
+    paired_test = _load_csv('paired_test.csv')
     clin_test   = _load_csv('clin_test.csv')
     derm_test   = _load_csv('derm_test.csv')
 

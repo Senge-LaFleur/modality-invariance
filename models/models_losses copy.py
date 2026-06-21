@@ -120,84 +120,6 @@ class ProjectionHead(nn.Module):
 
 
 # ------------------------------------------------------------
-# Partially-shared dual-modality projection head
-# ------------------------------------------------------------
-class DualProjectionHead(nn.Module):
-    """
-    Projection head with partial weight sharing across the clinical and
-    dermoscopic modalities.
-
-    Architecture (sandwich design):
-        modality-specific IN layer  ->  SHARED middle layer  ->  modality-specific OUT layer
-
-    Rationale:
-      - The IN layer is modality-specific because raw clinical-backbone and
-        derm-backbone features have different statistics (different optics,
-        lighting, magnification) even for the same lesion — a single shared
-        layer would have to compromise between two different input
-        distributions before it has had any chance to normalise them.
-      - The middle layer is LITERALLY TIED (one set of weights, used by both
-        modalities) so both branches are forced through one common
-        transformation. This is the "properties in common" piece: it is a
-        hard constraint, not just a loss term, that pulls clinical and derm
-        representations toward a shared basis.
-      - The OUT layer is modality-specific again, giving each branch a final
-        degree of freedom to calibrate its own scale/orientation before
-        landing in the shared embedding space, instead of forcing identical
-        output statistics on two visually very different modalities.
-
-    This sits between two extremes: fully independent heads (maximum
-    modality-specific flexibility, weaker forced alignment) and a single
-    fully shared head (maximum forced alignment, no room to absorb
-    modality-specific nuisance variation). Whether this configuration beats
-    either extreme is an empirical question — that's what the ablation is for.
-    """
-    def __init__(self, in_dim, hidden_dim=1024, out_dim=512, dropout=0.1):
-        super().__init__()
-        self.in_clinical = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim), nn.BatchNorm1d(hidden_dim),
-            nn.GELU(), nn.Dropout(dropout),
-        )
-        self.in_derm = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim), nn.BatchNorm1d(hidden_dim),
-            nn.GELU(), nn.Dropout(dropout),
-        )
-        # Tied/shared weights — both modalities pass through this same module.
-        self.shared = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim), nn.BatchNorm1d(hidden_dim),
-            nn.GELU(),
-        )
-        self.out_clinical = nn.Linear(hidden_dim, out_dim)
-        self.out_derm = nn.Linear(hidden_dim, out_dim)
-
-    def _forward_branch(self, x, in_layer, out_layer):
-        # Preserve the original ProjectionHead's batch-size-1 BatchNorm guard.
-        if x.size(0) == 1 and self.training:
-            self.eval()
-            h = in_layer(x)
-            h = self.shared(h)
-            out = out_layer(h)
-            self.train()
-        else:
-            h = in_layer(x)
-            h = self.shared(h)
-            out = out_layer(h)
-        return F.normalize(out, dim=-1)
-
-    def forward(self, x, modality):
-        if modality == "clinical":
-            return self._forward_branch(x, self.in_clinical, self.out_clinical)
-        else:
-            return self._forward_branch(x, self.in_derm, self.out_derm)
-
-
-class _IdentityDualHead(nn.Module):
-    """Drop-in no-op used when use_projection=False; mirrors the (x, modality) signature."""
-    def forward(self, x, modality):
-        return x
-
-
-# ------------------------------------------------------------
 # Dual ResNet-18 Model (with projection head)
 # ------------------------------------------------------------
 class DualResNet18(nn.Module):
@@ -218,9 +140,11 @@ class DualResNet18(nn.Module):
         feat_dim = _RESNET18_FEAT_DIM
         self.use_projection = use_projection
         if use_projection:
-            self.proj_head = DualProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head_clinical = ProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head_derm     = ProjectionHead(feat_dim, 1024, embed_dim)
         else:
-            self.proj_head = _IdentityDualHead()
+            self.proj_head_clinical = nn.Identity()
+            self.proj_head_derm     = nn.Identity()
             embed_dim = feat_dim
 
         self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
@@ -232,9 +156,10 @@ class DualResNet18(nn.Module):
     def encode(self, x, modality):
         if modality == "clinical":
             f = self.clinical_backbone(x)
+            return f, self.proj_head_clinical(f)
         else:
             f = self.derm_backbone(x)
-        return f, self.proj_head(f, modality)
+            return f, self.proj_head_derm(f)
 
     def forward(self, batch):
         device = batch["label"].device
@@ -298,9 +223,11 @@ class DualViT(nn.Module):
 
         self.use_projection = use_projection
         if use_projection:
-            self.proj_head = DualProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head_clinical = ProjectionHead(feat_dim, 1024, embed_dim)
+            self.proj_head_derm     = ProjectionHead(feat_dim, 1024, embed_dim)
         else:
-            self.proj_head = _IdentityDualHead()
+            self.proj_head_clinical = nn.Identity()
+            self.proj_head_derm     = nn.Identity()
             embed_dim = feat_dim
 
         self.classifier = nn.Sequential(nn.Dropout(0.3), nn.Linear(embed_dim, num_classes))
@@ -312,9 +239,10 @@ class DualViT(nn.Module):
     def encode(self, x, modality):
         if modality == "clinical":
             f = self.clinical_vit(x)
+            return f, self.proj_head_clinical(f)
         else:
             f = self.derm_vit(x)
-        return f, self.proj_head(f, modality)
+            return f, self.proj_head_derm(f)
 
     def forward(self, batch):
         device = batch["label"].device
