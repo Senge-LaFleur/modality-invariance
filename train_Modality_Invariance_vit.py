@@ -89,7 +89,7 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------
 # Reproducibility
 # ------------------------------------------------------------
-SEED = 0
+SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
@@ -128,7 +128,7 @@ CFG = {
     'results_dir':  WORK_ROOT / 'results_Modality_Invariance_vit',
 
     'backbone':        'vit_small_patch16_224',
-    'embed_dim':       1024,
+    'embed_dim':       512,
     'img_size':        224,
     'num_classes':     3,      # melanoma / nevus / basal cell carcinoma
     'num_skin_types':  6,
