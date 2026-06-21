@@ -197,14 +197,62 @@ class _IdentityDualHead(nn.Module):
         return x
 
 
+def _encode_unpaired(encode_fn, batch, unpaired_mask, batch_size, device, embeddings):
+    """
+    Route each unpaired sample through the encoder matching its OWN recorded
+    modality, instead of assuming the entire unpaired slice of the batch is
+    clinical.
+
+    BUG THIS FIXES: the previous implementation always called
+    encode_fn(batch["clinical"][unpaired_mask], "clinical") for every
+    unpaired sample, regardless of what batch["modality"] said. Since
+    UnpairedDataset rows built from derm_train/derm_val/derm_test are
+    dermoscopic images, this silently routed every unpaired derm image
+    through the clinical backbone, starving derm_backbone of most of its
+    training signal (it only ever saw the derm half of paired rows).
+
+    UnpairedDataset stores the same image under both the 'clinical' and
+    'derm' keys, so once we know a row's true modality from
+    batch["modality"], we read it from the matching key and send it to the
+    matching encoder.
+    """
+    modality_list = batch.get("modality", None)
+    if modality_list is None:
+        # No modality info available — fall back to clinical-only (old behaviour).
+        is_derm = torch.zeros(batch_size, dtype=torch.bool, device=device)
+    else:
+        is_derm = torch.tensor(
+            [m == "derm" for m in modality_list], dtype=torch.bool, device=device
+        )
+
+    clin_mask = unpaired_mask & ~is_derm
+    derm_mask = unpaired_mask & is_derm
+
+    if clin_mask.any() and "clinical" in batch:
+        img_t = batch["clinical"][clin_mask].to(device)
+        _, z = encode_fn(img_t, "clinical")
+        if embeddings is None:
+            embeddings = torch.zeros(batch_size, z.size(-1), device=device, dtype=z.dtype)
+        embeddings[clin_mask] = z
+
+    if derm_mask.any() and "derm" in batch:
+        img_t = batch["derm"][derm_mask].to(device)
+        _, z = encode_fn(img_t, "derm")
+        if embeddings is None:
+            embeddings = torch.zeros(batch_size, z.size(-1), device=device, dtype=z.dtype)
+        embeddings[derm_mask] = z
+
+    return embeddings
+
+
 # ------------------------------------------------------------
 # Dual ResNet-18 Model (with projection head)
 # ------------------------------------------------------------
 class DualResNet18(nn.Module):
     """
     Dual ResNet-18 encoder with per-modality projection heads.
-    Clinical embeddings are projected via proj_head_clinical;
-    dermoscopic embeddings via proj_head_derm. Both heads map into
+    Both modalities share a single DualProjectionHead (modality-specific
+    input/output layers around a tied shared middle layer), mapping into
     the same shared embedding space (same out_dim).
     """
     def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True):
@@ -262,13 +310,9 @@ class DualResNet18(nn.Module):
             # Store the paired mask so train scripts can use it for cross-modal contrastive loss
             out["paired_mask"] = paired_mask
 
-        # Unpaired samples
-        if unpaired_mask.any() and "clinical" in batch:
-            img_t = batch["clinical"][unpaired_mask].to(device)
-            _, z = self.encode(img_t, "clinical")
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z.size(-1), device=device, dtype=z.dtype)
-            embeddings[unpaired_mask] = z
+        # Unpaired samples — each routed to ITS OWN modality's backbone
+        if unpaired_mask.any():
+            embeddings = _encode_unpaired(self.encode, batch, unpaired_mask, batch_size, device, embeddings)
 
         if embeddings is None:
             embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
@@ -285,8 +329,8 @@ class DualResNet18(nn.Module):
 class DualViT(nn.Module):
     """
     Dual ViT-small encoder with per-modality projection heads.
-    Clinical embeddings are projected via proj_head_clinical;
-    dermoscopic embeddings via proj_head_derm. Both heads map into
+    Both modalities share a single DualProjectionHead (modality-specific
+    input/output layers around a tied shared middle layer), mapping into
     the same shared embedding space (same out_dim).
     """
     def __init__(self, embed_dim, num_classes, num_skin_types, pretrained=True, use_projection=True):
@@ -342,13 +386,9 @@ class DualViT(nn.Module):
             # Store the paired mask so train scripts can use it for cross-modal contrastive loss
             out["paired_mask"] = paired_mask
 
-        # Unpaired samples
-        if unpaired_mask.any() and "clinical" in batch:
-            img_t = batch["clinical"][unpaired_mask].to(device)
-            _, z = self.encode(img_t, "clinical")
-            if embeddings is None:
-                embeddings = torch.zeros(batch_size, z.size(-1), device=device, dtype=z.dtype)
-            embeddings[unpaired_mask] = z
+        # Unpaired samples — each routed to ITS OWN modality's backbone
+        if unpaired_mask.any():
+            embeddings = _encode_unpaired(self.encode, batch, unpaired_mask, batch_size, device, embeddings)
 
         if embeddings is None:
             embeddings = torch.zeros(batch_size, self.classifier[1].in_features, device=device)
