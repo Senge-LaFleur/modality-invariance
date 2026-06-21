@@ -449,7 +449,7 @@ def main():
         mods_tsne   = np.concatenate(all_mods_tsne)
 
         knn_acc = compute_knn_accuracy(embs, labels_tsne, k=3)
-        print(f"\n[Modality-Invariant ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
+        print(f"\n[Modality-Invariant ViT] Test KNN (k=3) accuracy: {knn_acc:.4f}")
 
         save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc)
         plot_confusion_matrix(test_res["conf_mat"], class_names,

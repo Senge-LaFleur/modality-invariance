@@ -317,7 +317,7 @@ def main():
                 all_labels_tsne.append(batch["label"].cpu().numpy())
         embs = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
-        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
+        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=3)
         print(f"\n[Baseline ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
         # ------------------------------------------------
 

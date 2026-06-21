@@ -315,8 +315,8 @@ def main():
                 all_labels_tsne.append(batch["label"].cpu().numpy())
         embs = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
-        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
-        print(f"\n[Baseline ResNet-18] Test KNN (k=5) accuracy: {knn_acc:.4f}")
+        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=3)
+        print(f"\n[Baseline ResNet-18] Test KNN (k=3) accuracy: {knn_acc:.4f}")
         # ------------------------------------------------
 
         save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
