@@ -59,7 +59,7 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------
 # Configuration – edit these as needed
 # ------------------------------------------------------------
-SEED = 42
+SEED = 0
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)

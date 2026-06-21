@@ -69,7 +69,7 @@ def got_loss(p, q, mask, lamb=0.9):
 warnings.filterwarnings("ignore")
 
 # ----------------------------- Configuration ---------------------------------
-SEED = 42
+SEED = 0
 random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED); torch.backends.cudnn.deterministic = True
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

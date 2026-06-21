@@ -89,7 +89,7 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------
 # Reproducibility
 # ------------------------------------------------------------
-SEED = 42
+SEED = 0
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
@@ -142,10 +142,10 @@ CFG = {
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
-    'lambda_conf':     0.2,
-    'lambda_skin':     0.2,  
-    'lambda_con':      0.5,
-    'lambda_mi':       0.15,
+    'lambda_conf':     0.5,
+    'lambda_skin':     0.3,  
+    'lambda_con':      1.0,
+    'lambda_mi':       1.0,
     'temperature':     0.1,
     'label_smoothing': 0.01,
     'mixup_alpha':     0.4,
