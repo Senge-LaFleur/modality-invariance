@@ -131,7 +131,6 @@ echo ""
 # Dataset Links:
 # - https://www.kaggle.com/datasets/asosenge/hibaskinlesionsdataset-main
 # - https://www.kaggle.com/datasets/asosenge/fitzpatrick17k
-# - https://www.kaggle.com/datasets/asosenge/ham10000
 # - https://www.kaggle.com/datasets/asosenge/derm7pt
 # - https://www.kaggle.com/datasets/mahdavi1202/skin-cancer'  
 # - https://www.kaggle.com/datasets/sengenjih/isic2019'  
@@ -140,7 +139,6 @@ echo "[CHECK] Validating dataset roots..."
 for DSET in \
     "asosenge/hibaskinlesionsdataset-main" \
     "asosenge/fitzpatrick17k" \
-    "asosenge/ham10000" \
     "asosenge/derm7pt" \
     "mahdavi1202/skin-cancer" \
     "sengenjih/isic2019"; do
