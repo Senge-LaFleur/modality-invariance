@@ -103,17 +103,27 @@ print(f"Device: {DEVICE}")
 # ============================================================
 # PATH CONFIGURATION  — update these for each environment
 # ============================================================
-
-WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
+WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
-    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),             
-    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
+    'hiba':           Path('process_Modality_Invariance_vit/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('process_Modality_Invariance_vit/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'derm7pt':        Path('process_Modality_Invariance_vit/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('process_Modality_Invariance_vit/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('process_Modality_Invariance_vit/data/datasets/sengenjih/isic2019'),
 }
+
+# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
+# CSV_DIR = WORK_ROOT / 'csvs'
+
+# IMAGE_ROOTS = {
+#     'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+#     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
+#     'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+#     'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),             
+#     'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
+# }
 
 print("Checking configured paths:")
 print(f"  WORK_ROOT : {WORK_ROOT}  {'[OK]' if WORK_ROOT.exists() else '[MISSING]'}")
@@ -134,11 +144,11 @@ CFG = {
     'num_skin_types':  6,
 
     'batch_size':      32,
-    'num_epochs':      50,     # update as needed
+    'num_epochs':      500,     # update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 5,      # update as needed
+    'warmup_epochs': 50,      # update as needed
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,

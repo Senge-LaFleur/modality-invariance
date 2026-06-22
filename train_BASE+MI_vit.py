@@ -76,18 +76,27 @@ torch.backends.cudnn.benchmark = False
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
-#WORK_ROOT = Path('jobs/process_BASE_vit/outputs')
-WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
+WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
-    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
-    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
+    'hiba':           Path('process_BASE+MI_vit/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('process_BASE+MI_vit/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'derm7pt':        Path('process_BASE+MI_vit/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('process_BASE+MI_vit/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('process_BASE+MI_vit/data/datasets/sengenjih/isic2019'),
 }
+
+# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
+# CSV_DIR = WORK_ROOT / 'csvs'
+
+# IMAGE_ROOTS = {
+#     'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+#     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
+#     'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+#     'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
+#     'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
+# }
 
 CFG = {
     'csv_dir':      CSV_DIR,
@@ -102,11 +111,11 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 50,          # update as needed
+    'num_epochs': 500,          # update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 5,       # update as needed
+    'warmup_epochs': 50,       # update as needed
     'aug_probability': 0.85,
 
     # MI loss weight
@@ -338,31 +347,46 @@ def main():
 
         # ---- Compute KNN accuracy and collect for t-SNE modality ----
         model.eval()
-        all_embs = []
+        all_embs      = []
         all_labels_tsne = []
-        all_skins_tsne = []
-        all_mods_tsne = []   # 0=clinical, 1=derm, -1=paired (excluded)
+        all_skins_tsne  = []
+        all_mods_tsne   = []   # 0=clinical, 1=derm
+
         with torch.no_grad():
             for batch in test_loader:
                 for k, v in batch.items():
                     if isinstance(v, torch.Tensor):
                         batch[k] = v.to(DEVICE)
                 out = model(batch)
-                b = out["z"].size(0)
-                all_embs.append(out["z"].cpu().numpy())
-                all_labels_tsne.append(batch["label"].cpu().numpy())
-                all_skins_tsne.append(batch["skin_type"].cpu().numpy())
+                paired_mask = torch.tensor(batch["paired"], dtype=torch.bool)
 
-                # Modality mapping: skip paired samples
-                mod_list = []
-                for m in batch.get("modality", ["clinical"] * b):
-                    if m == "clinical":
-                        mod_list.append(0)
-                    elif m == "derm":
-                        mod_list.append(1)
-                    else:   # paired
-                        mod_list.append(-1)
-                all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
+                # ── Unpaired samples: take out["z"] directly ──────────────
+                unpaired_mask = ~paired_mask
+                if unpaired_mask.any():
+                    all_embs.append(out["z"][unpaired_mask].cpu().numpy())
+                    all_labels_tsne.append(batch["label"][unpaired_mask].cpu().numpy())
+                    all_skins_tsne.append(batch["skin_type"][unpaired_mask].cpu().numpy())
+                    mod_list = []
+                    modality_tags = batch.get("modality", ["clinical"] * paired_mask.numel())
+                    for i, m in enumerate(modality_tags):
+                        if not paired_mask[i]:
+                            mod_list.append(1 if m == "derm" else 0)
+                    all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
+
+                # ── Paired samples: add z_c and z_d as TWO separate points ──
+                if paired_mask.any() and "z_c" in out and "z_d" in out:
+                    z_c = out["z_c"].cpu().numpy()
+                    z_d = out["z_d"].cpu().numpy()
+                    labs_p = batch["label"][paired_mask].cpu().numpy()
+                    skin_p = batch["skin_type"][paired_mask].cpu().numpy()
+                    all_embs.append(z_c)
+                    all_labels_tsne.append(labs_p)
+                    all_skins_tsne.append(skin_p)
+                    all_mods_tsne.append(np.zeros(len(z_c), dtype=np.int64))
+                    all_embs.append(z_d)
+                    all_labels_tsne.append(labs_p)
+                    all_skins_tsne.append(skin_p)
+                    all_mods_tsne.append(np.ones(len(z_d), dtype=np.int64))
 
         embs        = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
@@ -391,11 +415,10 @@ def main():
         plot_tsne(embs, labels_tsne, "t-SNE - Test Set (Baseline+MI ViT)",
                   CFG["results_dir"] / "tsne_test.png")
 
-        # Modality t-SNE: use only unpaired clinical/derm (mods_tsne >= 0)
-        mask_mod = mods_tsne >= 0
-        if mask_mod.sum() > 1:
+        # Modality t-SNE: all entries already tagged 0=clinical / 1=derm
+        if len(set(mods_tsne.tolist())) > 1:
             plot_tsne_modality(
-                embs[mask_mod], skins_tsne[mask_mod], mods_tsne[mask_mod],
+                embs, skins_tsne, mods_tsne,
                 title="t-SNE — Modality (Clinical vs Dermoscopic)  [Test]",
                 save_path=CFG["results_dir"] / "tsne_test_modality.png",
             )

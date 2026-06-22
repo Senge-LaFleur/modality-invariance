@@ -75,28 +75,27 @@ torch.cuda.manual_seed_all(SEED); torch.backends.cudnn.deterministic = True
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-# WORK_ROOT = Path('outputs')
-# CSV_DIR = WORK_ROOT / 'csvs'
-
-# IMAGE_ROOTS = {
-#     'hiba':           Path('process_patchalign_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-#     'fitzpatrick17k': Path('process_patchalign_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-#     'ham10000':       Path('process_patchalign_resnet18/data/datasets/asosenge/ham10000/HAM10000'),
-#     'derm7pt':        Path('process_patchalign_resnet18/data/datasets/asosenge/derm7pt/release_v0/images'),
-#     'padufes20':      Path('process_patchalign_resnet18/data/datasets/mahdavi1202/skin-cancer'),
-#     'isic2019':       Path('process_patchalign_resnet18/data/datasets/sengenjih/isic2019'),
-# }
-
-WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
+WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
-    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),
-    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
+    'hiba':           Path('process_patchalign_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('process_patchalign_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'derm7pt':        Path('process_patchalign_resnet18/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('process_patchalign_resnet18/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('process_patchalign_resnet18/data/datasets/sengenjih/isic2019'),
 }
+
+# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
+# CSV_DIR = WORK_ROOT / 'csvs'
+
+# IMAGE_ROOTS = {
+#     'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+#     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
+#     'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+#     'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),
+#     'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
+# }
 
 
 FULL_EMBEDDINGS_PATH = WORK_ROOT / 'text_embeddings_3_large_consecutive_averaged.npy'
@@ -114,11 +113,11 @@ CFG = {
     'num_text_labels': 4,
     'text_embed_dim': 768,
     'batch_size': 32,
-    'num_epochs': 50,
+    'num_epochs': 500,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 5,
+    'warmup_epochs': 50,
     'aug_probability': 0.85,
     'alpha_conf': 0.5, 'beta_got': 1.0, 'lamb_got': 0.9,
 }
