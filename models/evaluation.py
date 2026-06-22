@@ -265,10 +265,10 @@ def build_loaders(cfg, seed=42):
     test_datasets = []
     # if not paired_test.empty:
     #     test_datasets.append(PairedDataset(paired_test, image_maps, transform=val_transform))
-    # if not clin_test.empty:
-    #     test_datasets.append(UnpairedDataset(clin_test, image_maps, transform=val_transform, id_col='clinical', modality='clinical'))
-    if not derm_test.empty:
-        test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm', modality='derm'))
+    if not clin_test.empty:
+        test_datasets.append(UnpairedDataset(clin_test, image_maps, transform=val_transform, id_col='clinical', modality='clinical'))
+    # if not derm_test.empty:
+    #     test_datasets.append(UnpairedDataset(derm_test, image_maps, transform=val_transform, id_col='derm', modality='derm'))
     test_dataset = torch.utils.data.ConcatDataset(test_datasets) if test_datasets else None
 
     # Weighted sampler for training (handle class imbalance)
