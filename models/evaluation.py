@@ -433,17 +433,34 @@ def robust_macro_f1(labels, preds):
 # ------------------------------------------------------------
 def compute_knn_accuracy(embeddings, labels, k=3, device='cpu'):
     """
-    Compute k-NN classification accuracy using the given embeddings.
+    Compute k-NN classification accuracy using leave-one-out cross-validation.
+
+    WHY LOO: fitting and predicting on the same set inflates accuracy to
+    near-100% regardless of embedding quality, because every point's own
+    nearest neighbour is itself.  Leave-one-out excludes each query point
+    from its own neighbour search, giving a meaningful measure of how well
+    the embedding space separates classes for *unseen* queries.
+
     embeddings: numpy array of shape (n_samples, embed_dim)
-    labels: numpy array of shape (n_samples,)
-    Returns: accuracy (float)
+    labels:     numpy array of shape (n_samples,)
+    Returns:    accuracy (float)
     """
     from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.model_selection import LeaveOneOut, cross_val_score
+
+    n = len(labels)
+    # LOO is exact but O(n^2) — cap at 2000 samples with stratified subsampling
+    # to keep evaluation fast while remaining statistically representative.
+    if n > 2000:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(n, 2000, replace=False)
+        embeddings = embeddings[idx]
+        labels = labels[idx]
+
     knn = KNeighborsClassifier(n_neighbors=k, metric='cosine')
-    knn.fit(embeddings, labels)
-    preds = knn.predict(embeddings)
-    acc = np.mean(preds == labels)
-    return acc
+    loo = LeaveOneOut()
+    scores = cross_val_score(knn, embeddings, labels, cv=loo, scoring='accuracy')
+    return float(scores.mean())
 
 
 # ------------------------------------------------------------

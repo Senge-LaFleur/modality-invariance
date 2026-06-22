@@ -89,7 +89,7 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------
 # Reproducibility
 # ------------------------------------------------------------
-SEED = 0
+SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
@@ -142,10 +142,10 @@ CFG = {
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
-    'lambda_conf':     0.5,
-    'lambda_skin':     0.3,  
-    'lambda_con':      1.0,
-    'lambda_mi':       1.0,
+    'lambda_conf':     0.2,
+    'lambda_skin':     0.2,  
+    'lambda_con':      0.5,
+    'lambda_mi':       0.15,
     'temperature':     0.1,
     'label_smoothing': 0.01,
     'mixup_alpha':     0.4,
@@ -416,32 +416,57 @@ def main():
         test_fair = fairness(test_res)
         test_fair_binary = fairness_binary(test_res)
 
-        # ---- Compute KNN accuracy on test embeddings ----
+        # ---- Collect embeddings for KNN accuracy + t-SNE ----
         model.eval()
-        all_embs = []
+        all_embs      = []
         all_labels_tsne = []
-        all_skins_tsne = []
-        all_mods_tsne = []   # 0=clinical, 1=derm, paired excluded
+        all_skins_tsne  = []
+        all_mods_tsne   = []   # 0=clinical, 1=derm
+
         with torch.no_grad():
             for batch in test_loader:
                 for k, v in batch.items():
                     if isinstance(v, torch.Tensor):
                         batch[k] = v.to(DEVICE)
                 out = model(batch)
-                b = out["z"].size(0)
-                all_embs.append(out["z"].cpu().numpy())
-                all_labels_tsne.append(batch["label"].cpu().numpy())
-                all_skins_tsne.append(batch["skin_type"].cpu().numpy())
+                paired_mask = torch.tensor(batch["paired"], dtype=torch.bool)
 
-                mod_list = []
-                for m in batch.get("modality", ["clinical"] * b):
-                    if m == "clinical":
-                        mod_list.append(0)
-                    elif m == "derm":
-                        mod_list.append(1)
-                    else:
-                        mod_list.append(-1)   # paired – exclude
-                all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
+                # ── Unpaired samples: take out["z"] directly ──────────────
+                # Each unpaired sample already has its own modality tag.
+                unpaired_mask = ~paired_mask
+                if unpaired_mask.any():
+                    all_embs.append(out["z"][unpaired_mask].cpu().numpy())
+                    all_labels_tsne.append(batch["label"][unpaired_mask].cpu().numpy())
+                    all_skins_tsne.append(batch["skin_type"][unpaired_mask].cpu().numpy())
+                    mod_list = []
+                    modality_tags = batch.get("modality", ["clinical"] * paired_mask.numel())
+                    for i, m in enumerate(modality_tags):
+                        if not paired_mask[i]:
+                            mod_list.append(1 if m == "derm" else 0)
+                    all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
+
+                # ── Paired samples: add z_c and z_d as TWO separate points ──
+                # out["z"] for paired rows is the blended (z_c + z_d)/2 which
+                # carries no modality identity. Instead, use the per-modality
+                # embeddings z_c (clinical) and z_d (derm) stored in out, so
+                # both modalities appear in the t-SNE and KNN evaluation.
+                if paired_mask.any() and "z_c" in out and "z_d" in out:
+                    z_c = out["z_c"].cpu().numpy()   # (n_paired, D)
+                    z_d = out["z_d"].cpu().numpy()   # (n_paired, D)
+                    labs_p = batch["label"][paired_mask].cpu().numpy()
+                    skin_p = batch["skin_type"][paired_mask].cpu().numpy()
+
+                    # Clinical half of pairs → modality 0
+                    all_embs.append(z_c)
+                    all_labels_tsne.append(labs_p)
+                    all_skins_tsne.append(skin_p)
+                    all_mods_tsne.append(np.zeros(len(z_c), dtype=np.int64))
+
+                    # Derm half of pairs → modality 1
+                    all_embs.append(z_d)
+                    all_labels_tsne.append(labs_p)
+                    all_skins_tsne.append(skin_p)
+                    all_mods_tsne.append(np.ones(len(z_d), dtype=np.int64))
 
         embs        = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
@@ -449,7 +474,7 @@ def main():
         mods_tsne   = np.concatenate(all_mods_tsne)
 
         knn_acc = compute_knn_accuracy(embs, labels_tsne, k=3)
-        print(f"\n[Modality-Invariant ViT] Test KNN (k=3) accuracy: {knn_acc:.4f}")
+        print(f"\n[Modality-Invariant ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
 
         save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc)
         plot_confusion_matrix(test_res["conf_mat"], class_names,
@@ -470,17 +495,19 @@ def main():
                        "ROC Curves - Test",
                        CFG["results_dir"] / "test_roc.png")
 
-        # t-SNE plots
+        # NOTE: embs / labels_tsne / mods_tsne already include BOTH the
+        # blended z (unpaired) AND the split z_c / z_d (paired halves).
+        # All entries are tagged 0 or 1 — no -1 sentinel remains.
+        # plot_tsne_class_fst uses all embs; plot_tsne_modality uses all too.
         plot_tsne_class_fst(
             embs, labels_tsne, skins_tsne,
             title="t-SNE — Shared Embedding Space  [Internal Test]",
             save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
         )
 
-        mask_mod = mods_tsne >= 0
-        if mask_mod.sum() > 1:
+        if len(set(mods_tsne.tolist())) > 1:
             plot_tsne_modality(
-                embs[mask_mod], skins_tsne[mask_mod], mods_tsne[mask_mod],
+                embs, skins_tsne, mods_tsne,
                 title="t-SNE — Modality-Invariance  [Internal Test]",
                 save_path=CFG["results_dir"] / "tsne_test_modality_invariance.png",
             )
