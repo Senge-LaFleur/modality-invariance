@@ -80,6 +80,74 @@ def got_loss(p, q, mask, lamb=0.9):
     return lamb * torch.mean(gwd) + (1.0 - lamb) * torch.mean(wd)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Safe checkpoint helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _free_bytes(path: Path) -> int:
+    """Return free disk bytes on the filesystem that contains *path*."""
+    import shutil as _shutil
+    return _shutil.disk_usage(str(path)).free
+
+
+def safe_torch_save(obj, path: Path, min_free_gb: float = 1.0) -> bool:
+    """
+    Write *obj* to *path* atomically via a sibling .tmp file.
+
+    Atomic strategy: write to ``<path>.tmp``, then os.replace() — a single
+    kernel syscall that is guaranteed to be atomic on POSIX/Linux (including
+    Kaggle).  This means a failed save never corrupts the previous checkpoint.
+
+    Returns True on success, False on failure (prints a warning).
+
+    Parameters
+    ----------
+    min_free_gb : float
+        Skip the save (with a warning) if less than this much free space
+        remains on the target filesystem.  Defaults to 1.0 GB.
+    """
+    path = Path(path)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+
+    # Pre-flight disk-space check
+    try:
+        free_gb = _free_bytes(path.parent) / 1e9
+        if free_gb < min_free_gb:
+            print(
+                f"[WARN] safe_torch_save: only {free_gb:.2f} GB free — "
+                f"skipping save to {path.name}"
+            )
+            return False
+    except Exception:
+        pass  # If we can't stat, proceed anyway
+
+    # Remove stale .tmp from a previous crashed run
+    tmp_path.unlink(missing_ok=True)
+
+    try:
+        torch.save(obj, tmp_path)
+        os.replace(tmp_path, path)   # atomic rename
+        return True
+    except (RuntimeError, OSError, IOError) as exc:
+        print(f"[WARN] safe_torch_save failed for {path.name}: {exc}")
+        tmp_path.unlink(missing_ok=True)   # clean up partial write
+        return False
+
+
+def prune_periodic_checkpoints(ckpt_dir: Path, keep: int = 2) -> None:
+    """
+    Keep only the *keep* most-recent ``checkpoint_epNNN.pt`` files,
+    deleting older ones to reclaim disk space.
+    """
+    pattern = sorted(ckpt_dir.glob("checkpoint_ep*.pt"))
+    for old in pattern[:-keep]:
+        try:
+            old.unlink()
+            print(f"[INFO] Pruned old checkpoint: {old.name}")
+        except OSError:
+            pass
+
+
 # ----------------------------- Original label list (115 items) --------------
 ORIGINAL_LABELS = [
     'drug induced pigmentary changes', 'photodermatoses',
@@ -556,17 +624,31 @@ def main():
             "scheduler": scheduler.state_dict(),
             "history":   dict(history),
         }
-        torch.save(ckpt_state, CFG["ckpt_dir"] / "last_model.pt")
-        if not np.isnan(val_metrics["auroc"]) and val_metrics["auroc"] > best_auroc:
-            best_auroc = val_metrics["auroc"]
-            shutil.copy(CFG["ckpt_dir"] / "last_model.pt",
-                        CFG["ckpt_dir"] / "best_auroc_model.pt")
-        if val_metrics["macro_f1"] > best_f1:
-            best_f1 = val_metrics["macro_f1"]
-            shutil.copy(CFG["ckpt_dir"] / "last_model.pt",
-                        CFG["ckpt_dir"] / "best_f1_model.pt")
+
+        # --- atomic save of rolling last checkpoint ---
+        last_path = CFG["ckpt_dir"] / "last_model.pt"
+        saved_last = safe_torch_save(ckpt_state, last_path)
+
+        if saved_last:
+            if not np.isnan(val_metrics["auroc"]) and val_metrics["auroc"] > best_auroc:
+                best_auroc = val_metrics["auroc"]
+                try:
+                    shutil.copy(last_path, CFG["ckpt_dir"] / "best_auroc_model.pt")
+                except (OSError, IOError) as exc:
+                    print(f"[WARN] Could not copy best_auroc checkpoint: {exc}")
+
+            if val_metrics["macro_f1"] > best_f1:
+                best_f1 = val_metrics["macro_f1"]
+                try:
+                    shutil.copy(last_path, CFG["ckpt_dir"] / "best_f1_model.pt")
+                except (OSError, IOError) as exc:
+                    print(f"[WARN] Could not copy best_f1 checkpoint: {exc}")
+
+        # --- periodic checkpoint every 5 epochs; prune old ones to save space ---
         if (epoch + 1) % 5 == 0:
-            torch.save(ckpt_state, CFG["ckpt_dir"] / f"checkpoint_ep{epoch+1:03d}.pt")
+            periodic_path = CFG["ckpt_dir"] / f"checkpoint_ep{epoch+1:03d}.pt"
+            safe_torch_save(ckpt_state, periodic_path)
+            prune_periodic_checkpoints(CFG["ckpt_dir"], keep=2)
 
         with open(CFG["results_dir"] / "history.json", "w") as f:
             json.dump({k: [float(x) for x in v] for k, v in history.items()}, f, indent=2)
