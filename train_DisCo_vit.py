@@ -352,6 +352,8 @@ def main():
                            "Per-Class Metrics - Validation", CFG["results_dir"] / "val_per_class.png")
     plot_fairness_metrics(val_fair, "Fairness - Validation", CFG["results_dir"] / "val_fairness.png")
     print("\nBinary fairness (Validation):")
+    print(f"  Acc_light: {val_fair_binary['Acc_light']:.4f}  (FST I–III)")
+    print(f"  Acc_dark : {val_fair_binary['Acc_dark']:.4f}  (FST IV–VI)")
     print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
     print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
     print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
@@ -390,11 +392,13 @@ def main():
                                "Per-Class Metrics - Test", CFG["results_dir"] / "test_per_class.png")
         plot_fairness_metrics(test_fair, "Fairness - Test", CFG["results_dir"] / "test_fairness.png")
         print("\nBinary fairness (Test):")
+        print(f"  Acc_light: {test_fair_binary['Acc_light']:.4f}  (FST I–III)")
+        print(f"  Acc_dark : {test_fair_binary['Acc_dark']:.4f}  (FST IV–VI)")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
         print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
         print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
         print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
-        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
 
         # t-SNE on test projections
         plot_tsne(embs, labels_tsne, "t-SNE - Test Set (DisCo ViT)",
@@ -414,11 +418,13 @@ def main():
                                f"Per-Class Metrics - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_per_class.png")
         plot_fairness_metrics(fair, f"Fairness - {ds_name}", CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
         print(f"\nBinary fairness ({ds_name}):")
+        print(f"  Acc_light: {fair_binary['Acc_light']:.4f}  (FST I–III)")
+        print(f"  Acc_dark : {fair_binary['Acc_dark']:.4f}  (FST IV–VI)")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
         print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
         print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
         print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
-        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "auroc": res["auroc"],

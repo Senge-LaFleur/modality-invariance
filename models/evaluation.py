@@ -678,35 +678,43 @@ def fairness_binary(res):
         EOpp0     (equal opportunity TPR difference)
         EOpp1     (equal opportunity TNR difference)
         EOdd      (equalized odds – average of absolute TPR and TNR differences)
-        Acc_gap   (accuracy difference: light - dark)
+        Acc_light (accuracy for FST I-III / light skin group)
+        Acc_dark  (accuracy for FST IV-VI / dark skin group)
+        Acc_gap   (|Acc_light - Acc_dark|)
     """
     skin = res['skin']
     known = skin >= 0
     if known.sum() == 0:
         return {
-            'DP_diff': float('nan'),
-            'EOpp0': float('nan'),
-            'EOpp1': float('nan'),
-            'EOdd': float('nan'),
-            'Acc_gap': float('nan')
+            'DP_diff':   float('nan'),
+            'EOpp0':     float('nan'),
+            'EOpp1':     float('nan'),
+            'EOdd':      float('nan'),
+            'Acc_light': float('nan'),
+            'Acc_dark':  float('nan'),
+            'Acc_gap':   float('nan'),
         }
     groups = group_light_dark(skin[known])
-    preds_known = res['preds'][known]
+    preds_known  = res['preds'][known]
     labels_known = res['labels'][known]
 
-    # Accuracy gap
+    # Per-group accuracy
     mask_light = groups == 0
     mask_dark  = groups == 1
-    acc_light = (preds_known[mask_light] == labels_known[mask_light]).mean() if mask_light.sum() > 0 else np.nan
-    acc_dark  = (preds_known[mask_dark]  == labels_known[mask_dark]).mean() if mask_dark.sum()  > 0 else np.nan
-    acc_gap = (abs(acc_light - acc_dark)) if (not np.isnan(acc_light) and not np.isnan(acc_dark)) else float('nan')
+    n_light = int(mask_light.sum())
+    n_dark  = int(mask_dark.sum())
+    acc_light = (preds_known[mask_light] == labels_known[mask_light]).mean() if n_light > 0 else float('nan')
+    acc_dark  = (preds_known[mask_dark]  == labels_known[mask_dark]).mean()  if n_dark  > 0 else float('nan')
+    acc_gap   = abs(acc_light - acc_dark) if (not np.isnan(acc_light) and not np.isnan(acc_dark)) else float('nan')
 
     return {
-        'DP_diff': demographic_parity_diff(preds_known, labels_known, groups),
-        'EOpp0':   equal_opportunity_tpr(preds_known, labels_known, groups),
-        'EOpp1':   equal_opportunity_tnr(preds_known, labels_known, groups),
-        'EOdd':    equalized_odds(preds_known, labels_known, groups),
-        'Acc_gap': acc_gap,
+        'DP_diff':   demographic_parity_diff(preds_known, labels_known, groups),
+        'EOpp0':     equal_opportunity_tpr(preds_known, labels_known, groups),
+        'EOpp1':     equal_opportunity_tnr(preds_known, labels_known, groups),
+        'EOdd':      equalized_odds(preds_known, labels_known, groups),
+        'Acc_light': float(acc_light),
+        'Acc_dark':  float(acc_dark),
+        'Acc_gap':   float(acc_gap),
     }
 
 
@@ -738,12 +746,14 @@ def save_results_csv(res, fair, split_name, results_dir, label_names, fair_binar
     # Binary fairness metrics (if provided)
     if fair_binary is not None:
         binary_metrics = {
-            "split": split_name,
-            "DP_diff": fair_binary["DP_diff"],
-            "EOpp0": fair_binary["EOpp0"],
-            "EOpp1": fair_binary["EOpp1"],
-            "EOdd": fair_binary["EOdd"],
-            "Acc_gap": fair_binary["Acc_gap"],
+            "split":     split_name,
+            "Acc_light": fair_binary["Acc_light"],
+            "Acc_dark":  fair_binary["Acc_dark"],
+            "Acc_gap":   fair_binary["Acc_gap"],
+            "DP_diff":   fair_binary["DP_diff"],
+            "EOpp0":     fair_binary["EOpp0"],
+            "EOpp1":     fair_binary["EOpp1"],
+            "EOdd":      fair_binary["EOdd"],
         }
         pd.DataFrame([binary_metrics]).to_csv(results_dir / f"{split_name}_binary_fairness.csv", index=False)
 

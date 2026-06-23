@@ -401,7 +401,7 @@ def main():
                        desc="Validation (final)")
     val_fair = fairness(val_res)
     val_fair_binary = fairness_binary(val_res)
-    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES)
+    save_results_csv(val_res, val_fair, "val", CFG["results_dir"], LABEL_NAMES, fair_binary=val_fair_binary)
     plot_confusion_matrix(val_res["conf_mat"], class_names,
                           "Confusion Matrix - Validation",
                           CFG["results_dir"] / "val_confusion.png")
@@ -411,11 +411,13 @@ def main():
     plot_fairness_metrics(val_fair, "Fairness - Validation",
                           CFG["results_dir"] / "val_fairness.png")
     print("\nBinary fairness (Validation):")
+    print(f"  Acc_light: {val_fair_binary['Acc_light']:.4f}  (FST I–III)")
+    print(f"  Acc_dark : {val_fair_binary['Acc_dark']:.4f}  (FST IV–VI)")
+    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
     print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
     print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
     print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
     print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
-    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
     plot_roc_curve(val_res["labels"], val_res["probs"], class_names,
                    "ROC Curves - Validation",
                    CFG["results_dir"] / "val_roc.png")
@@ -486,7 +488,7 @@ def main():
         knn_acc = compute_knn_accuracy(embs, labels_tsne, k=3)
         print(f"\n[Modality-Invariant ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
 
-        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc)
+        save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES, knn_acc=knn_acc, fair_binary=test_fair_binary)
         plot_confusion_matrix(test_res["conf_mat"], class_names,
                               "Confusion Matrix - Test",
                               CFG["results_dir"] / "test_confusion.png")
@@ -496,11 +498,13 @@ def main():
         plot_fairness_metrics(test_fair, "Fairness - Test",
                               CFG["results_dir"] / "test_fairness.png")
         print("\nBinary fairness (Test):")
+        print(f"  Acc_light: {test_fair_binary['Acc_light']:.4f}  (FST I–III)")
+        print(f"  Acc_dark : {test_fair_binary['Acc_dark']:.4f}  (FST IV–VI)")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
         print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
         print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
         print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
-        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
         plot_roc_curve(test_res["labels"], test_res["probs"], class_names,
                        "ROC Curves - Test",
                        CFG["results_dir"] / "test_roc.png")
@@ -532,7 +536,7 @@ def main():
                        desc=f"Cross-eval: {ds_name}")
         fair = fairness(res)
         fair_binary = fairness_binary(res)
-        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES)
+        save_results_csv(res, fair, f"cross_{ds_name}", CFG["results_dir"], LABEL_NAMES, fair_binary=fair_binary)
         plot_confusion_matrix(res["conf_mat"], class_names,
                               f"Confusion Matrix - {ds_name}",
                               CFG["results_dir"] / f"cross_{ds_name}_confusion.png")
@@ -542,11 +546,13 @@ def main():
         plot_fairness_metrics(fair, f"Fairness - {ds_name}",
                               CFG["results_dir"] / f"cross_{ds_name}_fairness.png")
         print(f"\nBinary fairness ({ds_name}):")
+        print(f"  Acc_light: {fair_binary['Acc_light']:.4f}  (FST I–III)")
+        print(f"  Acc_dark : {fair_binary['Acc_dark']:.4f}  (FST IV–VI)")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
         print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
         print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
         print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
-        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
         plot_roc_curve(res["labels"], res["probs"], class_names,
                        f"ROC Curves - {ds_name}",
                        CFG["results_dir"] / f"cross_{ds_name}_roc.png")

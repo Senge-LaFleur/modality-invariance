@@ -140,11 +140,11 @@ CFG = {
     'num_skin_types':  6,
 
     'batch_size':      32,
-    'num_epochs':      500,
+    'num_epochs':      50,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 50,
+    'warmup_epochs': 5,
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
@@ -391,11 +391,13 @@ def main():
                    "ROC Curves - Validation",
                    CFG["results_dir"] / "val_roc.png")
     print("\nBinary fairness (Validation):")
+    print(f"  Acc_light: {val_fair_binary['Acc_light']:.4f}  (FST I–III)")
+    print(f"  Acc_dark : {val_fair_binary['Acc_dark']:.4f}  (FST IV–VI)")
+    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
     print(f"  DP_diff  : {val_fair_binary['DP_diff']:.4f}")
     print(f"  EOpp0    : {val_fair_binary['EOpp0']:.4f}")
     print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
     print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
-    print(f"  Acc_gap  : {val_fair_binary['Acc_gap']:.4f}")
 
     # ── Internal test split ─────────────────────────────────────────────────
     if test_loader:
@@ -467,11 +469,13 @@ def main():
                        "ROC Curves - Test",
                        CFG["results_dir"] / "test_roc.png")
         print("\nBinary fairness (Test):")
+        print(f"  Acc_light: {test_fair_binary['Acc_light']:.4f}  (FST I–III)")
+        print(f"  Acc_dark : {test_fair_binary['Acc_dark']:.4f}  (FST IV–VI)")
+        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
         print(f"  DP_diff  : {test_fair_binary['DP_diff']:.4f}")
         print(f"  EOpp0    : {test_fair_binary['EOpp0']:.4f}")
         print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
-        print(f"  Acc_gap  : {test_fair_binary['Acc_gap']:.4f}")
 
         # t-SNE plots
         plot_tsne_class_fst(
@@ -510,11 +514,13 @@ def main():
                        f"ROC Curves - {ds_name}",
                        CFG["results_dir"] / f"cross_{ds_name}_roc.png")
         print(f"\nBinary fairness ({ds_name}):")
+        print(f"  Acc_light: {fair_binary['Acc_light']:.4f}  (FST I–III)")
+        print(f"  Acc_dark : {fair_binary['Acc_dark']:.4f}  (FST IV–VI)")
+        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
         print(f"  DP_diff  : {fair_binary['DP_diff']:.4f}")
         print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
         print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
-        print(f"  Acc_gap  : {fair_binary['Acc_gap']:.4f}")
 
         cross_results[ds_name] = {
             "accuracy": res["acc"],
