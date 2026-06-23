@@ -76,14 +76,15 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
 WORK_ROOT = Path('outputs')
+WORK_DIR="20260623-process"
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('process_patchalign_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'fitzpatrick17k': Path('process_patchalign_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'derm7pt':        Path('process_patchalign_resnet18/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('process_patchalign_resnet18/data/datasets/mahdavi1202/skin-cancer'),
-    'isic2019':       Path('process_patchalign_resnet18/data/datasets/sengenjih/isic2019'),
+    'hiba':           Path('20260623-process/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('20260623-process/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'derm7pt':        Path('20260623-process/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('20260623-process/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('20260623-process/data/datasets/sengenjih/isic2019'),
 }
 
 # WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
