@@ -68,7 +68,6 @@ torch.backends.cudnn.benchmark = False
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-WORK_ROOT = Path('jobs/process_ATRB_resnet18/outputs')
 WORK_ROOT = Path('outputs')
 CSV_DIR = WORK_ROOT / 'csvs'
 
