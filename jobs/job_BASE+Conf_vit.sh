@@ -25,13 +25,13 @@ module load cuda/12.6
 #module load cudnn/8.9
 module load python/3.11.7
 
-WORK_DIR="process_BASE+Conf_vit"
+WORK_DIR="20260623-process"
 
 SCRIPT_NAME="../train_BASE+Conf_vit.py"       
 
 export DATA_ROOT="$WORK_DIR/data/datasets"
 
-export WORK_ROOT="$WORK_DIR/outputs"
+export WORK_ROOT="$WORK_DIR/outputs_BASE+Conf_vit"
 
 export BACKBONE_CACHE="$WORK_DIR/backbone_cache"
 export TORCH_HOME="$BACKBONE_CACHE"
