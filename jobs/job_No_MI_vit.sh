@@ -26,12 +26,13 @@ module load cuda/12.6
 module load python/3.11.7
 
 WORK_DIR="20260623-process"
+OUTPUT_DIR="outputs_No_MI_vit"
 
 SCRIPT_NAME="../train_No_MI_vit.py"       
 
 export DATA_ROOT="$WORK_DIR/data/datasets"
 
-export WORK_ROOT="$WORK_DIR/outputs_No_MI_vit"
+export WORK_ROOT="$WORK_DIR/$OUTPUT_DIR"
 
 export BACKBONE_CACHE="$WORK_DIR/backbone_cache"
 export TORCH_HOME="$BACKBONE_CACHE"
@@ -206,7 +207,7 @@ pip install -q timm einops scikit-learn umap-learn \
                matplotlib seaborn pandas tqdm Pillow \
                shap captum
 
-python "../$SCRIPT_NAME"
+python "../$SCRIPT_NAME" $WORK_DIR $OUTPUT_DIR
 
 EXIT_CODE=$?
 
