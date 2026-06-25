@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/users/jlacmou/supports/senge/modality-invariance/jobs/20260623-process/../../train_ATRB_resnet18.py", line 446, in <module>
+    main()
+  File "/users/jlacmou/supports/senge/modality-invariance/jobs/20260623-process/../../train_ATRB_resnet18.py", line 253, in main
+    train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/users/jlacmou/supports/senge/modality-invariance/models/evaluation.py", line 249, in build_loaders
+    raise FileNotFoundError("No training data found. Check CSV files in " + str(csv_dir))
+FileNotFoundError: No training data found. Check CSV files in outputs/csvs
