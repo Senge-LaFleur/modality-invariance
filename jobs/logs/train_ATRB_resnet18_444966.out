@@ -1,0 +1,75 @@
+=========================================
+Job:       train_ATRB_resnet18  (444966)
+Node:      bigpu03
+Started:   Tue Jun 23 12:13:50 AM CEST 2026
+=========================================
+[INFO] No HF token found at /users/jlacmou/.hf_token — downloads may be slow.
+[INFO] No kaggle.json found in 20260623-process. Relying on ~/.kaggle/ or env vars.
+[SETUP] Creating virtual environment...
+[SETUP] Installing / verifying Python dependencies...
+
+── GPU info ──────────────────────────────
+Tesla V100-PCIE-32GB, 32768 MiB, 575.57.08
+PyTorch : 2.12.1+cu126
+CUDA    : 12.6
+Devices : 1
+GPU 0   : Tesla V100-PCIE-32GB
+VRAM    : 34.1 GB
+──────────────────────────────────────────
+
+[CHECK] Validating dataset roots...
+  [MISSING] 20260623-process/data/datasets/asosenge/hibaskinlesionsdataset-main  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/hibaskinlesionsdataset-main
+License(s): other
+Downloading hibaskinlesionsdataset-main.zip to 20260623-process/data/datasets/asosenge/hibaskinlesionsdataset-main
+
+  [DOWNLOADED] 20260623-process/data/datasets/asosenge/hibaskinlesionsdataset-main
+  [MISSING] 20260623-process/data/datasets/asosenge/fitzpatrick17k  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/fitzpatrick17k
+License(s): other
+Downloading fitzpatrick17k.zip to 20260623-process/data/datasets/asosenge/fitzpatrick17k
+
+  [DOWNLOADED] 20260623-process/data/datasets/asosenge/fitzpatrick17k
+  [MISSING] 20260623-process/data/datasets/asosenge/derm7pt  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/asosenge/derm7pt
+License(s): other
+Downloading derm7pt.zip to 20260623-process/data/datasets/asosenge/derm7pt
+
+  [DOWNLOADED] 20260623-process/data/datasets/asosenge/derm7pt
+  [MISSING] 20260623-process/data/datasets/mahdavi1202/skin-cancer  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/mahdavi1202/skin-cancer
+License(s): Attribution 4.0 International (CC BY 4.0)
+Downloading skin-cancer.zip to 20260623-process/data/datasets/mahdavi1202/skin-cancer
+
+  [DOWNLOADED] 20260623-process/data/datasets/mahdavi1202/skin-cancer
+  [MISSING] 20260623-process/data/datasets/sengenjih/isic2019  ← Attempting to download via Kaggle CLI...
+Dataset URL: https://www.kaggle.com/datasets/sengenjih/isic2019
+License(s): Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+Downloading isic2019.zip to 20260623-process/data/datasets/sengenjih/isic2019
+
+  [DOWNLOADED] 20260623-process/data/datasets/sengenjih/isic2019
+
+[CONVERT] Converting notebook to Python script...
+[PATCH] Redirecting Kaggle paths → cluster paths...
+  DATA_ROOT  → 20260623-process/data/datasets
+  WORK_ROOT  → 20260623-process/outputs_ATRB_resnet18
+  BB_CACHE   → 20260623-process/backbone_cache
+  Patch applied successfully.
+
+[RUN] Starting training — Tue Jun 23 12:31:41 AM CEST 2026
+=========================================
+Device: cuda
+CSV dir      : outputs/csvs
+Checkpoints  : outputs/checkpoints_ATRB_resnet18
+Results      : outputs/results_ATRB_resnet18
+Image roots:
+  hiba           : process_ATRB_resnet18/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images
+  fitzpatrick17k : process_ATRB_resnet18/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k
+  derm7pt        : process_ATRB_resnet18/data/datasets/asosenge/derm7pt/release_v0/images
+  padufes20      : process_ATRB_resnet18/data/datasets/mahdavi1202/skin-cancer
+  isic2019       : process_ATRB_resnet18/data/datasets/sengenjih/isic2019
+[INFO] Built image map for hiba: 0 entries
+[INFO] Built image map for fitzpatrick17k: 0 entries
+[INFO] Built image map for derm7pt: 0 entries
+[INFO] Built image map for padufes20: 0 entries
+[INFO] Built image map for isic2019: 0 entries
