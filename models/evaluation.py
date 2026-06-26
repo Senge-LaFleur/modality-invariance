@@ -892,7 +892,24 @@ def plot_roc_curve(y_true, y_probs, class_names, title, save_path):
     macro_auc = auc(all_fpr, mean_tpr)
 
     plt.figure(figsize=(10, 8))
-    colors = plt.cm.get_cmap('tab10', n_classes)
+
+    # ---- Cross‑version colormap retrieval ----
+    def _get_cmap(name, n_colors):
+        try:
+            import matplotlib as mpl
+            if hasattr(mpl.colormaps, 'get_cmap'):
+                return mpl.colormaps.get_cmap(name, n_colors)
+            else:
+                return mpl.cm.get_cmap(name, n_colors)
+        except (AttributeError, ImportError):
+            try:
+                return plt.get_cmap(name, n_colors)
+            except AttributeError:
+                return plt.cm.get_cmap(name, n_colors)
+
+    colors = _get_cmap('tab10', n_classes)
+    # -------------------------------------------
+
     for i in range(n_classes):
         plt.plot(fpr[i], tpr[i], color=colors(i), lw=2,
                  label=f'{class_names[i]} (AUC = {roc_auc[i]:.3f})')

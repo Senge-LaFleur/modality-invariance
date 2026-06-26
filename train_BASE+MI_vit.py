@@ -76,16 +76,16 @@ torch.backends.cudnn.benchmark = False
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-WORK_ROOT = Path('outputs')
-WORK_DIR="20260623-process"
+WORK_ROOT = Path(sys.argv[2])
+WORK_DIR=sys.argv[1]
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('20260623-process/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'fitzpatrick17k': Path('20260623-process/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'derm7pt':        Path('20260623-process/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('20260623-process/data/datasets/mahdavi1202/skin-cancer'),
-    'isic2019':       Path('20260623-process/data/datasets/sengenjih/isic2019'),
+    'hiba':           Path(WORK_DIR+'/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path(WORK_DIR+'/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'derm7pt':        Path(WORK_DIR+'/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path(WORK_DIR+'/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path(WORK_DIR+'/data/datasets/sengenjih/isic2019'),
 }
 
 # WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
@@ -112,16 +112,16 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 50,          # update as needed
+    'num_epochs': 500,          # update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 5,       # update as needed
+    'warmup_epochs': 50,       # update as needed
     'aug_probability': 0.85,
 
     # MI loss weight
     'lambda_cls': 1.0,
-    'lambda_mi': 0.15,
+    'lambda_mi': 1.0,
 
     # Label smoothing for weighted CE
     'label_smoothing': 0.01,

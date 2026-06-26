@@ -1,0 +1,239 @@
+=========================================
+Job:       train_BASE+MI_vit  (449190)
+Node:      bigpu05
+Started:   Wed Jun 24 11:50:30 AM CEST 2026
+=========================================
+[INFO] No HF token found at /users/jlacmou/.hf_token — downloads may be slow.
+[INFO] No kaggle.json found in 20260623-process. Relying on ~/.kaggle/ or env vars.
+[SETUP] Installing / verifying Python dependencies...
+
+── GPU info ──────────────────────────────
+Tesla V100-PCIE-32GB, 32768 MiB, 575.57.08
+PyTorch : 2.12.1+cu126
+CUDA    : 12.6
+Devices : 1
+GPU 0   : Tesla V100-PCIE-32GB
+VRAM    : 34.1 GB
+──────────────────────────────────────────
+
+[CHECK] Validating dataset roots...
+  [OK]      20260623-process/data/datasets/asosenge/hibaskinlesionsdataset-main
+  [OK]      20260623-process/data/datasets/asosenge/fitzpatrick17k
+  [OK]      20260623-process/data/datasets/asosenge/derm7pt
+  [OK]      20260623-process/data/datasets/mahdavi1202/skin-cancer
+  [OK]      20260623-process/data/datasets/sengenjih/isic2019
+
+[CONVERT] Converting notebook to Python script...
+[PATCH] Redirecting Kaggle paths → cluster paths...
+  DATA_ROOT  → 20260623-process/data/datasets
+  WORK_ROOT  → 20260623-process/outputs_BASE+MI_vit
+  BB_CACHE   → 20260623-process/backbone_cache
+  Patch applied successfully.
+
+[RUN] Starting training — Wed Jun 24 11:51:03 AM CEST 2026
+=========================================
+Device: cuda
+CSV dir      : outputs_BASE+MI_vit/csvs
+Checkpoints  : outputs_BASE+MI_vit/checkpoints_BASE+MI_vit
+Results      : outputs_BASE+MI_vit/results_BASE+MI_vit
+Image roots:
+  hiba           : 20260623-process/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images
+  fitzpatrick17k : 20260623-process/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k
+  derm7pt        : 20260623-process/data/datasets/asosenge/derm7pt/release_v0/images
+  padufes20      : 20260623-process/data/datasets/mahdavi1202/skin-cancer
+  isic2019       : 20260623-process/data/datasets/sengenjih/isic2019
+Class weights: [0.819 0.385 1.796]
+[INFO] Built image map for hiba: 1616 entries
+[INFO] Built image map for fitzpatrick17k: 16577 entries
+[INFO] Built image map for derm7pt: 2013 entries
+[INFO] Built image map for padufes20: 2298 entries
+[INFO] Built image map for isic2019: 33569 entries
+[INFO] paired_train: loaded 738 ID-matched pairs from split clin/derm CSVs
+[INFO] paired_val: loaded 106 ID-matched pairs from split clin/derm CSVs
+[INFO] paired_test: loaded 211 ID-matched pairs from split clin/derm CSVs
+[INFO] Loaded fitzpatrick17k eval set: 1727 samples
+[INFO] Loaded padufes20 eval set: 1141 samples
+[INFO] Loaded isic2019 eval set: 25517 samples
+Train batches: 41, Val batches: 6
+Test batches: 33
+Cross-eval loaders: ['fitzpatrick17k', 'padufes20', 'isic2019']
+Running Validation...
+Ep   1/50  total_loss=1.3269  tr_acc=0.4489  val_acc=0.3333  val_auroc=0.7528  val_f1=0.3437  lr=3.40e-05
+Running Validation...
+Ep   2/50  total_loss=1.1847  tr_acc=0.5869  val_acc=0.4656  val_auroc=0.8259  val_f1=0.4882  lr=5.10e-05
+Running Validation...
+Ep   3/50  total_loss=1.0814  tr_acc=0.7332  val_acc=0.6614  val_auroc=0.8682  val_f1=0.6568  lr=6.80e-05
+Running Validation...
+Ep   4/50  total_loss=1.0183  tr_acc=0.7988  val_acc=0.8042  val_auroc=0.8682  val_f1=0.7568  lr=8.50e-05
+Running Validation...
+Ep   5/50  total_loss=0.9673  tr_acc=0.8209  val_acc=0.7249  val_auroc=0.8814  val_f1=0.7247  lr=8.50e-05
+Running Validation...
+Ep   6/50  total_loss=0.9167  tr_acc=0.8377  val_acc=0.5979  val_auroc=0.8806  val_f1=0.5963  lr=8.49e-05
+Running Validation...
+Ep   7/50  total_loss=0.8973  tr_acc=0.8346  val_acc=0.8730  val_auroc=0.9339  val_f1=0.8445  lr=8.46e-05
+Running Validation...
+Ep   8/50  total_loss=0.8638  tr_acc=0.8559  val_acc=0.7989  val_auroc=0.9371  val_f1=0.7889  lr=8.41e-05
+Running Validation...
+Ep   9/50  total_loss=0.8022  tr_acc=0.8636  val_acc=0.8677  val_auroc=0.9446  val_f1=0.8711  lr=8.34e-05
+Running Validation...
+Ep  10/50  total_loss=0.7771  tr_acc=0.8788  val_acc=0.7302  val_auroc=0.8845  val_f1=0.7032  lr=8.24e-05
+Running Validation...
+Ep  11/50  total_loss=0.7442  tr_acc=0.8834  val_acc=0.8201  val_auroc=0.9146  val_f1=0.7894  lr=8.13e-05
+Running Validation...
+Ep  12/50  total_loss=0.7211  tr_acc=0.9002  val_acc=0.8624  val_auroc=0.9371  val_f1=0.8389  lr=8.00e-05
+Running Validation...
+Ep  13/50  total_loss=0.6929  tr_acc=0.9040  val_acc=0.8148  val_auroc=0.9126  val_f1=0.8015  lr=7.85e-05
+Running Validation...
+Ep  14/50  total_loss=0.6685  tr_acc=0.8887  val_acc=0.7884  val_auroc=0.9301  val_f1=0.7873  lr=7.69e-05
+Running Validation...
+Ep  15/50  total_loss=0.6382  tr_acc=0.9093  val_acc=0.8307  val_auroc=0.8989  val_f1=0.7869  lr=7.51e-05
+Running Validation...
+Ep  16/50  total_loss=0.6191  tr_acc=0.9268  val_acc=0.8201  val_auroc=0.9204  val_f1=0.7738  lr=7.31e-05
+Running Validation...
+Ep  17/50  total_loss=0.6136  tr_acc=0.9154  val_acc=0.8466  val_auroc=0.9218  val_f1=0.8101  lr=7.09e-05
+Running Validation...
+Ep  18/50  total_loss=0.5882  tr_acc=0.9253  val_acc=0.8466  val_auroc=0.9216  val_f1=0.8103  lr=6.87e-05
+Running Validation...
+Ep  19/50  total_loss=0.5652  tr_acc=0.9329  val_acc=0.7090  val_auroc=0.9123  val_f1=0.7412  lr=6.63e-05
+Running Validation...
+Ep  20/50  total_loss=0.5561  tr_acc=0.9322  val_acc=0.8677  val_auroc=0.9420  val_f1=0.8516  lr=6.38e-05
+Running Validation...
+Ep  21/50  total_loss=0.5325  tr_acc=0.9535  val_acc=0.8307  val_auroc=0.9118  val_f1=0.8133  lr=6.11e-05
+Running Validation...
+Ep  22/50  total_loss=0.5311  tr_acc=0.9482  val_acc=0.8519  val_auroc=0.9238  val_f1=0.8282  lr=5.84e-05
+Running Validation...
+Ep  23/50  total_loss=0.5343  tr_acc=0.9299  val_acc=0.8730  val_auroc=0.9418  val_f1=0.8453  lr=5.56e-05
+Running Validation...
+Ep  24/50  total_loss=0.5126  tr_acc=0.9497  val_acc=0.8519  val_auroc=0.9577  val_f1=0.8203  lr=5.28e-05
+Running Validation...
+Ep  25/50  total_loss=0.5165  tr_acc=0.9459  val_acc=0.8677  val_auroc=0.9272  val_f1=0.8348  lr=4.99e-05
+Running Validation...
+Ep  26/50  total_loss=0.5039  tr_acc=0.9482  val_acc=0.8254  val_auroc=0.9070  val_f1=0.8042  lr=4.69e-05
+Running Validation...
+Ep  27/50  total_loss=0.4880  tr_acc=0.9627  val_acc=0.8307  val_auroc=0.9281  val_f1=0.8007  lr=4.40e-05
+Running Validation...
+Ep  28/50  total_loss=0.4662  tr_acc=0.9634  val_acc=0.8571  val_auroc=0.9341  val_f1=0.8302  lr=4.10e-05
+Running Validation...
+Ep  29/50  total_loss=0.4602  tr_acc=0.9703  val_acc=0.8783  val_auroc=0.9284  val_f1=0.8405  lr=3.81e-05
+Running Validation...
+Ep  30/50  total_loss=0.4582  tr_acc=0.9741  val_acc=0.8730  val_auroc=0.9405  val_f1=0.8285  lr=3.51e-05
+Running Validation...
+Ep  31/50  total_loss=0.4459  tr_acc=0.9726  val_acc=0.8942  val_auroc=0.9441  val_f1=0.8623  lr=3.22e-05
+Running Validation...
+Ep  32/50  total_loss=0.4512  tr_acc=0.9695  val_acc=0.8836  val_auroc=0.9386  val_f1=0.8540  lr=2.94e-05
+Running Validation...
+Ep  33/50  total_loss=0.4418  tr_acc=0.9748  val_acc=0.8995  val_auroc=0.9379  val_f1=0.8746  lr=2.66e-05
+Running Validation...
+Ep  34/50  total_loss=0.4353  tr_acc=0.9878  val_acc=0.8730  val_auroc=0.9529  val_f1=0.8193  lr=2.39e-05
+Running Validation...
+Ep  35/50  total_loss=0.4301  tr_acc=0.9832  val_acc=0.8889  val_auroc=0.9460  val_f1=0.8598  lr=2.13e-05
+Running Validation...
+Ep  36/50  total_loss=0.4270  tr_acc=0.9802  val_acc=0.8730  val_auroc=0.9376  val_f1=0.8366  lr=1.87e-05
+Running Validation...
+Ep  37/50  total_loss=0.4256  tr_acc=0.9802  val_acc=0.8889  val_auroc=0.9407  val_f1=0.8583  lr=1.63e-05
+Running Validation...
+Ep  38/50  total_loss=0.4327  tr_acc=0.9779  val_acc=0.8942  val_auroc=0.9494  val_f1=0.8683  lr=1.41e-05
+Running Validation...
+Ep  39/50  total_loss=0.4212  tr_acc=0.9802  val_acc=0.8836  val_auroc=0.9466  val_f1=0.8513  lr=1.19e-05
+Running Validation...
+Ep  40/50  total_loss=0.4208  tr_acc=0.9886  val_acc=0.8466  val_auroc=0.9440  val_f1=0.7919  lr=9.94e-06
+Running Validation...
+Ep  41/50  total_loss=0.4187  tr_acc=0.9848  val_acc=0.8624  val_auroc=0.9410  val_f1=0.8138  lr=8.12e-06
+Running Validation...
+Ep  42/50  total_loss=0.4170  tr_acc=0.9825  val_acc=0.8624  val_auroc=0.9488  val_f1=0.8196  lr=6.46e-06
+Running Validation...
+Ep  43/50  total_loss=0.4151  tr_acc=0.9886  val_acc=0.8624  val_auroc=0.9362  val_f1=0.8109  lr=4.97e-06
+Running Validation...
+Ep  44/50  total_loss=0.4036  tr_acc=0.9916  val_acc=0.8519  val_auroc=0.9341  val_f1=0.7944  lr=3.67e-06
+Running Validation...
+Ep  45/50  total_loss=0.4187  tr_acc=0.9863  val_acc=0.8571  val_auroc=0.9363  val_f1=0.8033  lr=2.56e-06
+Running Validation...
+Ep  46/50  total_loss=0.4136  tr_acc=0.9878  val_acc=0.8571  val_auroc=0.9392  val_f1=0.8002  lr=1.65e-06
+Running Validation...
+Ep  47/50  total_loss=0.4133  tr_acc=0.9886  val_acc=0.8624  val_auroc=0.9393  val_f1=0.8109  lr=9.29e-07
+Running Validation...
+Ep  48/50  total_loss=0.4081  tr_acc=0.9848  val_acc=0.8571  val_auroc=0.9393  val_f1=0.8002  lr=8.50e-07
+Running Validation...
+Ep  49/50  total_loss=0.4039  tr_acc=0.9924  val_acc=0.8571  val_auroc=0.9378  val_f1=0.8002  lr=8.50e-07
+Running Validation...
+Ep  50/50  total_loss=0.4143  tr_acc=0.9863  val_acc=0.8571  val_auroc=0.9398  val_f1=0.8002  lr=8.50e-07
+Training complete. Best AUROC: 0.9577, Best F1: 0.8746
+Loaded best model from best_f1_model.pt (epoch 33)
+Running Validation (final)...
+
+Binary fairness (Validation):
+  Acc_light: 0.9130  (FST I–III)
+  Acc_dark : 0.9333  (FST IV–VI)
+  Acc_gap  : 0.0203
+  DP_diff  : 0.1068
+  EOpp0    : 0.1004
+  EOpp1    : 0.0445
+  EOdd     : 0.0725
+Running Test...
+
+[Baseline+MI ViT] Test KNN (k=5) accuracy: 0.8924
+
+Binary fairness (Test):
+  Acc_light: 0.9218  (FST I–III)
+  Acc_dark : 0.8824  (FST IV–VI)
+  Acc_gap  : 0.0394
+  DP_diff  : 0.1475
+  EOpp0    : 0.2210
+  EOpp1    : 0.1108
+  EOdd     : 0.1659
+
+Evaluating on fitzpatrick17k
+Running Cross-eval: fitzpatrick17k...
+
+Binary fairness (fitzpatrick17k):
+  Acc_light: 0.6325  (FST I–III)
+  Acc_dark : 0.5735  (FST IV–VI)
+  Acc_gap  : 0.0590
+  DP_diff  : 0.0229
+  EOpp0    : 0.0541
+  EOpp1    : 0.0371
+  EOdd     : 0.0456
+
+Evaluating on padufes20
+Running Cross-eval: padufes20...
+
+Binary fairness (padufes20):
+  Acc_light: 0.8892  (FST I–III)
+  Acc_dark : 0.7143  (FST IV–VI)
+  Acc_gap  : 0.1750
+  DP_diff  : 0.1955
+  EOpp0    : 0.0893
+  EOpp1    : 0.0804
+  EOdd     : 0.0848
+
+Evaluating on isic2019
+Running Cross-eval: isic2019...
+
+Binary fairness (isic2019):
+  Acc_light: nan  (FST I–III)
+  Acc_dark : nan  (FST IV–VI)
+  Acc_gap  : nan
+  DP_diff  : nan
+  EOpp0    : nan
+  EOpp1    : nan
+  EOdd     : nan
+
+Cross-dataset summary:
+                 accuracy     auroc  precision  ...       EOM       PQD       DPM
+fitzpatrick17k  0.618992  0.796551   0.641859  ...  0.775205  0.812834  0.578747
+padufes20       0.794917  0.891663   0.673440  ...  0.488771  0.556701  0.268867
+isic2019        0.774621  0.833415   0.747819  ...       NaN       NaN       NaN
+
+[3 rows x 10 columns]
+
+All results saved to outputs_BASE+MI_vit/results_BASE+MI_vit
+Checkpoints saved to outputs_BASE+MI_vit/checkpoints_BASE+MI_vit
+=========================================
+Finished: Wed Jun 24 12:21:52 PM CEST 2026
+Exit code: 0
+
+[DONE] Training completed successfully.
+Outputs:
+  Checkpoints → 20260623-process/outputs_BASE+MI_vit/checkpoints/
+  Results     → 20260623-process/outputs_BASE+MI_vit/results/
+  CSVs        → 20260623-process/outputs_BASE+MI_vit/csvs/

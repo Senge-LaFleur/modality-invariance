@@ -87,8 +87,19 @@ print(f"Device: {DEVICE}")
 # ============================================================
 # PATH CONFIGURATION  — update these for each environment
 # ============================================================
-# WORK_ROOT = Path('outputs')
-# WORK_DIR="20260623-process"
+WORK_ROOT = Path('outputs')
+WORK_DIR="20260623-process"
+CSV_DIR = WORK_ROOT / 'csvs'
+
+IMAGE_ROOTS = {
+    'hiba':           Path('20260623-process/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path('20260623-process/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'derm7pt':        Path('20260623-process/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path('20260623-process/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path('20260623-process/data/datasets/sengenjih/isic2019'),
+}
+
+# WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
 # CSV_DIR = WORK_ROOT / 'csvs'
 
 # IMAGE_ROOTS = {
@@ -129,18 +140,18 @@ CFG = {
     'num_skin_types':  6,
 
     'batch_size':      32,
-    'num_epochs':      50,
+    'num_epochs':      500,
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs':   5,
+    'warmup_epochs':   50,
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
-    'lambda_conf':     0.2,
-    'lambda_skin':     0.2,
-    'lambda_con':      0.5,
-    'lambda_mi':       0.15,
+    'lambda_conf':     0.5,
+    'lambda_skin':     0.3,
+    'lambda_con':      1.0,
+    'lambda_mi':       1.0,
     'temperature':     0.1,
     'label_smoothing': 0.01,
     'mixup_alpha':     0.4,

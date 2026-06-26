@@ -819,7 +819,7 @@ def plot_roc_curve(y_true, y_probs, class_names, title, save_path):
     macro_auc = auc(all_fpr, mean_tpr)
 
     plt.figure(figsize=(10, 8))
-    colors = plt.cm.get_cmap('tab10', n_classes)
+    colors = plt.get_cmap('tab10', n_classes)
     for i in range(n_classes):
         plt.plot(fpr[i], tpr[i], color=colors(i), lw=2,
                  label=f'{class_names[i]} (AUC = {roc_auc[i]:.3f})')
