@@ -112,16 +112,16 @@ CFG = {
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 50,          # update as needed
+    'num_epochs': 500,          # update as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
-    'warmup_epochs': 5,       # update as needed
+    'warmup_epochs': 50,       # update as needed
     'aug_probability': 0.85,
 
     # MI loss weight
     'lambda_cls': 1.0,
-    'lambda_mi': 0.15,
+    'lambda_mi': 1.0,
 
     # Label smoothing for weighted CE
     'label_smoothing': 0.01,
