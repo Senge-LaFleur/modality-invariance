@@ -99,16 +99,16 @@ print(f"Device: {DEVICE}")
 # ============================================================
 # PATH CONFIGURATION  — update these for each environment
 # ============================================================
-WORK_ROOT = Path('outputs')
-WORK_DIR="20260623-process"
+WORK_ROOT = Path(sys.argv[2])
+WORK_DIR=sys.argv[1]
 CSV_DIR = WORK_ROOT / 'csvs'
 
 IMAGE_ROOTS = {
-    'hiba':           Path('20260623-process/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'fitzpatrick17k': Path('20260623-process/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'derm7pt':        Path('20260623-process/data/datasets/asosenge/derm7pt/release_v0/images'),
-    'padufes20':      Path('20260623-process/data/datasets/mahdavi1202/skin-cancer'),
-    'isic2019':       Path('20260623-process/data/datasets/sengenjih/isic2019'),
+    'hiba':           Path(WORK_DIR+'/data/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
+    'fitzpatrick17k': Path(WORK_DIR+'/data/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
+    'derm7pt':        Path(WORK_DIR+'/data/datasets/asosenge/derm7pt/release_v0/images'),
+    'padufes20':      Path(WORK_DIR+'/data/datasets/mahdavi1202/skin-cancer'),
+    'isic2019':       Path(WORK_DIR+'/data/datasets/sengenjih/isic2019'),
 }
 
 # WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
@@ -122,16 +122,6 @@ IMAGE_ROOTS = {
 #     'isic2019':       Path('20260623-process/data/datasets/sengenjih/isic2019'),
 # }
 
-WORK_ROOT = Path('/kaggle/working/modality-invariance/process/process/outputs')
-CSV_DIR = WORK_ROOT / 'csvs'
-
-IMAGE_ROOTS = {
-    'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
-    'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
-    'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-    'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),
-    'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
-}
 
 print("Checking configured paths:")
 print(f"  WORK_ROOT : {WORK_ROOT}  {'[OK]' if WORK_ROOT.exists() else '[MISSING]'}")
