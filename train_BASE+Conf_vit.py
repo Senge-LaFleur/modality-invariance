@@ -124,9 +124,9 @@ CFG = {
     'aug_probability': 0.85,
 
     # hyperparameters
-    'lambda_cls': 1.0,
-    'lambda_conf':     0.5,
-    'lambda_skin':     0.3,  
+    'lambda_cls':      1.0,
+    'lambda_conf':     0.3,
+    'lambda_skin':     0.2,  
 
     # Label smoothing for weighted CE
     'label_smoothing': 0.01,

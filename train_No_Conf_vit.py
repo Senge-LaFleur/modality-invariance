@@ -149,8 +149,8 @@ CFG = {
     'aug_probability': 0.85,
 
     'lambda_cls':      1.0,
-    'lambda_con':      1.0,
-    'lambda_mi':       1.0,
+    'lambda_con':      0.5,
+    'lambda_mi':       0.15,
     'temperature':     0.1,
     'label_smoothing': 0.01,
     'mixup_alpha':     0.4,

@@ -121,7 +121,7 @@ CFG = {
 
     # MI loss weight
     'lambda_cls': 1.0,
-    'lambda_mi': 1.0,
+    'lambda_mi': 0.15,
 
     # Label smoothing for weighted CE
     'label_smoothing': 0.01,

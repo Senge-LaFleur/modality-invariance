@@ -16,12 +16,57 @@ from sklearn.metrics import (
 )
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.manifold import TSNE
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 from collections import defaultdict
 import warnings
 from tqdm import tqdm
+
+
+# ------------------------------------------------------------
+# Global plotting defaults — larger, crisper text/axes and
+# high-quality rasters, so figures are readable both on screen
+# and when exported as vector PDFs for the thesis.
+# ------------------------------------------------------------
+mpl.rcParams.update({
+    "figure.dpi": 120,
+    "savefig.dpi": 300,
+    "font.size": 12,
+    "axes.titlesize": 13,
+    "axes.titleweight": "bold",
+    "axes.labelsize": 12,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 10,
+    "figure.titlesize": 15,
+    "figure.titleweight": "bold",
+    "axes.linewidth": 1.0,
+    "lines.linewidth": 2.0,
+    "pdf.fonttype": 42,   # embed real (editable, crisp) fonts in PDF, not Type-3 bitmaps
+    "ps.fonttype": 42,
+    "savefig.bbox": "tight",
+})
+
+
+def _save_figure(save_path, dpi=300):
+    """
+    Save the current matplotlib figure both in the originally-requested
+    format (kept for pipeline compatibility, e.g. .png previews) AND as a
+    vector PDF companion file. PDF vector output means the plot stays
+    perfectly sharp at any zoom level — ideal for the LaTeX thesis figures.
+    """
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Requested format (usually .png) at a higher DPI than before.
+    plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
+
+    # Always also save a crisp vector PDF version alongside it.
+    pdf_path = save_path.with_suffix(".pdf")
+    if pdf_path != save_path:
+        plt.savefig(pdf_path, bbox_inches="tight")
 
 
 # ------------------------------------------------------------
@@ -809,7 +854,7 @@ def plot_confusion_matrix(conf_mat, class_names, title, save_path):
 
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        _save_figure(save_path)
     plt.close()
 
 def plot_per_class_metrics(res, class_names, title, save_path):
@@ -830,7 +875,7 @@ def plot_per_class_metrics(res, class_names, title, save_path):
     ax.spines[["top", "right"]].set_visible(False)
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        _save_figure(save_path)
     plt.close()
 
 def plot_fairness_metrics(fair, title, save_path):
@@ -870,7 +915,7 @@ def plot_fairness_metrics(fair, title, save_path):
 
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        _save_figure(save_path)
     plt.close()
 
 def plot_roc_curve(y_true, y_probs, class_names, title, save_path):
@@ -892,26 +937,23 @@ def plot_roc_curve(y_true, y_probs, class_names, title, save_path):
     macro_auc = auc(all_fpr, mean_tpr)
 
     plt.figure(figsize=(10, 8))
-
-    # ---- Cross‑version colormap retrieval ----
-    def _get_cmap(name, n_colors):
+    
+    def _get_cmap_colors(name, n_colors):
         try:
-            import matplotlib as mpl
-            if hasattr(mpl.colormaps, 'get_cmap'):
-                return mpl.colormaps.get_cmap(name, n_colors)
-            else:
-                return mpl.cm.get_cmap(name, n_colors)
-        except (AttributeError, ImportError):
+            base_cmap = mpl.colormaps[name]              # matplotlib >= 3.5
+        except Exception:
             try:
-                return plt.get_cmap(name, n_colors)
-            except AttributeError:
-                return plt.cm.get_cmap(name, n_colors)
+                base_cmap = mpl.colormaps.get_cmap(name)  # matplotlib >= 3.5 (alt API)
+            except Exception:
+                base_cmap = plt.cm.get_cmap(name)          # matplotlib < 3.9 fallback
+        denom = max(n_colors - 1, 1)
+        return [base_cmap(i / denom) for i in range(n_colors)]
 
-    colors = _get_cmap('tab10', n_classes)
+    colors = _get_cmap_colors('tab10', n_classes)
     # -------------------------------------------
 
     for i in range(n_classes):
-        plt.plot(fpr[i], tpr[i], color=colors(i), lw=2,
+        plt.plot(fpr[i], tpr[i], color=colors[i], lw=2,
                  label=f'{class_names[i]} (AUC = {roc_auc[i]:.3f})')
     plt.plot(all_fpr, mean_tpr, color='black', lw=2, linestyle='--',
              label=f'Macro-average (AUC = {macro_auc:.3f})')
@@ -924,7 +966,7 @@ def plot_roc_curve(y_true, y_probs, class_names, title, save_path):
     plt.legend(loc='lower right', fontsize=9)
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    _save_figure(save_path)
     plt.close()
 
 def plot_training_curves(history, title, save_path):
@@ -968,7 +1010,7 @@ def plot_training_curves(history, title, save_path):
 
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        _save_figure(save_path)
     plt.close()
 
 
@@ -984,16 +1026,20 @@ _MOD_SIZES   = {0: 20,  1: 16}
 
 
 def _tsne_scatter_labeled(ax, xy, color_ids, palette, labels_map, title,
-                          xlabel="t-SNE-1", ylabel="t-SNE-2", s=18, alpha=0.7):
+                          xlabel="t-SNE-1", ylabel="t-SNE-2", s=26, alpha=0.75):
     for cid in sorted(set(color_ids.tolist())):
         mask = color_ids == cid
+        # A thin dark edge keeps very light swatches (e.g. pale FST tones)
+        # visible against a white background instead of nearly disappearing.
         ax.scatter(xy[mask, 0], xy[mask, 1], c=palette[cid % len(palette)],
                    s=s, alpha=alpha, label=labels_map.get(cid, str(cid)),
-                   edgecolors="none")
-    ax.set_title(title, fontweight="bold", fontsize=11)
-    ax.set_xlabel(xlabel); ax.set_ylabel(ylabel)
-    ax.legend(fontsize=7, markerscale=1.4, framealpha=0.6, loc="best", ncol=2)
+                   edgecolors="#333333", linewidths=0.3)
+    ax.set_title(title, fontweight="bold", fontsize=13)
+    ax.set_xlabel(xlabel, fontsize=12); ax.set_ylabel(ylabel, fontsize=12)
+    ax.tick_params(labelsize=10)
+    ax.legend(fontsize=9, markerscale=1.6, framealpha=0.75, loc="best", ncol=2)
     ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(alpha=0.15)
 
 
 def _run_tsne(embeddings, perplexity=40, seed=42):
@@ -1018,8 +1064,8 @@ def plot_tsne_class_fst(embeddings, labels, skins, title, save_path,
         print(f"[SKIP] plot_tsne_class_fst: too few samples ({embeddings.shape[0]})")
         return
 
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-    fig.suptitle(title, fontsize=13, fontweight="bold")
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    fig.suptitle(title, fontsize=16, fontweight="bold", y=1.02)
 
     _tsne_scatter_labeled(axes[0], e2d, labels, _CLS_COLORS, _CLS_NAMES,
                           "By Disease Class (3 classes)")
@@ -1036,7 +1082,7 @@ def plot_tsne_class_fst(embeddings, labels, skins, title, save_path,
 
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        _save_figure(save_path)
     plt.close()
 
 
@@ -1056,23 +1102,25 @@ def plot_tsne_modality(embeddings, skins, modalities, title, save_path,
     fst_cmap = _LC(_FST_COLORS)
     has_multi_mod = len(set(modalities.tolist())) > 1
 
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
-    fig.suptitle(title, fontsize=12, fontweight="bold")
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    fig.suptitle(title, fontsize=16, fontweight="bold", y=1.02)
 
     # Left: modality only (colour by modality)
     for mid in [0, 1]:
         mask = modalities == mid
         if mask.any():
             axes[0].scatter(e2d[mask, 0], e2d[mask, 1],
-                            c=_MOD_COLORS[mid], s=18, alpha=0.65,
-                            label=_MOD_NAMES[mid], edgecolors="none")
+                            c=_MOD_COLORS[mid], s=26, alpha=0.7,
+                            label=_MOD_NAMES[mid], edgecolors="#333333", linewidths=0.3)
     axes[0].set_title(
         "By Modality\n(mixed clusters → modality-invariant)" if has_multi_mod
         else f"By Modality\n(single: {_MOD_NAMES[int(modalities[0])]})",
-        fontweight="bold", fontsize=10)
-    axes[0].set_xlabel("t-SNE-1"); axes[0].set_ylabel("t-SNE-2")
-    axes[0].legend(fontsize=9, markerscale=1.5, framealpha=0.7)
+        fontweight="bold", fontsize=12)
+    axes[0].set_xlabel("t-SNE-1", fontsize=12); axes[0].set_ylabel("t-SNE-2", fontsize=12)
+    axes[0].tick_params(labelsize=10)
+    axes[0].legend(fontsize=10, markerscale=1.6, framealpha=0.75)
     axes[0].spines[["top", "right"]].set_visible(False)
+    axes[0].grid(alpha=0.15)
 
     # Right: colour = FST, shape = modality
     sc = None
@@ -1081,31 +1129,36 @@ def plot_tsne_modality(embeddings, skins, modalities, title, save_path,
         fst_sub = skins[m_mask]
         xy_sub = e2d[m_mask]
         known = fst_sub >= 0
+        mod_size = _MOD_SIZES[mid] * 1.5
         if known.any():
             sc = axes[1].scatter(xy_sub[known, 0], xy_sub[known, 1],
                                  c=fst_sub[known], cmap=fst_cmap, vmin=0, vmax=5,
-                                 marker=_MOD_MARKERS[mid], s=_MOD_SIZES[mid],
-                                 alpha=0.7, edgecolors="none")
+                                 marker=_MOD_MARKERS[mid], s=mod_size,
+                                 alpha=0.75, edgecolors="#333333", linewidths=0.3)
         if (~known).any():
             axes[1].scatter(xy_sub[~known, 0], xy_sub[~known, 1],
                             c="#CCCCCC", marker=_MOD_MARKERS[mid],
-                            s=_MOD_SIZES[mid], alpha=0.25, edgecolors="none")
+                            s=mod_size, alpha=0.3, edgecolors="#333333", linewidths=0.3)
     if sc is not None:
-        plt.colorbar(sc, ax=axes[1], label="FST (0=I ... 5=VI)", shrink=0.85)
+        cbar = plt.colorbar(sc, ax=axes[1], label="FST (0=I ... 5=VI)", shrink=0.85)
+        cbar.ax.tick_params(labelsize=10)
+        cbar.set_label("FST (0=I ... 5=VI)", fontsize=11)
     legend_h = [
-        Line2D([0], [0], marker="o", color="grey", ms=7, ls="none", label="Clinical"),
-        Line2D([0], [0], marker="s", color="grey", ms=7, ls="none", label="Dermoscopic"),
+        Line2D([0], [0], marker="o", color="grey", ms=9, ls="none", label="Clinical"),
+        Line2D([0], [0], marker="s", color="grey", ms=9, ls="none", label="Dermoscopic"),
     ]
-    axes[1].legend(handles=legend_h, fontsize=8, title="Modality",
-                   title_fontsize=8, framealpha=0.7)
+    axes[1].legend(handles=legend_h, fontsize=10, title="Modality",
+                   title_fontsize=10, framealpha=0.75)
     axes[1].set_title("By FST x Modality\n(interleaved → no skin-colour confounding)",
-                      fontweight="bold", fontsize=10)
-    axes[1].set_xlabel("t-SNE-1"); axes[1].set_ylabel("t-SNE-2")
+                      fontweight="bold", fontsize=12)
+    axes[1].set_xlabel("t-SNE-1", fontsize=12); axes[1].set_ylabel("t-SNE-2", fontsize=12)
+    axes[1].tick_params(labelsize=10)
     axes[1].spines[["top", "right"]].set_visible(False)
+    axes[1].grid(alpha=0.15)
 
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        _save_figure(save_path)
     plt.close()
 
 
@@ -1119,7 +1172,7 @@ def plot_tsne(embeddings, labels, title, save_path, perplexity=40, seed=42):
     _tsne_scatter_labeled(ax, e2d, labels, _CLS_COLORS, _CLS_NAMES, title)
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        _save_figure(save_path)
     plt.close()
 
 
