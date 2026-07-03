@@ -1,0 +1,7 @@
+split,fitzpatrick_type,accuracy
+cross_fitzpatrick17k,FST 1,0.6
+cross_fitzpatrick17k,FST 2,0.6192170818505338
+cross_fitzpatrick17k,FST 3,0.6189024390243902
+cross_fitzpatrick17k,FST 4,0.6056338028169014
+cross_fitzpatrick17k,FST 5,0.49019607843137253
+cross_fitzpatrick17k,FST 6,0.65625
