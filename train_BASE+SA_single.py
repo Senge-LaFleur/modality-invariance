@@ -2,9 +2,21 @@
 # -*- coding: utf-8 -*-
 
 """
-Baseline Modality CNN (ResNet-18) for Skin Disease Classification
-Uses WEIGHTED cross-entropy loss + t-SNE (class+FST & modality) + KNN accuracy.
-Includes binary fairness metrics (light vs dark skin).
+Ablation study: BASE + SA (Sensitive-Attribute branch)
+
+Uses:
+- Weighted label‑smoothed cross‑entropy loss for disease classification (L_cls)
+- Adversarial confusion loss (L_conf) to remove skin‑type information from
+  the shared embedding (SA branch, part 1)
+- Skin‑type predictive loss (L_s) that only updates the skin classifier f_s,
+  never the backbone (SA branch, part 2)
+
+No contrastive loss, no MI loss -- this ablation isolates the effect of the
+Sensitive-Attribute branch alone on top of the classification loss.
+
+All outputs saved in:
+    - checkpoints_BASE+SA_vit/
+    - results_BASE+SA_vit/
 """
 
 import os
@@ -28,13 +40,20 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from sklearn.metrics import f1_score
-from sklearn.utils.class_weight import compute_class_weight   # <-- reliable
-
-from models.models_losses import DualResNet18   # import model only, not compute_class_weights
+from models.models_losses import (
+    DualViT,
+    SupConLoss,
+    confusion_loss,
+    cross_modal_supcon_loss,
+    skin_type_loss,
+    get_layer_wise_lr_params,
+    cls_loss_fn,
+    compute_class_weights,
+)
 from models.evaluation import (
     validate,
     fairness,
@@ -44,9 +63,8 @@ from models.evaluation import (
     plot_per_class_metrics,
     plot_fairness_metrics,
     plot_training_curves,
-    plot_tsne_class_fst,
-    plot_tsne_modality,
-    compute_knn_accuracy,
+    plot_tsne,
+    compute_knn_accuracy,          # <-- added
     build_loaders,
     LABEL_NAMES,
 )
@@ -67,9 +85,6 @@ torch.backends.cudnn.benchmark = False
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Device: {DEVICE}")
 
-# ============================================================
-# PATH CONFIGURATION — update for your environment
-# ============================================================
 WORK_ROOT = Path(sys.argv[2])
 WORK_DIR=sys.argv[1]
 CSV_DIR = WORK_ROOT / 'csvs'
@@ -89,35 +104,38 @@ IMAGE_ROOTS = {
 #     'hiba':           Path('/kaggle/input/datasets/asosenge/hibaskinlesionsdataset-main/HIBASkinLesionsDataset-main/images'),
 #     'derm7pt':        Path('/kaggle/input/datasets/asosenge/derm7pt/release_v0/images'),
 #     'fitzpatrick17k': Path('/kaggle/input/datasets/asosenge/fitzpatrick17k/fitzpatrick17k/data/finalfitz17k'),
-#     'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),
+#     'padufes20':      Path('/kaggle/input/datasets/mahdavi1202/skin-cancer'),              # update path as needed
 #     'isic2019':       Path('/kaggle/input/datasets/sengenjih/isic2019'),
 # }
-
-print("Checking configured paths:")
-print(f"  WORK_ROOT : {WORK_ROOT}  {'[OK]' if WORK_ROOT.exists() else '[MISSING]'}")
-print(f"  CSV_DIR   : {CSV_DIR}  {'[OK]' if CSV_DIR.exists() else '[MISSING]'}")
-for name, root in IMAGE_ROOTS.items():
-    print(f"  {name:<15}: {root}  {'[OK]' if root.exists() else '[MISSING — update IMAGE_ROOTS]'}")
 
 CFG = {
     'csv_dir':      CSV_DIR,
     'image_roots':  IMAGE_ROOTS,
-    'ckpt_dir':     WORK_ROOT / 'checkpoints_BASE_resnet18',
-    'results_dir':  WORK_ROOT / 'results_BASE_resnet18',
+    'ckpt_dir':     WORK_ROOT / 'checkpoints_BASE+SA_single',
+    'results_dir':  WORK_ROOT / 'results_BASE+SA_single',
 
-    'backbone': 'resnet18',
+    'backbone': 'vit_small',
     'embed_dim': 512,
     'img_size': 224,
     'num_classes': 3,
     'num_skin_types': 6,
 
     'batch_size': 32,
-    'num_epochs': 500,
+    'num_epochs': 500,           # adjust as needed
     'lr': 1e-4,
     'min_lr': 1e-6,
     'weight_decay': 1e-4,
     'warmup_epochs': 50,
     'aug_probability': 0.85,
+
+    # hyperparameters
+    'lambda_cls':      1.0,
+    'lambda_conf':     0.3,
+    'lambda_skin':     0.2,  
+
+    # Label smoothing for weighted CE
+    'label_smoothing': 0.01,
+
 }
 
 CFG["ckpt_dir"].mkdir(parents=True, exist_ok=True)
@@ -125,13 +143,17 @@ CFG["results_dir"].mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------------
-# Training function (weighted cross-entropy)
+# Training function for BASE+SA (weighted CE + confusion loss + skin-type loss)
 # ------------------------------------------------------------
-def train_epoch(model, loader, optimizer, epoch, scaler, device, criterion):
+def train_epoch(model, loader, optimizer, cfg, epoch, scaler, device, weight_tensor):
     model.train()
     total_loss = 0.0
+    total_loss_c = 0.0
+    total_loss_conf = 0.0
+    total_loss_s = 0.0
     all_preds, all_labels = [], []
     n_batches = 0
+
 
     pbar = tqdm(loader, desc=f"Ep {epoch+1:>3} [train]", unit="batch", dynamic_ncols=True, leave=False)
     for batch in pbar:
@@ -143,7 +165,18 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, criterion):
 
         with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
             out = model(batch)
-            loss = criterion(out["logits"], batch["label"])
+            labels = batch["label"]
+            skin_types = batch["skin_type"]
+
+            # Weighted label‑smoothed CE
+            loss_c = cls_loss_fn(out["logits"], batch["label"],
+                                 weight_tensor=weight_tensor,
+                                 smoothing=cfg["label_smoothing"])
+
+            loss_conf = confusion_loss(out["skin_logits"])
+            loss_s = skin_type_loss(out["skin_logits"].detach(), batch["skin_type"])
+
+            loss = cfg["lambda_cls"] * loss_c + cfg["lambda_conf"] * loss_conf + cfg["lambda_skin"] * loss_s
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -152,6 +185,9 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, criterion):
         scaler.update()
 
         total_loss += loss.item()
+        total_loss_c += loss_c.item()
+        total_loss_conf += loss_conf.item()
+        total_loss_s += loss_s.item()
         n_batches += 1
 
         with torch.no_grad():
@@ -163,27 +199,23 @@ def train_epoch(model, loader, optimizer, epoch, scaler, device, criterion):
 
     pbar.close()
     avg_loss = total_loss / max(n_batches, 1)
+    avg_loss_c = total_loss_c / max(n_batches, 1)
+    avg_loss_conf = total_loss_conf / max(n_batches, 1)
+    avg_loss_s = total_loss_s / max(n_batches, 1)
+
     all_preds = np.concatenate(all_preds)
     all_labels = np.concatenate(all_labels)
     acc = (all_preds == all_labels).mean()
     macro_f1 = f1_score(all_labels, all_preds, average="macro", zero_division=0)
 
-    return {"total": avg_loss, "acc": acc, "macro_f1": macro_f1}
-
-
-# ------------------------------------------------------------
-# Helper to compute class weights from labels list
-# ------------------------------------------------------------
-def get_class_weights(labels_list, num_classes):
-    """
-    Compute normalized class weights using sklearn's compute_class_weight.
-    Returns a torch.FloatTensor.
-    """
-    labels_array = np.array(labels_list)
-    # Compute class weights (inverse frequency)
-    weights = compute_class_weight(class_weight='balanced', classes=np.arange(num_classes), y=labels_array)
-    # Convert to torch tensor
-    return torch.from_numpy(weights).float()
+    return {
+        "total": avg_loss,
+        "loss_c": avg_loss_c,
+        "loss_conf": avg_loss_conf,
+        "loss_s": avg_loss_s,
+        "acc": acc,
+        "macro_f1": macro_f1,
+    }
 
 
 # ------------------------------------------------------------
@@ -197,33 +229,32 @@ def main():
     for name, root in CFG['image_roots'].items():
         print(f"  {name:<15}: {root}")
 
+    # Compute class weights from training CSVs
+    class_weights = compute_class_weights(CFG["csv_dir"], CFG["num_classes"])
+    if class_weights:
+        weight_tensor = torch.tensor(class_weights, dtype=torch.float32, device=DEVICE)
+        print(f"Class weights: {np.round(class_weights, 3)}")
+    else:
+        weight_tensor = None
+        print("Class weights not computed; using uniform weights.")
+
     train_loader, val_loader, test_loader, eval_loaders = build_loaders(CFG, seed=SEED)
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     if test_loader:
         print(f"Test batches: {len(test_loader)}")
     print(f"Cross-eval loaders: {list(eval_loaders.keys())}")
 
-    # ---------- Compute class weights from training set ----------
-    all_train_labels = []
-    for batch in train_loader:
-        all_train_labels.extend(batch["label"].numpy())
-    class_weights = get_class_weights(all_train_labels, num_classes=CFG["num_classes"])
-    class_weights = class_weights.to(DEVICE)
-    print(f"Computed class weights: {class_weights.cpu().numpy()}")
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
-    # -------------------------------------------------------------
-
-    model = DualResNet18(
+    model = DualViT(
         embed_dim=CFG["embed_dim"],
         num_classes=CFG["num_classes"],
         num_skin_types=CFG["num_skin_types"],
         pretrained=True,
-        use_projection=False,
+        use_projection=True,
     ).to(DEVICE)
 
-    from models.models_losses import get_layer_wise_lr_params
     param_groups = get_layer_wise_lr_params(model, base_lr=CFG["lr"], lr_decay=0.85)
-    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"], betas=(0.9, 0.999), eps=1e-8)
+    optimizer = torch.optim.AdamW(param_groups, weight_decay=CFG["weight_decay"],
+                                  betas=(0.9, 0.999), eps=1e-8)
 
     def lr_lambda(epoch):
         if epoch < CFG["warmup_epochs"]:
@@ -239,13 +270,31 @@ def main():
     start_epoch = 0
     best_auroc = 0.0
     best_f1 = 0.0
+    # patience = 20
+    # patience_counter = 0
     history = defaultdict(list)
 
     for epoch in range(start_epoch, CFG["num_epochs"]):
-        train_metrics = train_epoch(model, train_loader, optimizer, epoch, scaler, DEVICE, criterion)
+        train_metrics = train_epoch(
+            model, train_loader, optimizer, CFG, epoch, scaler, DEVICE,
+            weight_tensor=weight_tensor
+        )
         scheduler.step()
         val_metrics = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation")
         lr = optimizer.param_groups[0]["lr"]
+
+        # ----- EARLY STOPPING (patience=20) -----
+        # current_f1 = val_metrics["macro_f1"]
+        # if current_f1 > best_f1:
+        #     best_f1 = current_f1
+        #     patience_counter = 0
+        # else:
+        #     patience_counter += 1
+
+        # if patience_counter >= patience:
+        #     print(f"Early stopping triggered after {epoch+1} epochs (no improvement in F1 for {patience} epochs).")
+        #     break
+        # -----------------------------------------
 
         for k, v in train_metrics.items():
             history[f"train_{k}"].append(float(v))
@@ -254,7 +303,7 @@ def main():
         history["lr"].append(float(lr))
 
         print(f"Ep {epoch+1:3d}/{CFG['num_epochs']}  "
-              f"loss={train_metrics['total']:.4f}  tr_acc={train_metrics['acc']:.4f}  "
+              f"total_loss={train_metrics['total']:.4f}  tr_acc={train_metrics['acc']:.4f}  "
               f"val_acc={val_metrics['acc']:.4f}  val_auroc={val_metrics['auroc']:.4f}  "
               f"val_f1={val_metrics['macro_f1']:.4f}  lr={lr:.2e}")
 
@@ -290,7 +339,7 @@ def main():
     model.load_state_dict(ckpt["model"])
     print(f"Loaded best model from {best_ckpt.name} (epoch {ckpt['epoch']+1})")
 
-    # ---------- VALIDATION (with binary fairness) ----------
+    # --- Evaluation ---
     val_res = validate(model, val_loader, DEVICE, CFG["num_classes"], desc="Validation (final)")
     val_fair = fairness(val_res)
     val_fair_binary = fairness_binary(val_res)
@@ -309,74 +358,31 @@ def main():
     print(f"  EOpp1    : {val_fair_binary['EOpp1']:.4f}")
     print(f"  EOdd     : {val_fair_binary['EOdd']:.4f}")
 
-    # ---------- TEST (if exists) ----------
     if test_loader:
         test_res = validate(model, test_loader, DEVICE, CFG["num_classes"], desc="Test")
         test_fair = fairness(test_res)
         test_fair_binary = fairness_binary(test_res)
 
-        # ---- Collect embeddings for KNN accuracy + t-SNE ----
+        # ---- Compute KNN accuracy on test embeddings ----
         model.eval()
-        all_embs      = []
+        all_embs = []
         all_labels_tsne = []
-        all_skins_tsne  = []
-        all_mods_tsne   = []   # 0=clinical, 1=derm
-
         with torch.no_grad():
             for batch in test_loader:
                 for k, v in batch.items():
                     if isinstance(v, torch.Tensor):
                         batch[k] = v.to(DEVICE)
                 out = model(batch)
-                paired_mask = torch.tensor(batch["paired"], dtype=torch.bool)
-
-                # ── Unpaired samples: take out["z"] directly ──────────────
-                # Each unpaired sample already has its own modality tag.
-                unpaired_mask = ~paired_mask
-                if unpaired_mask.any():
-                    all_embs.append(out["z"][unpaired_mask].cpu().numpy())
-                    all_labels_tsne.append(batch["label"][unpaired_mask].cpu().numpy())
-                    all_skins_tsne.append(batch["skin_type"][unpaired_mask].cpu().numpy())
-                    mod_list = []
-                    modality_tags = batch.get("modality", ["clinical"] * paired_mask.numel())
-                    for i, m in enumerate(modality_tags):
-                        if not paired_mask[i]:
-                            mod_list.append(1 if m == "derm" else 0)
-                    all_mods_tsne.append(np.array(mod_list, dtype=np.int64))
-
-                # ── Paired samples: add z_c and z_d as TWO separate points ──
-                # out["z"] for paired rows is the blended (z_c + z_d)/2 which
-                # carries no modality identity. Instead, use the per-modality
-                # embeddings z_c (clinical) and z_d (derm) stored in out, so
-                # both modalities appear in the t-SNE and KNN evaluation.
-                if paired_mask.any() and "z_c" in out and "z_d" in out:
-                    z_c = out["z_c"].cpu().numpy()   # (n_paired, D)
-                    z_d = out["z_d"].cpu().numpy()   # (n_paired, D)
-                    labs_p = batch["label"][paired_mask].cpu().numpy()
-                    skin_p = batch["skin_type"][paired_mask].cpu().numpy()
-
-                    # Clinical half of pairs → modality 0
-                    all_embs.append(z_c)
-                    all_labels_tsne.append(labs_p)
-                    all_skins_tsne.append(skin_p)
-                    all_mods_tsne.append(np.zeros(len(z_c), dtype=np.int64))
-
-                    # Derm half of pairs → modality 1
-                    all_embs.append(z_d)
-                    all_labels_tsne.append(labs_p)
-                    all_skins_tsne.append(skin_p)
-                    all_mods_tsne.append(np.ones(len(z_d), dtype=np.int64))
-
-        embs        = np.concatenate(all_embs)
+                all_embs.append(out["z"].cpu().numpy())
+                all_labels_tsne.append(batch["label"].cpu().numpy())
+        embs = np.concatenate(all_embs)
         labels_tsne = np.concatenate(all_labels_tsne)
-        skins_tsne  = np.concatenate(all_skins_tsne)
-        mods_tsne   = np.concatenate(all_mods_tsne)
-        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=3)
-        print(f"\n[Baseline ResNet-18] Test KNN (k=3) accuracy: {knn_acc:.4f}")
+        knn_acc = compute_knn_accuracy(embs, labels_tsne, k=5)
+        print(f"\n[BASE+SA ViT] Test KNN (k=5) accuracy: {knn_acc:.4f}")
         # ------------------------------------------------
 
         save_results_csv(test_res, test_fair, "test", CFG["results_dir"], LABEL_NAMES,
-                         fair_binary=test_fair_binary, knn_acc=knn_acc)
+                         fair_binary=test_fair_binary, knn_acc=knn_acc)  # <-- added knn_acc
         plot_confusion_matrix(test_res["conf_mat"], [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
                               "Confusion Matrix - Test", CFG["results_dir"] / "test_confusion.png")
         plot_per_class_metrics(test_res, [LABEL_NAMES[i] for i in range(CFG["num_classes"])],
@@ -391,24 +397,11 @@ def main():
         print(f"  EOpp1    : {test_fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {test_fair_binary['EOdd']:.4f}")
 
-        # t-SNE and KNN plots (optional)
-        plot_tsne_class_fst(
-            embs, labels_tsne, test_res["skin"],
-            title="t-SNE — Baseline ResNet-18 (Test Set)",
-            save_path=CFG["results_dir"] / "tsne_test_class_fst.png",
-        )
+        # t-SNE plot (class only)
+        plot_tsne(embs, labels_tsne, "t-SNE - Test Set (BASE+SA ViT)",
+                  CFG["results_dir"] / "tsne_test.png")
 
-        if len(set(mods_tsne.tolist())) > 1:
-            plot_tsne_modality(
-                embs, skins_tsne, mods_tsne,
-                title="t-SNE — Modality-Invariance  [Internal Test]",
-                save_path=CFG["results_dir"] / "tsne_test_modality_invariance.png",
-            )
-        else:
-            print("[WARN] Not enough unpaired clinical/derm samples for modality t-SNE plot.")
-        # For modality plot we need modality labels; baseline models don't separate, so skip or adapt.
-
-    # ---------- CROSS-DATASET EVALUATION ----------
+    # Cross-dataset evaluation
     cross_results = {}
     for ds_name, loader in eval_loaders.items():
         print(f"\nEvaluating on {ds_name}")
@@ -429,7 +422,6 @@ def main():
         print(f"  EOpp0    : {fair_binary['EOpp0']:.4f}")
         print(f"  EOpp1    : {fair_binary['EOpp1']:.4f}")
         print(f"  EOdd     : {fair_binary['EOdd']:.4f}")
-
         cross_results[ds_name] = {
             "accuracy": res["acc"],
             "auroc": res["auroc"],
@@ -447,7 +439,7 @@ def main():
         cross_df.to_csv(CFG["results_dir"] / "cross_dataset_summary.csv")
         print("\nCross-dataset summary:\n", cross_df)
 
-    plot_training_curves(history, "Training History (Baseline ResNet-18 - Weighted CE)",
+    plot_training_curves(history, "Training History (BASE+SA ViT)",
                          CFG["results_dir"] / "training_curves.png")
 
     print(f"\nAll results saved to {CFG['results_dir']}")
