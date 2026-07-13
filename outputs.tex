@@ -1,0 +1,166 @@
+\begin{table}[h]
+\centering
+\caption{Model Evaluation Metrics}
+\label{tab:model_metrics}
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+Model & Accuracy & AUROC & Precision & Recall & Macro F1 \\
+\hline
+BASE & 0.9178 & \underline{0.9787} & 0.9047 & \textbf{0.8959} & 0.9002 \\
+RESM & 0.8849 & 0.9672 & 0.8668 & 0.8538 & 0.8600 \\
+REWT & \underline{0.9217} & \textbf{0.9816} & \underline{0.9167} & \underline{0.8937} & \textbf{0.9042} \\
+ATRB & 0.9149 & 0.9744 & 0.8942 & 0.8934 & 0.8937 \\
+DisCo & \textbf{0.9226} & 0.9699 & \textbf{0.9198} & 0.8919 & \underline{0.9042} \\
+FairAdaBN & 0.9023 & 0.9700 & 0.8771 & 0.8866 & 0.8813 \\
+PatchAlign & 0.9091 & 0.9671 & 0.8957 & 0.8783 & 0.8864 \\
+\textbf{Proposed Model} & 0.9168 & 0.9675 & 0.9036 & 0.8863 & 0.8941 \\
+\hline
+BASE & 0.9265 & 0.9722 & 0.9101 & 0.9106 & 0.9104 \\
+BASE+SA & 0.9333 & \textbf{0.9784} & 0.9251 & 0.9119 & 0.9183 \\
+BASE+Contr & 0.9284 & 0.9683 & 0.9107 & 0.9179 & 0.9142 \\
+BASE+MI & 0.9284 & 0.9754 & 0.9186 & 0.9089 & 0.9130 \\
+BASE+Contr+MI & \textbf{0.9352} & 0.9773 & 0.9211 & \textbf{0.9216} & \underline{0.9212} \\
+BASE+SA+MI & \textbf{0.9352} & \underline{0.9780} & \textbf{0.9272} & \underline{0.9187} & \textbf{0.9227} \\
+DisCo & 0.9313 & 0.9657 & \underline{0.9266} & 0.9090 & 0.9172 \\
+PatchAlign & \underline{0.9342} & 0.9778 & 0.9232 & 0.9143 & 0.9187 \\
+\textbf{BASE+SA+Contr+MI} & 0.9236 & 0.9632 & 0.9088 & 0.8986 & 0.9030 \\
+\hline
+\end{tabular}
+\end{table}
+
+
+% No_MI_vit (just in case)
+
+% 0.927466151	0.973374378	0.912971498	0.914086729	0.912834539
+
+% split	DP_diff	EOpp0	EOpp1	EOdd	Acc_gap
+% test	0.162836382	0.270298606	0.112622003	0.191460305	0.04502136
+
+% padufes20	0.838737949	0.899674924	0.71192475	0.686760759	0.632683554
+% isic2019	0.780616844	0.848071207	0.738641546	0.723946926	0.726595419
+
+% split	DP_diff	EOpp0	EOpp1	EOdd	Acc_gap
+% cross_padufes20	0.13968254	0.039552526	0.018007985	0.028780256	0.106451613
+
+
+\begin{table}[h]
+\centering
+\caption{Model Fairness Metrics}
+\label{tab:model_fairness}
+\begin{tabular}{|l|c|c|c|c|c|c|}
+\hline
+Model & Acc\_Gap & PQD & DP\_Diff & EOpp0 & EOpp1 & EOdd \\
+\hline
+BASE & 0.0753 & 0.6667 & 0.1468 & 0.4138 & 0.1158 & 0.2648 \\
+RESM & \textbf{0.0177} & \textbf{0.8511} & \textbf{0.0871} & \textbf{0.1352} & \textbf{0.0357} & \textbf{0.0854} \\
+REWT & 0.0590 & \textbf{0.8511} & \underline{0.1349} & \underline{0.2317} & \underline{0.1030} & \underline{0.1674} \\
+ATRB & 0.0742 & \underline{0.8298} & 0.1427 & 0.2414 & 0.1095 & 0.1754 \\
+DisCo & 0.0809 & \underline{0.8298} & 0.1442 & 0.2568 & 0.1292 & 0.1930 \\
+FairAdaBN & 0.0585 & \underline{0.8298} & 0.1826 & 0.2787 & 0.1705 & 0.2246 \\
+PatchAlign & 0.1285 & 0.6667 & 0.1670 & 0.2777 & 0.1914 & 0.3220 \\
+\textbf{Proposed Model} & \underline{0.0546} & \textbf{0.8511} & 0.1786 & 0.2655 & 0.1667 & 0.2161 \\
+\hline
+BASE & 0.0865 & 0.6667 & 0.1673 & \underline{0.2029} & 0.1428 & \underline{0.1729} \\
+BASE+Conf & 0.1150 & 0.8085 & \textbf{0.1300} & 0.2877 & 0.1221 & 0.2049 \\
+BASE+Contr & 0.0887 & 0.8298 & 0.1449 & 0.2612 & 0.1260 & 0.1936 \\
+BASE+MI & 0.0669 & 0.8511 & \underline{0.1423} & 0.2502 & \textbf{0.1031} & 0.1766 \\
+BASE+Contr+MI & \underline{0.0540} & \textbf{0.8723} & 0.1513 & \textbf{0.1356} & 0.1174 & \textbf{0.1265} \\
+BASE+SA+MI & 0.0736 & 0.8511 & 0.1453 & 0.2595 & \underline{0.1137} & 0.1866 \\
+DisCo & \textbf{0.0506} & \textbf{0.8723} & 0.1662 & 0.2561 & 0.1388 & 0.1974 \\
+PatchAlign & 0.1150 & 0.8085 & 0.1490 & 0.2897 & 0.1504 & 0.2200 \\
+\textbf{BASE+SA+Contr+MI} & 0.0602 & \underline{0.8723} & 0.1692 & 0.2801 & 0.1345 & 0.2750 \\
+\hline
+\end{tabular}
+\end{table}
+
+
+\begin{table}[h]
+\centering
+\caption{Model Evaluation Metrics (PAD-UFES-20)}
+\label{tab:cross_model_metrics}
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+Model & Accuracy & AUROC & Precision & Recall & Macro F1 \\
+\hline
+BASE & 0.7888 & 0.8381 & 0.5824 & 0.5675 & 0.5467 \\
+RESM & 0.5118 & 0.6969 & 0.5170 & 0.4940 & 0.3986 \\
+REWT & 0.7388 & 0.8239 & 0.5697 & 0.6106 & 0.5348 \\
+ATRB & 0.7975 & \underline{0.8868} & 0.6635 & 0.6692 & 0.6055 \\
+DisCo & \textbf{0.8484} & 0.8403 & \textbf{0.6934} & 0.6380 & \textbf{0.6418} \\
+FairAdaBN & 0.7958 & 0.8486 & 0.6189 & 0.5865 & 0.5512 \\
+PatchAlign & \underline{0.8335} & \textbf{0.9001} & \underline{0.6742} & \underline{0.6763} & \underline{0.6339} \\
+\textbf{Proposed Model} & 0.7923 & 0.8674 & 0.6368 & \textbf{0.6802} & 0.5976 \\
+\hline
+BASE & 0.8072 & \underline{0.8806} & 0.6426 & 0.6499 & 0.5934 \\
+BASE+Conf & 0.7783 & 0.8315 & 0.6201 & \underline{0.6671} & 0.5522 \\
+BASE+Contr & 0.7774 & 0.8552 & 0.6685 & 0.6603 & 0.5592 \\
+BASE+MI & 0.8037 & 0.8388 & 0.6615 & 0.6560 & 0.5766 \\
+BASE+Contr+MI & \underline{0.8212} & 0.8636 & \underline{0.6714} & \textbf{0.6762} & \textbf{0.6161} \\
+BASE+SA+MI & \textbf{0.8247} & 0.8369 & 0.6635 & 0.6351 & \underline{0.5998} \\
+DisCo & 0.8046 & 0.8655 & \textbf{0.6887} & 0.6638 & 0.5728 \\
+PatchAlign & 0.6941 & \textbf{0.8862} & 0.6633 & 0.6624 & 0.5371 \\
+\textbf{BASE+SA+Contr+MI} & 0.7774 & 0.8770 & 0.6435 & 0.6514 & 0.5785 \\
+\hline
+\end{tabular}
+\end{table}
+
+
+\begin{table}[h]
+\centering
+\caption{Model Fairness Metrics (PAD-UFES-20)}
+\label{tab:cross_model_fairness}
+\begin{tabular}{|l|c|c|c|c|c|c|}
+\hline
+Model & Acc\_Gap & PQD & DP\_Diff & EOpp0 & EOpp1 & EOdd \\
+\hline
+BASE & 0.1058 & \underline{0.8596} & 0.2337 & 0.2453 & 0.1237 & 0.1845 \\
+RESM & 0.0339 & 0.5458 & 0.1576 & 0.2488 & 0.1111 & 0.1800 \\
+REWT & 0.1029 & 0.6842 & \textbf{0.1078} & \textbf{0.0560} & \underline{0.0693} & \textbf{0.0627} \\
+ATRB & 0.0475 & 0.7895 & \underline{0.1135} & \underline{0.1025} & \textbf{0.0369} & \underline{0.0697} \\
+DisCo & 0.0644 & 0.8421 & 0.1757 & 0.1162 & 0.0748 & 0.0955 \\
+FairAdaBN & 0.1025 & 0.7632 & 0.1978 & 0.1709 & 0.1213 & 0.1461 \\
+PatchAlign & \underline{0.0212} & \textbf{0.8684} & 0.1817 & 0.1485 & 0.0853 & 0.1169 \\
+\textbf{Proposed Model} & \textbf{0.0063} & 0.8421 & 0.2006 & 0.1533 & 0.0958 & 0.1245 \\
+\hline
+BASE & 0.1771 & 0.7598 & 0.2012 & 0.1076 & 0.0684 & 0.0880 \\
+BASE+Conf & 0.1382 & 0.8289 & 0.1630 & 0.1375 & 0.0406 & 0.0890 \\
+BASE+Contr & 0.2022 & 0.8366 & 0.2042 & 0.1694 & 0.1031 & 0.1362 \\
+BASE+MI & \underline{0.1078} & 0.8421 & 0.1947 & 0.1471 & 0.0692 & 0.1082 \\
+BASE+Contr+MI & 0.1392 & \textbf{0.8884} & \underline{0.1435} & \underline{0.0791} & 0.0550 & \underline{0.0670} \\
+BASE+SA+MI & \textbf{0.0785} & 0.7864 & 0.1491 & 0.1208 & \underline{0.0402} & 0.0805 \\
+DisCo & 0.1424 & 0.7368 & \textbf{0.1384} & \textbf{0.0265} & \textbf{0.0353} & \textbf{0.0309} \\
+PatchAlign & 0.1422 & 0.6842 & 0.2148 & 0.1164 & 0.1137 & 0.1150 \\
+\textbf{BASE+SA+Contr+MI} & 0.1806 & \underline{0.8703} & 0.2230 & 0.1206 & 0.1313 & 0.1259 \\
+\hline
+\end{tabular}
+\end{table}
+
+
+\begin{table}[h]
+\centering
+\caption{Model Evaluation Metrics (ISIC 2019)}
+\label{tab:isic_model_metrics}
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+Model & Accuracy & AUROC & Precision & Recall & Macro F1 \\
+\hline
+BASE & 0.7484 & \underline{0.8683} & 0.6986 & 0.7013 & 0.6999 \\
+RESM & \underline{0.7604} & \textbf{0.8738} & \underline{0.7058} & 0.7006 & 0.6902 \\
+REWT & 0.7512 & 0.8498 & 0.6903 & 0.6854 & 0.6864 \\
+ATRB & 0.6887 & 0.8598 & 0.6534 & 0.6657 & 0.6466 \\
+DisCo & 0.7578 & 0.8440 & 0.6982 & \textbf{0.7078} & \underline{0.7007} \\
+PatchAlign & 0.7123 & 0.8466 & 0.6440 & 0.6709 & 0.6533 \\
+\textbf{Proposed Model} & \textbf{0.7657} & 0.8370 & \textbf{0.7074} & \underline{0.7078} & \textbf{0.7055} \\
+\hline
+BASE & 0.7386 & \textbf{0.8588} & 0.6771 & 0.7084 & 0.6880 \\
+BASE+Conf & \textbf{0.7736} & 0.8443 & \underline{0.7237} & \textbf{0.7198} & \textbf{0.7197} \\
+BASE+Contr & 0.7493 & 0.8369 & 0.6948 & \underline{0.7173} & 0.7048 \\
+BASE+MI & 0.7648 & 0.8339 & 0.7151 & 0.7046 & 0.7089 \\
+BASE+Contr+MI & 0.7718 & 0.8386 & 0.7224 & 0.7132 & \underline{0.7152} \\
+BASE+SA+MI & 0.7667 & 0.8279 & 0.7198 & 0.6923 & 0.7044 \\
+DisCo & \underline{0.7727} & 0.8446 & \textbf{0.7274} & 0.7032 & 0.7100 \\
+PatchAlign & 0.7374 & \underline{0.8506} & 0.6779 & 0.6739 & 0.6747 \\
+\textbf{BASE+SA+Contr+MI} & 0.7572 & 0.8112 & 0.7005 & 0.6766 & 0.6843 \\
+\hline
+\end{tabular}
+\end{table}

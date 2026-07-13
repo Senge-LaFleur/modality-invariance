@@ -102,7 +102,7 @@ pip install --quiet \
     einops \
     scikit-learn \
     umap-learn \
-    matplotlib \
+    "matplotlib>=3.8,<3.11" \
     seaborn \
     pandas \
     tqdm \
@@ -204,7 +204,7 @@ echo "[RUN] Starting training — $(date)"
 echo "========================================="
 
 pip install -q timm einops scikit-learn umap-learn \
-               matplotlib seaborn pandas tqdm Pillow \
+               "matplotlib>=3.8,<3.11" seaborn pandas tqdm Pillow \
                shap captum
 
 python "../$SCRIPT_NAME" $WORK_DIR $OUTPUT_DIR
